@@ -76,3 +76,66 @@ async def send_agent_reply(
             ),
         )
     return {"message_id": msg_id, "handler": "agent"}
+
+
+async def _publish_conv_updated(tenant_str: str, conversation_id: uuid.UUID, **fields) -> None:
+    await publish_realtime(
+        tenant_str,
+        json.dumps(
+            {
+                "type": "conversation.updated",
+                "payload": {"conversation_id": str(conversation_id), **fields},
+            }
+        ),
+    )
+
+
+async def _load(session, conversation_id: uuid.UUID):
+    from sqlalchemy import select
+    from ..models import Conversation
+
+    conv = await session.scalar(select(Conversation).where(Conversation.id == conversation_id))
+    if conv is None:
+        raise ValueError(f"percakapan {conversation_id} tidak ada")
+    return conv
+
+
+async def set_status(conversation_id: uuid.UUID, status: str) -> dict:
+    """Ubah status percakapan (open/resolved). docs/prd/05."""
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            conv = await _load(session, conversation_id)
+            conv.status = status
+            conv.updated_at = datetime.now(timezone.utc)
+            tenant_str = str(conv.tenant_id)
+        await _publish_conv_updated(tenant_str, conversation_id, status=status)
+    return {"status": status}
+
+
+async def set_handler(conversation_id: uuid.UUID, handler: str) -> dict:
+    """Pindah penanganan (bot/agent). 'bot' = kembalikan ke AI agent. docs/prd/05."""
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            conv = await _load(session, conversation_id)
+            conv.handler = handler
+            if handler == "bot":
+                conv.assigned_agent_id = None
+            conv.updated_at = datetime.now(timezone.utc)
+            tenant_str = str(conv.tenant_id)
+        await _publish_conv_updated(tenant_str, conversation_id, handler=handler)
+    return {"handler": handler}
+
+
+async def assign_conversation(conversation_id: uuid.UUID, agent_id: uuid.UUID) -> dict:
+    """Tugaskan percakapan ke agen (handler=agent). Butuh conversation.assign. docs/prd/05."""
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            conv = await _load(session, conversation_id)
+            conv.assigned_agent_id = agent_id
+            conv.handler = "agent"
+            conv.updated_at = datetime.now(timezone.utc)
+            tenant_str = str(conv.tenant_id)
+        await _publish_conv_updated(
+            tenant_str, conversation_id, handler="agent", assigned_agent_id=str(agent_id)
+        )
+    return {"assigned_agent_id": str(agent_id), "handler": "agent"}

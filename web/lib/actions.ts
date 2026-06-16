@@ -10,6 +10,7 @@ import { broadcasts, channels, contacts, flows, tenants, users } from "./db/sche
 import { requireAbility, type Role } from "./rbac";
 import { requireSession } from "./session";
 import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
+import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -39,7 +40,8 @@ export async function login(email: string, password: string) {
     path: "/",
     maxAge: COOKIE_MAX_AGE,
   });
-  redirect("/dashboard");
+  // Landing per-role: super_admin → konsol platform, agent → inbox, sisanya dashboard.
+  redirect(user.role === "super_admin" ? "/admin" : user.role === "agent" ? "/inbox" : "/dashboard");
 }
 
 export async function logout() {
@@ -255,4 +257,303 @@ export async function saveFlow(
     .where(and(eq(flows.id, id), eq(flows.tenantId, session.tenantId)));
   revalidatePath(`/flows/${id}`);
   revalidatePath("/flows");
+}
+
+// --- Contacts CRUD (web tulis tabel contacts, 07). RBAC contact.manage. ---
+type OptInStatusInput = "opted_in" | "opted_out" | "unknown";
+export interface ContactInput {
+  name: string;
+  phone: string;
+  optInStatus: OptInStatusInput;
+  tags: string[];
+}
+
+function normTags(tags: string[]): string[] {
+  return Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+}
+
+export async function createContact(input: ContactInput) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
+  const optedIn = input.optInStatus === "opted_in";
+  try {
+    await db.insert(contacts).values({
+      tenantId: session.tenantId,
+      name: name || null,
+      phone: phone || null,
+      optInStatus: input.optInStatus,
+      optInSource: optedIn ? "form" : null,
+      optInAt: optedIn ? new Date().toISOString() : null,
+      tags: normTags(input.tags),
+    });
+  } catch {
+    throw new Error("Nomor telepon sudah terdaftar untuk tenant ini");
+  }
+  revalidatePath("/contacts");
+  redirect("/contacts");
+}
+
+export async function updateContact(id: string, input: ContactInput) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
+  try {
+    await db
+      .update(contacts)
+      .set({
+        name: name || null,
+        phone: phone || null,
+        optInStatus: input.optInStatus,
+        tags: normTags(input.tags),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, session.tenantId)));
+  } catch {
+    throw new Error("Nomor telepon sudah terdaftar untuk tenant ini");
+  }
+  revalidatePath("/contacts");
+  redirect("/contacts");
+}
+
+export async function deleteContact(id: string) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await db.delete(contacts).where(and(eq(contacts.id, id), eq(contacts.tenantId, session.tenantId)));
+  revalidatePath("/contacts");
+  redirect("/contacts");
+}
+
+export async function importContacts(
+  rows: { name: string; phone: string }[],
+): Promise<{ inserted: number; skipped: number }> {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+
+  const clean = rows
+    .map((r) => ({ name: (r.name ?? "").trim(), phone: (r.phone ?? "").trim() }))
+    .filter((r) => r.name || r.phone);
+  if (!clean.length) throw new Error("Tidak ada baris valid untuk diimport");
+  if (clean.length > 5000) throw new Error("Maksimal 5.000 baris per import");
+
+  // Import → opt-in TIDAK otomatis (consent wajib eksplisit). Status unknown, sumber import.
+  const seen = new Set<string>();
+  const values = clean
+    .filter((r) => {
+      if (!r.phone) return true;
+      if (seen.has(r.phone)) return false;
+      seen.add(r.phone);
+      return true;
+    })
+    .map((r) => ({
+      tenantId: session.tenantId!,
+      name: r.name || null,
+      phone: r.phone || null,
+      optInStatus: "unknown" as const,
+      optInSource: "import" as const,
+      tags: [] as string[],
+    }));
+
+  const ins = await db.insert(contacts).values(values).onConflictDoNothing().returning({ id: contacts.id });
+  revalidatePath("/contacts");
+  return { inserted: ins.length, skipped: clean.length - ins.length };
+}
+
+// --- Tim / Users (kelola user & role, 03). RBAC user.manage. ---
+type TenantRole = "admin" | "supervisor" | "agent";
+type UserStatusInput = "active" | "invited" | "disabled";
+const ASSIGNABLE_ROLES: TenantRole[] = ["admin", "supervisor", "agent"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function createUser(input: {
+  name: string;
+  email: string;
+  role: TenantRole;
+  password: string;
+}) {
+  const session = await requireSession();
+  requireAbility(session, "user.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!name) throw new Error("Nama wajib diisi");
+  if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
+  if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
+  if (!ASSIGNABLE_ROLES.includes(input.role)) throw new Error("Role tidak valid");
+  const passwordHash = await bcrypt.hash(input.password, 10);
+  try {
+    await db.insert(users).values({
+      tenantId: session.tenantId,
+      name,
+      email,
+      passwordHash,
+      role: input.role,
+      status: "active",
+    });
+  } catch {
+    throw new Error("Email sudah terdaftar");
+  }
+  revalidatePath("/settings/users");
+  redirect("/settings/users");
+}
+
+export async function updateUser(
+  id: string,
+  input: { name: string; role: TenantRole; status: UserStatusInput; password?: string },
+) {
+  const session = await requireSession();
+  requireAbility(session, "user.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  if (!name) throw new Error("Nama wajib diisi");
+  if (!ASSIGNABLE_ROLES.includes(input.role)) throw new Error("Role tidak valid");
+  if (id === session.id && input.status !== "active") {
+    throw new Error("Tidak bisa menonaktifkan akun sendiri");
+  }
+  const patch: Record<string, unknown> = {
+    name,
+    role: input.role,
+    status: input.status,
+    updatedAt: new Date().toISOString(),
+  };
+  if (input.password) {
+    if (input.password.length < 6) throw new Error("Password minimal 6 karakter");
+    patch.passwordHash = await bcrypt.hash(input.password, 10);
+  }
+  await db.update(users).set(patch).where(and(eq(users.id, id), eq(users.tenantId, session.tenantId)));
+  revalidatePath("/settings/users");
+  redirect("/settings/users");
+}
+
+export async function deleteUser(id: string) {
+  const session = await requireSession();
+  requireAbility(session, "user.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (id === session.id) throw new Error("Tidak bisa menghapus akun sendiri");
+  await db.delete(users).where(and(eq(users.id, id), eq(users.tenantId, session.tenantId)));
+  revalidatePath("/settings/users");
+  redirect("/settings/users");
+}
+
+// --- Platform: aktifkan / suspend tenant (super_admin, tenant.manage). ---
+export async function setTenantStatus(id: string, status: "active" | "suspended") {
+  const session = await requireSession();
+  requireAbility(session, "tenant.manage");
+  await db
+    .update(tenants)
+    .set({ status, updatedAt: new Date().toISOString() })
+    .where(eq(tenants.id, id));
+  revalidatePath("/admin");
+  revalidatePath(`/admin/tenants/${id}`);
+}
+
+// --- Pengaturan: jam kerja & out-of-office (05). RBAC flow.manage (config admin). ---
+export async function saveBusinessHours(input: BusinessHours) {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const business_hours = normalizeBusinessHours(input);
+  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
+  const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), business_hours };
+  await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, session.tenantId));
+  revalidatePath("/settings/business-hours");
+}
+
+// --- Inbox: aksi state percakapan (lewat engine; conversations engine-owned, 01). ---
+async function convAction(path: string, role: string, body?: unknown): Promise<void> {
+  const res = await fetch(`${ENGINE}/conversations/${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
+      "X-Actor-Role": role,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`Aksi gagal${msg ? `: ${msg}` : ""}`);
+  }
+}
+
+export async function resolveConversation(conversationId: string) {
+  const session = await requireSession();
+  await convAction(`${conversationId}/resolve`, session.role);
+  revalidatePath(`/inbox/${conversationId}`);
+  revalidatePath("/inbox");
+}
+
+export async function reopenConversation(conversationId: string) {
+  const session = await requireSession();
+  await convAction(`${conversationId}/reopen`, session.role);
+  revalidatePath(`/inbox/${conversationId}`);
+  revalidatePath("/inbox");
+}
+
+export async function returnToBot(conversationId: string) {
+  const session = await requireSession();
+  await convAction(`${conversationId}/return-to-bot`, session.role);
+  revalidatePath(`/inbox/${conversationId}`);
+  revalidatePath("/inbox");
+}
+
+export async function takeoverConversation(conversationId: string) {
+  const session = await requireSession();
+  // takeover = assign ke diri sendiri (handler=agent).
+  await convAction(`${conversationId}/assign`, session.role, { agent_id: session.id });
+  revalidatePath(`/inbox/${conversationId}`);
+  revalidatePath("/inbox");
+}
+
+export async function assignConversation(conversationId: string, agentId: string) {
+  const session = await requireSession();
+  requireAbility(session, "conversation.assign");
+  await convAction(`${conversationId}/assign`, session.role, { agent_id: agentId });
+  revalidatePath(`/inbox/${conversationId}`);
+  revalidatePath("/inbox");
+}
+
+// --- Akuisisi kontak: opt-in form publik (07). Consent eksplisit → opted_in, sumber form. ---
+export async function createOptIn(
+  slug: string,
+  input: { name: string; phone: string },
+): Promise<void> {
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  if (!phone) throw new Error("Nomor telepon wajib diisi");
+  if (!/^[0-9+\-\s]{6,32}$/.test(phone)) throw new Error("Nomor telepon tidak valid");
+
+  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
+  if (!tenant || tenant.status !== "active") throw new Error("Workspace tidak ditemukan");
+
+  const existing = await db.query.contacts.findFirst({
+    where: and(eq(contacts.tenantId, tenant.id), eq(contacts.phone, phone)),
+  });
+  const now = new Date().toISOString();
+  if (existing) {
+    // Kontak sudah ada → catat consent (opted_in).
+    await db
+      .update(contacts)
+      .set({ optInStatus: "opted_in", optInSource: "form", optInAt: now, updatedAt: now, name: existing.name ?? (name || null) })
+      .where(eq(contacts.id, existing.id));
+    return;
+  }
+  await db.insert(contacts).values({
+    tenantId: tenant.id,
+    name: name || null,
+    phone,
+    optInStatus: "opted_in",
+    optInSource: "form",
+    optInAt: now,
+    tags: [],
+  });
 }

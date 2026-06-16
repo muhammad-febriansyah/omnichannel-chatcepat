@@ -1,26 +1,29 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Send } from "lucide-react";
+import { Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
-import { cleanIDR } from "@/lib/format";
+import { BroadcastsTable, type BroadcastRow } from "@/components/app/broadcasts-table";
 
-const STATUS_CLS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  scheduled: "bg-blue-50 text-blue-700",
-  running: "bg-amber-50 text-amber-700",
-  done: "bg-emerald-50 text-emerald-700",
-  failed: "bg-red-50 text-red-700",
-};
-
-async function load(tenantId: string | null) {
+async function load(tenantId: string | null): Promise<BroadcastRow[]> {
   if (!tenantId) return [];
   try {
-    return await db.query.broadcasts.findMany({
+    const rows = await db.query.broadcasts.findMany({
       where: eq(broadcasts.tenantId, tenantId),
       orderBy: [desc(broadcasts.createdAt)],
-      limit: 50,
+      limit: 200,
+    });
+    return rows.map((b) => {
+      const stats = (b.stats ?? {}) as Record<string, number>;
+      return {
+        id: b.id,
+        name: b.name,
+        status: b.status,
+        sent: stats.sent ?? 0,
+        total: stats.total ?? 0,
+        skipped: stats.skipped_optout ?? 0,
+      };
     });
   } catch {
     return [];
@@ -46,49 +49,7 @@ export default async function BroadcastsPage() {
         </Link>
       </div>
 
-      {rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-blue-50 text-brand-blue">
-            <Send className="size-6" />
-          </div>
-          <p className="mt-3 text-sm font-medium">Belum ada broadcast</p>
-          <Link href="/broadcasts/new" className="mt-1 text-xs font-medium text-brand-blue">
-            Buat broadcast pertama
-          </Link>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="px-4 py-3 font-medium">Nama</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Terkirim</th>
-                <th className="px-4 py-3 font-medium">Skip Opt-out</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((b) => {
-                const stats = (b.stats ?? {}) as Record<string, number>;
-                return (
-                  <tr key={b.id} className="border-b border-border last:border-0 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium">{b.name}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CLS[b.status] ?? "bg-slate-100"}`}>
-                        {b.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {cleanIDR(stats.sent ?? 0)} / {cleanIDR(stats.total ?? 0)}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{cleanIDR(stats.skipped_optout ?? 0)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <BroadcastsTable rows={rows} />
     </div>
   );
 }

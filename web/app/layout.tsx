@@ -24,7 +24,8 @@ export default function RootLayout({
       lang="id"
       className={`${poppins.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      {/* suppressHydrationWarning: ekstensi browser (mis. ColorZilla cz-shortcut-listen) suntik atribut ke <body> */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

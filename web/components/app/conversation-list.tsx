@@ -21,7 +21,7 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
   const active = params?.conversationId;
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col border-r border-border bg-card">
+    <div className="flex h-full w-full shrink-0 flex-col border-r border-border bg-card lg:w-80">
       <div className="flex items-center justify-between px-4 py-3.5">
         <h2 className="text-base font-semibold">Inbox</h2>
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-muted-foreground">

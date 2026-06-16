@@ -1,39 +1,107 @@
-import { Search, Bell, HelpCircle } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+"use client";
+
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Bell, HelpCircle, Settings, ChevronDown, PanelLeft, User, LogOut } from "lucide-react";
+import { logout } from "@/lib/actions";
 import { initials } from "@/lib/format";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import type { Session } from "@/lib/session";
 
-export function Topbar({ session }: { session: Session }) {
+export function Topbar({ session, onToggleSidebar }: { session: Session; onToggleSidebar?: () => void }) {
+  const router = useRouter();
+  const [pendingLogout, startLogout] = useTransition();
+  const workspace = session.tenantName ?? "Workspace";
+
   return (
     <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-card px-6">
-      <div className="relative w-full max-w-sm">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      {/* left: toggle + search */}
+      <button
+        onClick={onToggleSidebar}
+        className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+        aria-label="Tampilkan / sembunyikan menu samping"
+        title="Tampilkan / sembunyikan menu"
+      >
+        <PanelLeft className="size-[18px]" />
+      </button>
+      <div className="flex h-10 w-full max-w-[420px] items-center gap-2 rounded-[10px] border border-transparent bg-background px-3 text-muted-foreground transition focus-within:border-brand-blue focus-within:bg-card focus-within:shadow-[0_0_0_4px_rgba(59,130,246,0.12)]">
+        <Search className="size-4 shrink-0" />
         <input
-          className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
-          placeholder="Cari percakapan, kontak…"
+          className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+          placeholder="Cari kontak, percakapan, atau pesan…"
+          aria-label="Pencarian global"
         />
+        <span className="hidden rounded-md border border-border bg-card px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground sm:inline">
+          ⌘K
+        </span>
       </div>
 
-      <div className="ml-auto flex items-center gap-1">
-        <button className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-slate-100">
+      {/* right */}
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          className="relative grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+          aria-label="Notifikasi"
+        >
           <Bell className="size-[18px]" />
+          <span className="absolute right-1.5 top-1.5 size-2 rounded-full border-2 border-card bg-danger" />
         </button>
-        <button className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-slate-100">
+        <button
+          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+          aria-label="Bantuan"
+        >
           <HelpCircle className="size-[18px]" />
         </button>
-        <div className="ml-2 flex items-center gap-2.5 pl-2">
-          <div className="text-right leading-tight">
-            <div className="text-sm font-semibold">{session.name}</div>
-            <div className="text-xs capitalize text-muted-foreground">
-              {session.tenantName ?? session.role}
-            </div>
-          </div>
-          <Avatar className="size-9">
-            <AvatarFallback className="bg-gradient-to-br from-brand-navy to-brand-blue text-xs font-semibold text-white">
+        <button
+          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+          aria-label="Pengaturan"
+        >
+          <Settings className="size-[18px]" />
+        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger className="ml-1 flex h-10 items-center gap-2 rounded-[10px] border border-border bg-card py-1 pl-1 pr-2.5 outline-none transition-colors hover:border-muted-foreground/40 hover:bg-background focus-visible:border-brand-blue data-[popup-open]:border-brand-blue data-[popup-open]:bg-background">
+            <span className="relative grid size-[30px] place-items-center rounded-lg bg-gradient-to-br from-brand-navy to-brand-blue text-[11px] font-bold tracking-wide text-white">
               {initials(session.name)}
-            </AvatarFallback>
-          </Avatar>
-        </div>
+              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card bg-success" />
+            </span>
+            <span className="hidden flex-col items-start leading-tight sm:flex">
+              <span className="max-w-[120px] truncate text-[13px] font-semibold text-foreground">{session.name}</span>
+              <span className="text-[11px] capitalize text-muted-foreground">{session.role}</span>
+            </span>
+            <ChevronDown className="size-4 text-muted-foreground" />
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="flex flex-col gap-0.5 px-1.5 py-1.5">
+              <span className="text-sm font-semibold text-foreground">{session.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{session.email}</span>
+              <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-brand-navy">
+                {workspace} · <span className="capitalize">{session.role}</span>
+              </span>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => router.push("/settings")}>
+              <User className="size-4" /> Profil
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings")}>
+              <Settings className="size-4" /> Pengaturan
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={pendingLogout}
+              onClick={() => startLogout(() => logout())}
+            >
+              <LogOut className="size-4" /> {pendingLogout ? "Keluar…" : "Keluar"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

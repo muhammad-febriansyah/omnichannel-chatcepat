@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
 from ..services.broadcast import dispatch, run_broadcast
-from ..services.conversation import send_agent_reply
+from ..services.conversation import (
+    assign_conversation,
+    send_agent_reply,
+    set_handler,
+    set_status,
+)
 
 router = APIRouter(prefix="/internal/v1")
 
@@ -63,6 +68,59 @@ async def conversation_reply(
         raise HTTPException(status_code=422, detail="pesan kosong")
     result = await send_agent_reply(conversation_id, payload.body.strip(), payload.agent_id)
     return {"data": result}
+
+
+@router.post("/conversations/{conversation_id}/resolve")
+async def conversation_resolve(
+    conversation_id: uuid.UUID,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """Tandai percakapan selesai. Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    return {"data": await set_status(conversation_id, "resolved")}
+
+
+@router.post("/conversations/{conversation_id}/reopen")
+async def conversation_reopen(
+    conversation_id: uuid.UUID,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """Buka kembali percakapan yang sudah selesai. Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    return {"data": await set_status(conversation_id, "open")}
+
+
+@router.post("/conversations/{conversation_id}/return-to-bot")
+async def conversation_return_to_bot(
+    conversation_id: uuid.UUID,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """Kembalikan penanganan ke AI agent (handler=bot). Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    return {"data": await set_handler(conversation_id, "bot")}
+
+
+class AssignIn(BaseModel):
+    agent_id: uuid.UUID
+
+
+@router.post("/conversations/{conversation_id}/assign")
+async def conversation_assign(
+    conversation_id: uuid.UUID,
+    payload: AssignIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """Tugaskan percakapan ke agen. Butuh conversation.assign."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.assign")
+    return {"data": await assign_conversation(conversation_id, payload.agent_id)}
 
 
 # --- Knowledge base ingestion (06) ---
