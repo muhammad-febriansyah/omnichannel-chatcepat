@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChatCepatEvents",
+  "description": "Sumber kebenaran event schema antar servis (lihat docs/prd/09-api-contracts.md). Edit di sini lalu `make contracts`.",
+  "definitions": {
+    "Party": {
+      "type": "object",
+      "properties": {
+        "external_id": { "type": "string" },
+        "phone": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] }
+      },
+      "required": ["external_id"]
+    },
+    "Media": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "mime": { "type": "string" },
+        "filename": { "type": ["string", "null"] }
+      },
+      "required": ["url", "mime"]
+    },
+    "ChannelType": {
+      "type": "string",
+      "enum": ["wa_official", "wa_unofficial", "instagram", "facebook", "telegram"]
+    },
+
+    "InboundMessage": {
+      "type": "object",
+      "description": "Stream message.inbound (Gateway -> Engine).",
+      "properties": {
+        "event_id": { "type": "string", "description": "ulid" },
+        "dedup_key": { "type": "string", "description": "<channel_id>:<provider_message_id>" },
+        "channel_id": { "type": "string", "format": "uuid" },
+        "channel_type": { "$ref": "#/definitions/ChannelType" },
+        "from": { "$ref": "#/definitions/Party" },
+        "type": { "type": "string", "enum": ["text", "image", "file", "interactive"] },
+        "body": { "type": ["string", "null"] },
+        "media": { "oneOf": [{ "$ref": "#/definitions/Media" }, { "type": "null" }] },
+        "provider_message_id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["event_id", "dedup_key", "channel_id", "channel_type", "from", "type", "provider_message_id", "timestamp"]
+    },
+
+    "OutboundCommand": {
+      "type": "object",
+      "description": "Stream message.outbound (Engine -> Gateway).",
+      "properties": {
+        "event_id": { "type": "string", "description": "ulid" },
+        "idempotency_key": { "type": "string", "description": "gateway skip kalau sudah kirim" },
+        "channel_id": { "type": "string", "format": "uuid" },
+        "to": { "$ref": "#/definitions/Party" },
+        "type": { "type": "string", "enum": ["text", "template", "media"] },
+        "body": { "type": ["string", "null"] },
+        "template": {
+          "type": ["object", "null"],
+          "properties": {
+            "name": { "type": "string" },
+            "lang": { "type": "string" },
+            "components": { "type": "array", "items": {} }
+          }
+        },
+        "media": { "oneOf": [{ "$ref": "#/definitions/Media" }, { "type": "null" }] },
+        "conversation_id": { "type": "string", "format": "uuid" }
+      },
+      "required": ["event_id", "idempotency_key", "channel_id", "to", "type", "conversation_id"]
+    },
+
+    "MessageStatus": {
+      "type": "object",
+      "description": "Stream message.status (Gateway -> Engine).",
+      "properties": {
+        "idempotency_key": { "type": "string" },
+        "provider_message_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["sent", "delivered", "read", "failed"] },
+        "error": { "type": ["string", "null"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["idempotency_key", "status", "timestamp"]
+    },
+
+    "RealtimeEvent": {
+      "type": "object",
+      "description": "Pub/Sub realtime.<tenant_id> (Engine -> Web via Gateway WS).",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["message.new", "conversation.updated", "conversation.assigned", "channel.status"]
+        },
+        "payload": { "type": "object" }
+      },
+      "required": ["type", "payload"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "inbound": { "$ref": "#/definitions/InboundMessage" },
+    "outbound": { "$ref": "#/definitions/OutboundCommand" },
+    "status": { "$ref": "#/definitions/MessageStatus" },
+    "realtime": { "$ref": "#/definitions/RealtimeEvent" }
+  }
+}

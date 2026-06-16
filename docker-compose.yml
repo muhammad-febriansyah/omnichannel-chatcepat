@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: chatcepat
+      POSTGRES_PASSWORD: chatcepat
+      POSTGRES_DB: chatcepat
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatcepat"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  engine:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8000:8000"]
+    volumes: ["./engine:/app"]
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # Worker: consume message.inbound → decision pipeline (05). Proses terpisah dari API.
+  engine-consumer:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes: ["./engine:/app"]
+    command: "python -m app.consumers.inbound_consumer"
+
+  # Worker: broadcast (07) — poll broadcast running → dispatch throttle.
+  engine-broadcast:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes: ["./engine:/app"]
+    command: "python -m app.consumers.broadcast_worker"
+
+  gateway:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8080:8080"]
+
+  web:
+    build: ./web
+    env_file: .env
+    depends_on: [engine]
+    ports: ["3000:3000"]
+    volumes: ["./web:/app", "/app/node_modules"]
+    command: "npm run dev"
+
+volumes:
+  pgdata:

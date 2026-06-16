@@ -1,0 +1,32 @@
+# env
+.env
+.env.local
+*.local
+
+# os
+.DS_Store
+
+# python (engine)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# node (web)
+node_modules/
+.next/
+out/
+npm-debug.log*
+.turbo/
+
+# go (gateway)
+gateway/bin/
+*.test
+
+# misc
+*.log
+
+# local compose override
+docker-compose.override.yml
