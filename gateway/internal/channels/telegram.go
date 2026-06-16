@@ -12,7 +12,6 @@ import (
 	"github.com/chatcepat/gateway/internal/contracts"
 )
 
-// Telegram adapter — Bot API sendMessage. Token bot di credentials["bot_token"].
 type Telegram struct {
 	http *http.Client
 }
