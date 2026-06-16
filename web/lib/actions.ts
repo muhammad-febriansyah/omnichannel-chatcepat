@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { and, eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, tags, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import { requireSession } from "./session";
 import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
@@ -569,4 +569,39 @@ export async function saveWebSettings(input: WebSettings) {
   const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), web_settings };
   await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, session.tenantId));
   revalidatePath("/settings/web");
+}
+
+// --- Tag & Label (segmentasi kontak, web-owned). RBAC contact.manage. ---
+export async function createTag(input: { name: string; color: string }) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  if (!name) throw new Error("Nama tag wajib diisi");
+  await db.insert(tags).values({ tenantId: session.tenantId, name, color: input.color || null });
+  revalidatePath("/tags");
+  redirect("/tags");
+}
+
+export async function updateTag(id: string, input: { name: string; color: string }) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const name = input.name.trim();
+  if (!name) throw new Error("Nama tag wajib diisi");
+  await db
+    .update(tags)
+    .set({ name, color: input.color || null, updatedAt: new Date().toISOString() })
+    .where(and(eq(tags.id, id), eq(tags.tenantId, session.tenantId)));
+  revalidatePath("/tags");
+  redirect("/tags");
+}
+
+export async function deleteTag(id: string) {
+  const session = await requireSession();
+  requireAbility(session, "contact.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await db.delete(tags).where(and(eq(tags.id, id), eq(tags.tenantId, session.tenantId)));
+  revalidatePath("/tags");
+  redirect("/tags");
 }
