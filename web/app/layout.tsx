@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { getActiveWebSettings, metadataFrom } from "@/lib/web-settings-server";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -9,10 +10,10 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
-export const metadata: Metadata = {
-  title: "ChatCepat",
-  description: "Omnichannel inbox + AI sales agent",
-};
+// Metadata dinamis dari web_settings tenant (favicon, title, SEO, OG).
+export async function generateMetadata(): Promise<Metadata> {
+  return metadataFrom(await getActiveWebSettings());
+}
 
 export default function RootLayout({
   children,

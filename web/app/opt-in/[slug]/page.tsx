@@ -1,9 +1,20 @@
+import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
+import { getWebSettingsBySlug, metadataFrom } from "@/lib/web-settings-server";
 import { CCLogo } from "@/components/app/charts";
 import { OptInForm } from "@/components/app/opt-in-form";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const ws = await getWebSettingsBySlug(slug);
+  return {
+    ...metadataFrom(ws),
+    title: `Berlangganan ${ws.siteName}`,
+  };
+}
 
 export default async function OptInPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
