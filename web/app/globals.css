@@ -45,17 +45,30 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ChatCepat brand (template web/chatcepat) */
+  --color-brand-navy: #1e2a78;
+  --color-brand-blue: #3b82f6;
+  --color-brand-light: #60a5fa;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-ch-whatsapp: #25d366;
+  --color-ch-instagram: #dd2a7b;
+  --color-ch-messenger: #0084ff;
+  --color-ch-telegram: #0088cc;
+  --color-ch-facebook: #1877f2;
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --background: #f8fafc;
+  --foreground: #1e2a78;
+  --card: #ffffff;
+  --card-foreground: #1e2a78;
+  --popover: #ffffff;
+  --popover-foreground: #1e2a78;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);

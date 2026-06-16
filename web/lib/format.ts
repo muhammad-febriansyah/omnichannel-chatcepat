@@ -1,0 +1,56 @@
+export function cleanIDR(n: number): string {
+  return new Intl.NumberFormat("id-ID").format(n);
+}
+
+export function rupiah(n: number): string {
+  return "Rp " + cleanIDR(n);
+}
+
+export type ChannelType =
+  | "wa_official"
+  | "wa_unofficial"
+  | "instagram"
+  | "facebook"
+  | "telegram";
+
+export const CHANNEL_META: Record<ChannelType, { label: string; color: string; short: string }> = {
+  wa_official: { label: "WhatsApp", color: "#25d366", short: "WA" },
+  wa_unofficial: { label: "WhatsApp", color: "#25d366", short: "WA" },
+  instagram: { label: "Instagram", color: "#dd2a7b", short: "IG" },
+  facebook: { label: "Facebook", color: "#1877f2", short: "FB" },
+  telegram: { label: "Telegram", color: "#0088cc", short: "TG" },
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  open: "Terbuka",
+  pending: "Menunggu",
+  resolved: "Selesai",
+  snoozed: "Ditunda",
+  connected: "Terhubung",
+  disconnected: "Terputus",
+  banned: "Diblokir",
+};
+
+export function statusLabel(s: string): string {
+  return STATUS_LABEL[s] ?? s;
+}
+
+export function initials(name: string | null | undefined): string {
+  if (!name) return "?";
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+export function timeAgo(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return "baru saja";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}j`;
+  return `${Math.floor(s / 86400)}h`;
+}

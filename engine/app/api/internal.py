@@ -5,10 +5,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from pydantic import BaseModel
 
 from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
 from ..services.broadcast import dispatch, run_broadcast
+from ..services.conversation import send_agent_reply
 
 router = APIRouter(prefix="/internal/v1")
 
@@ -39,4 +41,25 @@ async def broadcasts_run(
     result = await run_broadcast(broadcast_id)
     if result.get("status") == "running":
         background.add_task(dispatch, broadcast_id)
+    return {"data": result}
+
+
+class ReplyIn(BaseModel):
+    body: str
+    agent_id: uuid.UUID | None = None
+
+
+@router.post("/conversations/{conversation_id}/reply")
+async def conversation_reply(
+    conversation_id: uuid.UUID,
+    payload: ReplyIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """Agen balas percakapan (takeover + kirim). Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    if not payload.body.strip():
+        raise HTTPException(status_code=422, detail="pesan kosong")
+    result = await send_agent_reply(conversation_id, payload.body.strip(), payload.agent_id)
     return {"data": result}
