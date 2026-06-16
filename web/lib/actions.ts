@@ -11,6 +11,7 @@ import { requireAbility, type Role } from "./rbac";
 import { requireSession } from "./session";
 import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
+import { normalizeWebSettings, type WebSettings } from "./web-settings";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -556,4 +557,16 @@ export async function createOptIn(
     optInAt: now,
     tags: [],
   });
+}
+
+// --- Pengaturan website/brand (logo, SEO, sosmed). RBAC billing.tenant (admin). ---
+export async function saveWebSettings(input: WebSettings) {
+  const session = await requireSession();
+  requireAbility(session, "billing.tenant");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const web_settings = normalizeWebSettings(input);
+  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
+  const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), web_settings };
+  await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, session.tenantId));
+  revalidatePath("/settings/web");
 }

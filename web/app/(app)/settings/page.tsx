@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Clock, UserCog, Plug, Tag, Sparkles, ChevronRight } from "lucide-react";
+import { Clock, UserCog, Plug, Tag, Sparkles, Globe, ChevronRight } from "lucide-react";
 
 const ITEMS = [
+  { href: "/settings/web", icon: Globe, title: "Website", desc: "Logo, SEO, favicon, sosial media", tone: "#0ea5e9" },
   { href: "/settings/business-hours", icon: Clock, title: "Jam Kerja", desc: "Jam operasional & pesan out-of-office", tone: "#3b82f6" },
   { href: "/settings/users", icon: UserCog, title: "Tim", desc: "Kelola anggota tim & role", tone: "#8b5cf6" },
   { href: "/channels", icon: Plug, title: "Channel", desc: "Hubungkan & kelola channel chat", tone: "#10b981" },

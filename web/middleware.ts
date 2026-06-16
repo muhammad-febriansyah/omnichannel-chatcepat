@@ -8,6 +8,7 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
   { prefix: "/channels", ability: "channel.view" },
   { prefix: "/settings/users", ability: "user.manage" },
   { prefix: "/settings/business-hours", ability: "flow.manage" },
+  { prefix: "/settings/web", ability: "billing.tenant" },
   { prefix: "/contacts", ability: "contact.view" },
   { prefix: "/tags", ability: "contact.manage" },
   { prefix: "/templates", ability: "broadcast.manage" },
