@@ -1,7 +1,10 @@
 import { cache } from "react";
-import { and, eq } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { tenants, users } from "./db/schema";
+import { tenants } from "./db/schema";
+import { SESSION_COOKIE, verifySession } from "./auth";
 import type { Role, SessionUser } from "./rbac";
 
 export interface Session extends SessionUser {
@@ -10,34 +13,34 @@ export interface Session extends SessionUser {
   tenantName: string | null;
 }
 
-// DEV: ambil admin pertama dari DB. TODO(08): auth nyata (JWT httpOnly cookie / NextAuth),
-// tenant_id dari sesi — JANGAN dari input user. Lihat docs/prd/09.
-export const getSession = cache(async (): Promise<Session> => {
-  const fallback: Session = {
-    id: "dev",
-    role: "admin",
-    tenantId: null,
-    name: "Dev Admin",
-    email: "dev@chatcepat.local",
-    tenantName: null,
-  };
+// Baca sesi dari cookie JWT httpOnly. null = belum login.
+export const getSession = cache(async (): Promise<Session | null> => {
+  const store = await cookies();
+  const payload = await verifySession(store.get(SESSION_COOKIE)?.value);
+  if (!payload) return null;
+
+  let tenantName: string | null = null;
   try {
-    const tenant = await db.query.tenants.findFirst();
-    if (!tenant) return fallback;
-    const admin = await db.query.users.findFirst({
-      where: and(eq(users.tenantId, tenant.id), eq(users.role, "admin")),
-    });
-    return {
-      id: admin?.id ?? "dev",
-      role: (admin?.role as Role) ?? "admin",
-      tenantId: tenant.id,
-      name: admin?.name ?? "Dev Admin",
-      email: admin?.email ?? "dev@chatcepat.local",
-      tenantName: tenant.name,
-    };
+    if (payload.tenantId) {
+      const t = await db.query.tenants.findFirst({ where: eq(tenants.id, payload.tenantId) });
+      tenantName = t?.name ?? null;
+    }
   } catch {
-    return fallback;
+    /* abaikan */
   }
+  return {
+    id: payload.sub,
+    role: payload.role as Role,
+    tenantId: payload.tenantId,
+    name: payload.name,
+    email: payload.email,
+    tenantName,
+  };
 });
 
-export { tenants, users };
+// Wajib login — redirect ke /login kalau belum.
+export async function requireSession(): Promise<Session> {
+  const s = await getSession();
+  if (!s) redirect("/login");
+  return s;
+}

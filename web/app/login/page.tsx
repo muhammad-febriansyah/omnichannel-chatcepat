@@ -1,21 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { Mail, Lock, Eye, EyeOff, MessageSquare, Check } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
+import { login } from "@/lib/actions";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [show, setShow] = useState(false);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [pending, start] = useTransition();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO(08): auth nyata (JWT httpOnly cookie). Sekarang dev → langsung masuk.
-    gooeyToast.success("Selamat datang!");
-    router.push("/dashboard");
+    if (!email.trim() || !pw) {
+      gooeyToast.error("Email & password wajib diisi");
+      return;
+    }
+    start(async () => {
+      try {
+        await login(email, pw);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Gagal masuk";
+        if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
+      }
+    });
   }
 
   return (
@@ -98,10 +107,14 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="mt-6 h-11 w-full rounded-lg bg-gradient-to-br from-brand-navy to-brand-blue text-sm font-semibold text-white transition hover:opacity-95"
+            disabled={pending}
+            className="mt-6 h-11 w-full rounded-lg bg-gradient-to-br from-brand-navy to-brand-blue text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-60"
           >
-            Masuk
+            {pending ? "Masuk…" : "Masuk"}
           </button>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Demo: admin@chatcepat.com / admin123
+          </p>
           <p className="mt-4 text-center text-xs text-muted-foreground">
             Belum punya akun? <span className="font-medium text-brand-blue">Daftar gratis</span>
           </p>

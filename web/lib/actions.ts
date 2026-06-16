@@ -2,13 +2,51 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { and, eq, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts } from "./db/schema";
-import { requireAbility } from "./rbac";
-import { getSession } from "./session";
+import { broadcasts, channels, contacts, users } from "./db/schema";
+import { requireAbility, type Role } from "./rbac";
+import { requireSession } from "./session";
+import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
+
+// --- Auth ---
+export async function login(email: string, password: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, email.trim().toLowerCase()),
+  });
+  if (!user || !user.passwordHash || user.status !== "active") {
+    throw new Error("Email atau password salah");
+  }
+  const okPw = await bcrypt.compare(password, user.passwordHash);
+  if (!okPw) throw new Error("Email atau password salah");
+
+  const token = await signSession({
+    sub: user.id,
+    role: user.role as Role,
+    tenantId: user.tenantId,
+    name: user.name,
+    email: user.email,
+  });
+  const store = await cookies();
+  store.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
+  redirect("/dashboard");
+}
+
+export async function logout() {
+  const store = await cookies();
+  store.delete(SESSION_COOKIE);
+  redirect("/login");
+}
 
 type ChannelType = "wa_official" | "wa_unofficial" | "instagram" | "facebook" | "telegram";
 
@@ -19,7 +57,7 @@ export async function createChannel(input: {
   credentials: Record<string, string>;
   externalId?: string;
 }) {
-  const session = await getSession();
+  const session = await requireSession();
   requireAbility(session, "channel.connect");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.name.trim()) throw new Error("Nama channel wajib");
@@ -40,7 +78,7 @@ export async function createChannel(input: {
 
 // --- Broadcast: estimasi audience (opt-in dipaksa). ---
 export async function previewAudience(tags: string[]): Promise<number> {
-  const session = await getSession();
+  const session = await requireSession();
   if (!session.tenantId) return 0;
   try {
     const conds = [
@@ -65,7 +103,7 @@ export async function createAndRunBroadcast(input: {
   body: string;
   tags: string[];
 }) {
-  const session = await getSession();
+  const session = await requireSession();
   requireAbility(session, "broadcast.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
 
@@ -98,7 +136,7 @@ export async function createAndRunBroadcast(input: {
 }
 
 export async function sendReply(conversationId: string, body: string) {
-  const session = await getSession();
+  const session = await requireSession();
   const res = await fetch(`${ENGINE}/conversations/${conversationId}/reply`, {
     method: "POST",
     headers: {

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Phone, Tag, ShieldCheck } from "lucide-react";
 import { Composer } from "@/components/app/composer";
 import { getConversation, getThread } from "@/lib/queries";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { CHANNEL_META, ChannelType, initials, statusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ export default async function ThreadPage({
   params: Promise<{ conversationId: string }>;
 }) {
   const { conversationId } = await params;
-  const session = await getSession();
+  const session = await requireSession();
   const conv = await getConversation(session, conversationId);
   if (!conv) notFound();
   const thread = await getThread(conversationId);

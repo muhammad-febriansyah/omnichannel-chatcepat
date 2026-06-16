@@ -1,10 +1,10 @@
 import { ConversationList, ConvItem } from "@/components/app/conversation-list";
 import { RealtimeRefresher } from "@/components/app/realtime-refresher";
 import { getConversations } from "@/lib/queries";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 
 export default async function InboxLayout({ children }: { children: React.ReactNode }) {
-  const session = await getSession();
+  const session = await requireSession();
   const rows = await getConversations(session);
   const items: ConvItem[] = rows.map((c) => ({
     id: c.id,

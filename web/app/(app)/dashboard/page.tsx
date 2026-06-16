@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { MessageSquare, Inbox, Clock, CheckCircle2, TrendingUp } from "lucide-react";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 
 async function counts(tenantId: string | null) {
@@ -65,7 +65,7 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const session = await getSession();
+  const session = await requireSession();
   const c = await counts(session.tenantId);
   const max = Math.max(...VOLUME.map((x) => x.v));
 

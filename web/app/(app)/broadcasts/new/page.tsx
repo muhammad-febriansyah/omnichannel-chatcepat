@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, tags as tagsTable } from "@/lib/db/schema";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { BroadcastWizard } from "@/components/app/broadcast-wizard";
 
 export default async function NewBroadcastPage() {
-  const session = await getSession();
+  const session = await requireSession();
   let chans: { id: string; name: string; type: string }[] = [];
   let tagNames: string[] = [];
   if (session.tenantId) {

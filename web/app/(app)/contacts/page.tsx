@@ -3,7 +3,7 @@ import { Plus, Upload } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { initials } from "@/lib/format";
 
 const OPTIN: Record<string, { label: string; cls: string }> = {
@@ -26,7 +26,7 @@ async function load(tenantId: string | null) {
 }
 
 export default async function ContactsPage() {
-  const session = await getSession();
+  const session = await requireSession();
   const rows = await load(session.tenantId);
 
   return (

@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useTransition } from "react";
 import { usePathname } from "next/navigation";
+import { logout } from "@/lib/actions";
 import {
   Inbox,
   Users,
@@ -50,6 +52,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [, startLogout] = useTransition();
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex h-16 items-center gap-2 px-5">
@@ -97,13 +100,13 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border p-3">
-        <Link
-          href="/login"
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-slate-100 hover:text-danger"
+        <button
+          onClick={() => startLogout(() => logout())}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-slate-100 hover:text-danger"
         >
           <LogOut className="size-[18px]" />
           Keluar
-        </Link>
+        </button>
       </div>
     </aside>
   );

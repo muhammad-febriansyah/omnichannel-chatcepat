@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Plus, Send } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts } from "@/lib/db/schema";
-import { getSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 
 const STATUS_CLS: Record<string, string> = {
@@ -28,7 +28,7 @@ async function load(tenantId: string | null) {
 }
 
 export default async function BroadcastsPage() {
-  const session = await getSession();
+  const session = await requireSession();
   const rows = await load(session.tenantId);
 
   return (
