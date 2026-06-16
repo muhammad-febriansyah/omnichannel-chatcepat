@@ -80,6 +80,12 @@ export function Sidebar({
     items: sec.items.filter((it) => !it.ability || can({ role }, it.ability)),
   })).filter((sec) => sec.items.length > 0);
 
+  // Aktif = href dengan prefix-match terpanjang (hindari /settings ikut aktif di /settings/users).
+  const activeHref = sections
+    .flatMap((s) => s.items.map((it) => it.href))
+    .filter((href) => pathname === href || pathname.startsWith(href + "/"))
+    .reduce((best, href) => (href.length > best.length ? href : best), "");
+
   const channelConnected = stats.channelsConnected > 0;
   const channelText =
     stats.channelsTotal === 0
@@ -145,7 +151,7 @@ export function Sidebar({
               </div>
             )}
             {sec.items.map((it) => {
-              const active = pathname === it.href || pathname.startsWith(it.href + "/");
+              const active = it.href === activeHref;
               const Icon = it.icon;
               return (
                 <Link
