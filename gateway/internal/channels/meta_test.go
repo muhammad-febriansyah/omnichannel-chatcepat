@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
+
+	"github.com/chatcepat/gateway/internal/contracts"
 )
 
 func TestVerifySignature(t *testing.T) {
@@ -52,6 +54,50 @@ func TestParseWhatsAppCloud(t *testing.T) {
 		t.Fatalf("phone_number_id salah: %q", p.PhoneNumberID)
 	}
 	if p.Inbound.ProviderMessageId != "wamid.A" || p.Inbound.Body == nil || *p.Inbound.Body != "halo" {
+		t.Fatalf("normalisasi salah: %+v", p.Inbound)
+	}
+}
+
+func TestParseMessengerFacebook(t *testing.T) {
+	body := []byte(`{"object":"page","entry":[{"id":"PAGE123","messaging":[
+		{"sender":{"id":"PSID9"},"recipient":{"id":"PAGE123"},"timestamp":1700000000000,
+		 "message":{"mid":"mid.fb1","text":"halo fb"}}]}]}`)
+	parsed, err := ParseMessenger(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("harus 1 pesan, got %d", len(parsed))
+	}
+	p := parsed[0]
+	if p.ExternalID != "PAGE123" {
+		t.Fatalf("external_id (page) salah: %q", p.ExternalID)
+	}
+	if p.Inbound.ChannelType != contracts.ChannelTypeFacebook {
+		t.Fatalf("channel type salah: %q", p.Inbound.ChannelType)
+	}
+	if p.Inbound.From.ExternalId != "PSID9" || p.Inbound.ProviderMessageId != "mid.fb1" ||
+		p.Inbound.Body == nil || *p.Inbound.Body != "halo fb" {
+		t.Fatalf("normalisasi salah: %+v", p.Inbound)
+	}
+}
+
+func TestParseMessengerInstagramSkipsEcho(t *testing.T) {
+	body := []byte(`{"object":"instagram","entry":[{"id":"IG777","messaging":[
+		{"sender":{"id":"ME"},"message":{"mid":"mid.echo","text":"keluar","is_echo":true}},
+		{"sender":{"id":"IGSID5"},"message":{"mid":"mid.ig1","text":"halo ig"}}]}]}`)
+	parsed, err := ParseMessenger(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("echo harus dilewati, got %d", len(parsed))
+	}
+	p := parsed[0]
+	if p.ExternalID != "IG777" || p.Inbound.ChannelType != contracts.ChannelTypeInstagram {
+		t.Fatalf("ig parse salah: ext=%q type=%q", p.ExternalID, p.Inbound.ChannelType)
+	}
+	if p.Inbound.From.ExternalId != "IGSID5" || p.Inbound.Body == nil || *p.Inbound.Body != "halo ig" {
 		t.Fatalf("normalisasi salah: %+v", p.Inbound)
 	}
 }

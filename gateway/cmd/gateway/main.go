@@ -11,6 +11,7 @@ import (
 
 	"github.com/chatcepat/gateway/internal/bus"
 	"github.com/chatcepat/gateway/internal/channels"
+	"github.com/chatcepat/gateway/internal/contracts"
 	"github.com/chatcepat/gateway/internal/server"
 	"github.com/chatcepat/gateway/internal/worker"
 	"github.com/chatcepat/gateway/internal/ws"
@@ -71,6 +72,8 @@ func main() {
 	registry := channels.NewRegistry(
 		channels.NewTelegram(),
 		channels.NewMetaSender(),
+		channels.NewMessengerSender(contracts.ChannelTypeFacebook),
+		channels.NewMessengerSender(contracts.ChannelTypeInstagram),
 		wa,
 	)
 

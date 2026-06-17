@@ -43,6 +43,7 @@ func VerifyChallenge(verifyToken, mode, token, challenge string) (string, bool) 
 // ParsedInbound = hasil normalisasi sebelum channel_id/tenant di-resolve oleh server.
 type ParsedInbound struct {
 	PhoneNumberID string // value.metadata.phone_number_id → cocokkan ke channels.external_id
+	ExternalID    string // id akun (phone_number_id / page_id / ig_id) → channels.external_id
 	Inbound       contracts.InboundMessage
 }
 
@@ -120,6 +121,63 @@ func optStr(s string) *string {
 	return &s
 }
 
+// --- Inbound parsing (Messenger Platform: Facebook + Instagram) ---
+
+// ParseMessenger menormalisasi webhook Messenger/Instagram → daftar pesan masuk.
+// object "page" → facebook, "instagram" → instagram. ExternalID = entry.id (page/ig id),
+// dicocokkan ke channels.external_id. Lewati echo (pesan keluar kita sendiri) & non-teks.
+func ParseMessenger(body []byte) ([]ParsedInbound, error) {
+	var payload struct {
+		Object string `json:"object"`
+		Entry  []struct {
+			ID        string `json:"id"`
+			Messaging []struct {
+				Sender    struct {
+					ID string `json:"id"`
+				} `json:"sender"`
+				Timestamp int64 `json:"timestamp"`
+				Message   struct {
+					Mid    string `json:"mid"`
+					Text   string `json:"text"`
+					IsEcho bool   `json:"is_echo"`
+				} `json:"message"`
+			} `json:"messaging"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	ct := contracts.ChannelTypeFacebook
+	if payload.Object == "instagram" {
+		ct = contracts.ChannelTypeInstagram
+	}
+
+	var out []ParsedInbound
+	for _, e := range payload.Entry {
+		for _, msg := range e.Messaging {
+			if msg.Message.IsEcho || msg.Message.Text == "" {
+				continue // echo / delivery / read / non-teks → lewati
+			}
+			text := msg.Message.Text
+			ts := time.Now().UTC()
+			if msg.Timestamp > 0 {
+				ts = time.UnixMilli(msg.Timestamp).UTC()
+			}
+			inb := contracts.InboundMessage{
+				ChannelType:       ct,
+				ProviderMessageId: msg.Message.Mid,
+				From:              contracts.Party{ExternalId: msg.Sender.ID},
+				Type:              contracts.InboundMessageTypeText,
+				Body:              &text,
+				Timestamp:         ts,
+			}
+			out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
+		}
+	}
+	return out, nil
+}
+
 // --- Outbound (Graph API) ---
 
 // MetaSender mengirim lewat WA Cloud Graph API. credentials: phone_number_id, access_token.
@@ -182,4 +240,65 @@ func (m *MetaSender) Send(ctx context.Context, cmd contracts.OutboundCommand, cr
 		return "", fmt.Errorf("meta send gagal: %s", out.Error.Message)
 	}
 	return out.Messages[0].ID, nil
+}
+
+// MessengerSender mengirim lewat Messenger Platform Send API (Facebook + Instagram).
+// Endpoint sama untuk keduanya: POST /{page_id|ig_id}/messages, recipient.id = PSID/IGSID.
+// credentials: page_id (= external_id), access_token (page access token).
+type MessengerSender struct {
+	channelType contracts.ChannelType
+	http        *http.Client
+}
+
+func NewMessengerSender(t contracts.ChannelType) *MessengerSender {
+	return &MessengerSender{channelType: t, http: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func (m *MessengerSender) Type() contracts.ChannelType { return m.channelType }
+
+func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundCommand, creds Credentials) (string, error) {
+	pageID := creds.String("page_id")
+	token := creds.String("access_token")
+	if pageID == "" || token == "" {
+		return "", fmt.Errorf("messenger: page_id/access_token kosong")
+	}
+	body := ""
+	if cmd.Body != nil {
+		body = *cmd.Body
+	}
+	if body == "" {
+		return "", fmt.Errorf("messenger: body kosong")
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"recipient":      map[string]any{"id": cmd.To.ExternalId},
+		"messaging_type": "RESPONSE",
+		"message":        map[string]any{"text": body},
+	})
+	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", pageID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var out struct {
+		MessageID string `json:"message_id"`
+		Error     struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 300 || out.MessageID == "" {
+		return "", fmt.Errorf("messenger send gagal: %s", out.Error.Message)
+	}
+	return out.MessageID, nil
 }
