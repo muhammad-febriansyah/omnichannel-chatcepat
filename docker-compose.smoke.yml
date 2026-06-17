@@ -27,6 +27,7 @@ services:
 
   engine:
     build: ./engine
+    image: chatcepat-engine        # satu image dipakai bertiga (hindari rebuild terpisah)
     env_file: .env
     depends_on:
       postgres: { condition: service_healthy }
@@ -35,7 +36,7 @@ services:
     # uses image CMD: alembic upgrade head && uvicorn (no --reload)
 
   engine-consumer:
-    build: ./engine
+    image: chatcepat-engine        # reuse image dari service `engine`
     env_file: .env
     depends_on:
       engine: { condition: service_started }
@@ -44,7 +45,7 @@ services:
     command: "python -m app.consumers.inbound_consumer"
 
   engine-broadcast:
-    build: ./engine
+    image: chatcepat-engine        # reuse image dari service `engine`
     env_file: .env
     depends_on:
       engine: { condition: service_started }
