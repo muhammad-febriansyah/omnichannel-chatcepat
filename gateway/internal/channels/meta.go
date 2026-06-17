@@ -191,26 +191,54 @@ func NewMetaSender() *MetaSender {
 
 func (m *MetaSender) Type() contracts.ChannelType { return contracts.ChannelTypeWaOfficial }
 
+// waMessagePayload membangun body WA Cloud /messages: text (dalam window) atau
+// template HSM (luar window 24 jam). template: {name, language.code, components?}.
+func waMessagePayload(cmd contracts.OutboundCommand, to string) (map[string]any, error) {
+	payload := map[string]any{"messaging_product": "whatsapp", "to": to}
+	if cmd.Type == contracts.OutboundCommandTypeTemplate {
+		if cmd.Template == nil || cmd.Template.Name == nil || *cmd.Template.Name == "" {
+			return nil, fmt.Errorf("meta: template name kosong")
+		}
+		lang := "id"
+		if cmd.Template.Lang != nil && *cmd.Template.Lang != "" {
+			lang = *cmd.Template.Lang
+		}
+		tmpl := map[string]any{
+			"name":     *cmd.Template.Name,
+			"language": map[string]any{"code": lang},
+		}
+		if len(cmd.Template.Components) > 0 {
+			tmpl["components"] = cmd.Template.Components
+		}
+		payload["type"] = "template"
+		payload["template"] = tmpl
+		return payload, nil
+	}
+	body := ""
+	if cmd.Body != nil {
+		body = *cmd.Body
+	}
+	payload["type"] = "text"
+	payload["text"] = map[string]any{"body": body}
+	return payload, nil
+}
+
 func (m *MetaSender) Send(ctx context.Context, cmd contracts.OutboundCommand, creds Credentials) (string, error) {
 	phoneNumberID := creds.String("phone_number_id")
 	token := creds.String("access_token")
 	if phoneNumberID == "" || token == "" {
 		return "", fmt.Errorf("meta: phone_number_id/access_token kosong")
 	}
-	body := ""
-	if cmd.Body != nil {
-		body = *cmd.Body
-	}
 	to := cmd.To.ExternalId
 	if cmd.To.Phone != nil {
 		to = strings.TrimPrefix(*cmd.To.Phone, "+")
 	}
-	reqBody, _ := json.Marshal(map[string]any{
-		"messaging_product": "whatsapp",
-		"to":                to,
-		"type":              "text",
-		"text":              map[string]any{"body": body},
-	})
+
+	payload, err := waMessagePayload(cmd, to)
+	if err != nil {
+		return "", err
+	}
+	reqBody, _ := json.Marshal(payload)
 	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", phoneNumberID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {

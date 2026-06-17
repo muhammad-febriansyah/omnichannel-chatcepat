@@ -101,3 +101,49 @@ func TestParseMessengerInstagramSkipsEcho(t *testing.T) {
 		t.Fatalf("normalisasi salah: %+v", p.Inbound)
 	}
 }
+
+func TestWAMessagePayloadText(t *testing.T) {
+	b := "halo"
+	p, err := waMessagePayload(contracts.OutboundCommand{
+		Type: contracts.OutboundCommandTypeText, Body: &b,
+	}, "628111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p["type"] != "text" {
+		t.Fatalf("type salah: %v", p["type"])
+	}
+	if p["text"].(map[string]any)["body"] != "halo" {
+		t.Fatalf("body salah: %v", p["text"])
+	}
+}
+
+func TestWAMessagePayloadTemplate(t *testing.T) {
+	name, lang := "order_update", "en_US"
+	p, err := waMessagePayload(contracts.OutboundCommand{
+		Type:     contracts.OutboundCommandTypeTemplate,
+		Template: &contracts.OutboundCommandTemplate{Name: &name, Lang: &lang},
+	}, "628111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p["type"] != "template" {
+		t.Fatalf("type salah: %v", p["type"])
+	}
+	tmpl := p["template"].(map[string]any)
+	if tmpl["name"] != "order_update" {
+		t.Fatalf("name salah: %v", tmpl["name"])
+	}
+	if tmpl["language"].(map[string]any)["code"] != "en_US" {
+		t.Fatalf("lang salah: %v", tmpl["language"])
+	}
+}
+
+func TestWAMessagePayloadTemplateMissingName(t *testing.T) {
+	_, err := waMessagePayload(contracts.OutboundCommand{
+		Type: contracts.OutboundCommandTypeTemplate, Template: nil,
+	}, "628111")
+	if err == nil {
+		t.Fatal("harus error kalau template name kosong")
+	}
+}

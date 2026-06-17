@@ -9,20 +9,38 @@ import { CHANNEL_META, ChannelType, cleanIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Channel = { id: string; name: string; type: string };
+export type TemplateOpt = { name: string; body: string; language: string };
 
 const STEPS = ["Audience", "Pesan", "Konfirmasi"];
 
-export function BroadcastWizard({ channels, tags }: { channels: Channel[]; tags: string[] }) {
+export function BroadcastWizard({
+  channels,
+  tags,
+  templates = [],
+}: {
+  channels: Channel[];
+  tags: string[];
+  templates?: TemplateOpt[];
+}) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [selTags, setSelTags] = useState<string[]>([]);
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [body, setBody] = useState("");
+  const [templateName, setTemplateName] = useState("");
   const [estimate, setEstimate] = useState<number | null>(null);
   const [pending, start] = useTransition();
 
   const channel = channels.find((c) => c.id === channelId);
   const isUnofficial = channel?.type === "wa_unofficial";
+  const isOfficial = channel?.type === "wa_official";
+  const useTemplate = isOfficial && !!templateName;
+
+  function pickTemplate(tn: string) {
+    setTemplateName(tn);
+    const t = templates.find((x) => x.name === tn);
+    if (t) setBody(t.body); // snapshot body template untuk preview/record
+  }
 
   useEffect(() => {
     let live = true;
@@ -43,7 +61,13 @@ export function BroadcastWizard({ channels, tags }: { channels: Channel[]; tags:
     start(async () => {
       try {
         await gooeyToast.promise(
-          createAndRunBroadcast({ name, channelId, body, tags: selTags }),
+          createAndRunBroadcast({
+            name,
+            channelId,
+            body,
+            tags: selTags,
+            templateId: useTemplate ? templateName : undefined,
+          }),
           { loading: "Menjalankan broadcast…", success: "Broadcast berjalan", error: "Gagal menjalankan" },
         );
       } catch {
@@ -108,7 +132,10 @@ export function BroadcastWizard({ channels, tags }: { channels: Channel[]; tags:
             <label className="mt-4 block text-sm font-medium">Channel</label>
             <select
               value={channelId}
-              onChange={(e) => setChannelId(e.target.value)}
+              onChange={(e) => {
+                setChannelId(e.target.value);
+                setTemplateName(""); // template hanya valid utk channel WA official terpilih
+              }}
               className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue"
             >
               {channels.length === 0 && <option value="">Belum ada channel</option>}
@@ -134,16 +161,47 @@ export function BroadcastWizard({ channels, tags }: { channels: Channel[]; tags:
 
         {step === 1 && (
           <>
-            <label className="block text-sm font-medium">Isi Pesan</label>
+            {isOfficial && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Template HSM (luar window 24 jam)</label>
+                <select
+                  value={templateName}
+                  onChange={(e) => pickTemplate(e.target.value)}
+                  className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue"
+                >
+                  <option value="">— Tanpa template (teks bebas, hanya dalam window) —</option>
+                  {templates.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name} ({t.language})
+                    </option>
+                  ))}
+                </select>
+                {templates.length === 0 && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Belum ada template HSM approved. Buat di menu Template Pesan.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <label className="block text-sm font-medium">
+              {useTemplate ? "Isi Template (preview)" : "Isi Pesan"}
+            </label>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
+              readOnly={useTemplate}
               rows={6}
               placeholder="Tulis pesan broadcast… (official di luar window butuh template)"
-              className="mt-1.5 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+              className={cn(
+                "mt-1.5 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10",
+                useTemplate && "bg-slate-50 text-muted-foreground",
+              )}
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              Isi di-snapshot saat broadcast dibuat (tak ikut perubahan template).
+              {useTemplate
+                ? `Pakai template "${templateName}". Variabel {{n}} perlu parameter — belum didukung di wizard ini.`
+                : "Isi di-snapshot saat broadcast dibuat (tak ikut perubahan template)."}
             </p>
           </>
         )}
@@ -152,6 +210,7 @@ export function BroadcastWizard({ channels, tags }: { channels: Channel[]; tags:
           <div className="space-y-2 text-sm">
             <Row k="Nama" v={name || "—"} />
             <Row k="Channel" v={channel ? `${channel.name} · ${CHANNEL_META[channel.type as ChannelType]?.label}` : "—"} />
+            <Row k="Template HSM" v={useTemplate ? templateName : "—"} />
             <Row k="Filter tag" v={selTags.length ? selTags.join(", ") : "semua opted-in"} />
             <Row k="Estimasi penerima" v={estimate === null ? "…" : `${cleanIDR(estimate)} kontak`} />
             <div className="rounded-lg bg-slate-50 p-3 text-muted-foreground">{body || "—"}</div>
