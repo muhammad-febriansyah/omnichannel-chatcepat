@@ -17,6 +17,7 @@ from .flow import Flow
 from .knowledge import KnowledgeDocument, KnowledgeChunk
 from .broadcast import Broadcast, BroadcastRecipient
 from .tag import Tag
+from .template import Template
 from .audit import AuditLog
 
 __all__ = [
@@ -34,5 +35,6 @@ __all__ = [
     "Broadcast",
     "BroadcastRecipient",
     "Tag",
+    "Template",
     "AuditLog",
 ]

@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { and, eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, tags, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
 import { getConversation } from "./queries";
@@ -651,4 +651,64 @@ export async function deleteTag(id: string) {
   await db.delete(tags).where(and(eq(tags.id, id), eq(tags.tenantId, session.tenantId)));
   revalidatePath("/tags");
   redirect("/tags");
+}
+
+// --- Template Pesan (08): WA HSM + balasan cepat ---
+type TemplateInput = {
+  name: string;
+  kind: "hsm" | "quick_reply";
+  category?: string;
+  language?: string;
+  body: string;
+};
+
+function normalizeTemplate(input: TemplateInput) {
+  const name = input.name.trim();
+  const body = input.body.trim();
+  if (!name) throw new Error("Nama template wajib diisi");
+  if (!body) throw new Error("Isi template wajib diisi");
+  const isHsm = input.kind === "hsm";
+  return {
+    name,
+    body,
+    kind: input.kind,
+    // HSM perlu approval Meta → draft; balasan cepat langsung aktif.
+    status: (isHsm ? "draft" : "approved") as "draft" | "approved",
+    category: isHsm ? input.category?.trim() || null : null,
+    language: isHsm ? input.language?.trim() || null : null,
+  };
+}
+
+export async function createTemplate(input: TemplateInput) {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const v = normalizeTemplate(input);
+  await db.insert(templates).values({ tenantId: session.tenantId, ...v });
+  revalidatePath("/templates");
+  redirect("/templates");
+}
+
+export async function updateTemplate(id: string, input: TemplateInput) {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const v = normalizeTemplate(input);
+  await db
+    .update(templates)
+    .set({ ...v, updatedAt: new Date().toISOString() })
+    .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
+  revalidatePath("/templates");
+  redirect("/templates");
+}
+
+export async function deleteTemplate(id: string) {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await db
+    .delete(templates)
+    .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
+  revalidatePath("/templates");
+  redirect("/templates");
 }
