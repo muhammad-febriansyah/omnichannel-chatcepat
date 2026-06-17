@@ -3,11 +3,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
+import { UPLOAD_DIR } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
-// POST /api/upload — terima file gambar (multipart), simpan ke public/uploads/<tenantId>,
-// balikkan { url } untuk disimpan di settings. Auth + tenant scope di sini.
+// POST /api/upload — terima file gambar (multipart), simpan ke UPLOAD_DIR/<tenantId>
+// (persisten, di luar public/), balikkan { url } /uploads/<tenant>/<name>. Auth + tenant scope.
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 const EXT: Record<string, string> = {
   "image/png": "png",
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Ukuran maksimal 2 MB" }, { status: 413 });
   }
 
-  const dir = path.join(process.cwd(), "public", "uploads", session.tenantId);
+  const dir = path.join(UPLOAD_DIR, session.tenantId);
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;
   const buf = Buffer.from(await file.arrayBuffer());

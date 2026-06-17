@@ -80,8 +80,9 @@ services:
     env_file: .env
     depends_on: [engine]
     ports: ["3000:3000"]
-    volumes: ["./web:/app", "/app/node_modules"]
+    volumes: ["./web:/app", "/app/node_modules", "uploads:/data/uploads"]
     command: "npm run dev"
 
 volumes:
   pgdata:
+  uploads:

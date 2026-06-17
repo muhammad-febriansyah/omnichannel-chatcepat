@@ -40,5 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# user-uploaded brand assets
+# user-uploaded brand assets (persistent dir; default lokal UPLOAD_DIR)
 /public/uploads/
+/var/
