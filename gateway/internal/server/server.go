@@ -87,6 +87,16 @@ func (s *Server) handleMetaWA(w http.ResponseWriter, r *http.Request) {
 			log.Printf("publish inbound gagal: %v", err)
 		}
 	}
+
+	// Delivery/read receipts (value.statuses[]) → message.status.
+	statuses, err := channels.ParseWhatsAppStatuses(body)
+	if err == nil {
+		for i := range statuses {
+			if _, err := s.Bus.PublishStatus(r.Context(), &statuses[i]); err != nil {
+				log.Printf("publish status gagal: %v", err)
+			}
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

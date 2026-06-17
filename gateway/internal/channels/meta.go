@@ -121,6 +121,47 @@ func optStr(s string) *string {
 	return &s
 }
 
+// ParseWhatsAppStatuses menormalisasi value.statuses[] (delivery/read receipt) WA Cloud
+// → []MessageStatus. IdempotencyKey kosong (webhook tak tahu) → engine match by
+// provider_message_id (wamid). Status: sent/delivered/read/failed.
+func ParseWhatsAppStatuses(body []byte) ([]contracts.MessageStatus, error) {
+	var payload struct {
+		Entry []struct {
+			Changes []struct {
+				Value struct {
+					Statuses []struct {
+						ID     string `json:"id"`
+						Status string `json:"status"`
+						Errors []struct {
+							Title string `json:"title"`
+						} `json:"errors"`
+					} `json:"statuses"`
+				} `json:"value"`
+			} `json:"changes"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	var out []contracts.MessageStatus
+	for _, e := range payload.Entry {
+		for _, c := range e.Changes {
+			for _, s := range c.Value.Statuses {
+				st := contracts.MessageStatus{
+					ProviderMessageId: optStr(s.ID),
+					Status:            contracts.MessageStatusStatus(s.Status),
+					Timestamp:         time.Now().UTC(),
+				}
+				if len(s.Errors) > 0 {
+					st.Error = optStr(s.Errors[0].Title)
+				}
+				out = append(out, st)
+			}
+		}
+	}
+	return out, nil
+}
+
 // --- Inbound parsing (Messenger Platform: Facebook + Instagram) ---
 
 // ParseMessenger menormalisasi webhook Messenger/Instagram → daftar pesan masuk.
