@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/app/sidebar";
+import { Sidebar, type SupportContact } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/lib/session";
 import type { SidebarStats } from "@/lib/plan";
@@ -12,11 +13,13 @@ export function AppShell({
   session,
   workspaceName,
   stats,
+  support,
   children,
 }: {
   session: Session;
   workspaceName?: string;
   stats: SidebarStats;
+  support?: SupportContact;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -55,11 +58,12 @@ export function AppShell({
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <Sidebar workspaceName={workspaceName} collapsed={collapsed} role={session.role} stats={stats} />
+        <Sidebar workspaceName={workspaceName} collapsed={collapsed} role={session.role} stats={stats} support={support} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar session={session} onToggleSidebar={toggle} />
+        <Breadcrumbs />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>

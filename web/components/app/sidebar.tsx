@@ -17,13 +17,13 @@ import {
   UserCog,
   Tag,
   Settings,
-  HelpCircle,
+  LifeBuoy,
+  MessageCircle,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type Ability, type Role } from "@/lib/rbac";
-import { cleanIDR } from "@/lib/format";
-import { PLAN_LABEL, type SidebarStats } from "@/lib/plan";
+import { type SidebarStats } from "@/lib/plan";
 import { CCLogo } from "@/components/app/charts";
 
 type Item = {
@@ -63,16 +63,19 @@ const SECTIONS: { title: string; items: Item[] }[] = [
   },
 ];
 
+export type SupportContact = { whatsapp?: string; phone?: string; email?: string };
+
 export function Sidebar({
-  workspaceName,
   collapsed = false,
   role,
   stats,
+  support,
 }: {
   workspaceName?: string;
   collapsed?: boolean;
   role: Role;
   stats: SidebarStats;
+  support?: SupportContact;
 }) {
   const pathname = usePathname();
   const sections = SECTIONS.map((sec) => ({
@@ -87,23 +90,18 @@ export function Sidebar({
     .reduce((best, href) => (href.length > best.length ? href : best), "");
 
   const channelConnected = stats.channelsConnected > 0;
-  const channelText =
-    stats.channelsTotal === 0
-      ? "Belum ada channel"
-      : `${stats.channelsConnected}/${stats.channelsTotal} channel terhubung`;
-  const usagePct = stats.quota ? Math.min(100, (stats.messagesSent / stats.quota) * 100) : 0;
-  const usageText = stats.quota
-    ? `${cleanIDR(stats.messagesSent)} / ${cleanIDR(stats.quota)}`
-    : `${cleanIDR(stats.messagesSent)} / ∞`;
-  const canUpgrade = stats.plan !== "enterprise";
   const [pendingLogout, startLogout] = useTransition();
-  const name = workspaceName ?? "Workspace";
-  const mono = name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+
+  // Kontak admin dari web_settings tenant (DB) — WA → telepon → email.
+  const supportWa = support?.whatsapp?.replace(/[^0-9]/g, "");
+  const supportPhone = support?.phone?.replace(/[^0-9+]/g, "");
+  const supportHref = supportWa
+    ? `https://wa.me/${supportWa}`
+    : supportPhone
+      ? `tel:${supportPhone}`
+      : support?.email
+        ? `mailto:${support.email}`
+        : "#";
 
   return (
     <aside
@@ -115,30 +113,6 @@ export function Sidebar({
       {/* Brand */}
       <div className={cn("pt-1", collapsed ? "flex justify-center" : "px-2")}>
         <CCLogo variant="dark" size={30} withWordmark={!collapsed} />
-      </div>
-
-      {/* Workspace card */}
-      <div
-        className={cn(
-          "flex items-center rounded-[10px] bg-gradient-to-br from-blue-50 to-blue-100",
-          collapsed ? "justify-center p-1.5" : "gap-2.5 p-2.5",
-        )}
-        title={collapsed ? name : undefined}
-      >
-        <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-gradient-to-br from-brand-navy to-brand-blue text-[13px] font-bold tracking-wide text-white">
-          {mono}
-        </span>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-[13px] font-semibold text-brand-navy">{name}</span>
-              <span className="rounded-full bg-brand-navy px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
-                {PLAN_LABEL[stats.plan]}
-              </span>
-            </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">{channelText}</div>
-          </div>
-        )}
       </div>
 
       {/* Nav */}
@@ -193,51 +167,55 @@ export function Sidebar({
       </nav>
 
       {/* Footer */}
-      <div className="mt-auto flex flex-col gap-2.5">
-        {!collapsed && (
-          <div className="flex flex-col gap-2 rounded-xl border border-blue-100 bg-gradient-to-b from-blue-50 to-card p-3">
-            <div className="flex justify-between text-[11px]">
-              <span className="font-medium text-muted-foreground">Pesan terkirim</span>
-              <span className="font-semibold text-brand-navy">{usageText}</span>
-            </div>
-            {stats.quota ? (
-              <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    usagePct >= 90
-                      ? "bg-gradient-to-r from-warning to-danger"
-                      : "bg-gradient-to-r from-brand-blue to-brand-light",
-                  )}
-                  style={{ width: `${usagePct}%` }}
-                />
+      <div className="mt-auto flex flex-col gap-2">
+        {/* Hubungi Admin */}
+        {collapsed ? (
+          <a
+            href={supportHref}
+            target={supportHref.startsWith("http") ? "_blank" : undefined}
+            rel="noreferrer"
+            title="Hubungi Admin"
+            aria-label="Hubungi Admin"
+            className="mx-auto grid size-9 place-items-center rounded-lg bg-blue-50 text-brand-blue transition-colors hover:bg-blue-100"
+          >
+            <LifeBuoy className="size-[18px]" />
+          </a>
+        ) : (
+          <div className="rounded-xl border border-border bg-gradient-to-br from-blue-50 to-card p-3">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-blue/10 text-brand-blue">
+                <LifeBuoy className="size-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-semibold text-foreground">Butuh bantuan?</div>
+                <div className="truncate text-[11px] text-muted-foreground">Tim admin siap membantu</div>
               </div>
-            ) : null}
-            {canUpgrade ? (
-              <button className="rounded-lg border-[1.5px] border-brand-blue bg-card py-1.5 text-[11.5px] font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white">
-                Upgrade Paket
-              </button>
-            ) : null}
+            </div>
+            <a
+              href={supportHref}
+              target={supportHref.startsWith("http") ? "_blank" : undefined}
+              rel="noreferrer"
+              className="mt-2.5 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand-blue text-[12px] font-semibold text-white transition hover:opacity-90"
+            >
+              <MessageCircle className="size-3.5" /> Hubungi Admin
+            </a>
           </div>
         )}
-        <div className={cn("flex justify-center gap-1.5", collapsed && "flex-col items-center")}>
-          <button
-            className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
-            title="Bantuan"
-            aria-label="Bantuan"
-          >
-            <HelpCircle className="size-[18px]" />
-          </button>
-          <button
-            onClick={() => startLogout(() => logout())}
-            disabled={pendingLogout}
-            className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-danger disabled:opacity-50"
-            title="Keluar"
-            aria-label="Keluar"
-          >
-            <LogOut className="size-[18px]" />
-          </button>
-        </div>
+
+        {/* Keluar */}
+        <button
+          onClick={() => startLogout(() => logout())}
+          disabled={pendingLogout}
+          className={cn(
+            "flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger disabled:opacity-50",
+            collapsed ? "mx-auto size-9 justify-center" : "h-9 gap-2 px-3 text-[13px] font-medium",
+          )}
+          title="Keluar"
+          aria-label="Keluar"
+        >
+          <LogOut className="size-[18px] shrink-0" />
+          {!collapsed && <span>{pendingLogout ? "Keluar…" : "Keluar"}</span>}
+        </button>
       </div>
     </aside>
   );
