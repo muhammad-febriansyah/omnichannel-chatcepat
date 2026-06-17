@@ -53,6 +53,15 @@ services:
       redis: { condition: service_healthy }
     command: "python -m app.consumers.broadcast_worker"
 
+  engine-status:
+    image: chatcepat-engine        # reuse image dari service `engine`
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: "python -m app.consumers.status_consumer"
+
   gateway:
     build: ./gateway
     env_file: .env

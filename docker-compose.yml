@@ -56,6 +56,17 @@ services:
     volumes: ["./engine:/app"]
     command: "python -m app.consumers.broadcast_worker"
 
+  # Worker: message.status (05) — delivery/read receipt → update + realtime.
+  engine-status:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes: ["./engine:/app"]
+    command: "python -m app.consumers.status_consumer"
+
   gateway:
     build: ./gateway
     env_file: .env
