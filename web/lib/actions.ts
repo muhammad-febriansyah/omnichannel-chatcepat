@@ -67,16 +67,41 @@ export async function createChannel(input: {
 
   // unofficial butuh scan QR (gateway) → pending; lainnya langsung connected kalau creds ada.
   const status = input.type === "wa_unofficial" ? "pending" : "connected";
-  await db.insert(channels).values({
-    tenantId: session.tenantId,
-    type: input.type,
-    name: input.name.trim(),
-    status,
-    credentials: input.credentials,
-    externalId: input.externalId || null,
-  });
+  const [row] = await db
+    .insert(channels)
+    .values({
+      tenantId: session.tenantId,
+      type: input.type,
+      name: input.name.trim(),
+      status,
+      credentials: input.credentials,
+      externalId: input.externalId || null,
+    })
+    .returning({ id: channels.id });
   revalidatePath("/channels");
-  redirect("/channels");
+  // wa_unofficial → lanjut ke halaman pairing QR; lainnya langsung selesai.
+  redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
+}
+
+// --- WA unofficial: simpan device JID hasil pairing (dipanggil dari halaman QR). ---
+export async function attachWaDevice(channelId: string, jid: string) {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!jid.trim()) throw new Error("JID device kosong");
+
+  const [ch] = await db
+    .select({ credentials: channels.credentials })
+    .from(channels)
+    .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
+  if (!ch) throw new Error("Channel tidak ditemukan");
+
+  const creds = { ...(ch.credentials as Record<string, unknown>), device_jid: jid };
+  await db
+    .update(channels)
+    .set({ status: "connected", externalId: jid, credentials: creds, updatedAt: sql`now()` })
+    .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
+  revalidatePath("/channels");
 }
 
 // --- Broadcast: estimasi audience (opt-in dipaksa). ---

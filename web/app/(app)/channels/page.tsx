@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Plug } from "lucide-react";
+import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
@@ -77,6 +77,14 @@ export default async function ChannelsPage() {
                     {statusLabel(c.status)}
                   </span>
                 </div>
+                {c.type === "wa_unofficial" && c.status !== "connected" && (
+                  <Link
+                    href={`/channels/${c.id}/pair`}
+                    className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-medium text-brand-blue hover:bg-slate-50"
+                  >
+                    <QrCode className="size-3.5" /> Scan QR untuk pairing
+                  </Link>
+                )}
               </div>
             );
           })}
