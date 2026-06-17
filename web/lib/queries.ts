@@ -44,10 +44,14 @@ export async function getConversation(session: Session, conversationId: string) 
   }
 }
 
-export async function getThread(conversationId: string) {
+export async function getThread(session: Session, conversationId: string) {
+  if (!session.tenantId) return [];
   try {
     return await db.query.messages.findMany({
-      where: eq(messages.conversationId, conversationId),
+      where: and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.tenantId, session.tenantId),
+      ),
       orderBy: [asc(messages.createdAt)],
       limit: 200,
     });

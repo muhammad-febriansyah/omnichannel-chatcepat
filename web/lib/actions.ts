@@ -8,7 +8,8 @@ import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { broadcasts, channels, contacts, flows, tags, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
-import { requireSession } from "./session";
+import { requireSession, type Session } from "./session";
+import { getConversation } from "./queries";
 import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
@@ -135,6 +136,13 @@ export async function createAndRunBroadcast(input: {
   requireAbility(session, "broadcast.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
 
+  // Channel WAJIB milik tenant ini — cegah broadcast lewat channel tenant lain.
+  const channel = await db.query.channels.findFirst({
+    where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
+    columns: { id: true },
+  });
+  if (!channel) throw new Error("Channel tidak ditemukan");
+
   const [row] = await db
     .insert(broadcasts)
     .values({
@@ -165,6 +173,7 @@ export async function createAndRunBroadcast(input: {
 
 export async function sendReply(conversationId: string, body: string) {
   const session = await requireSession();
+  await assertConvOwned(session, conversationId);
   const res = await fetch(`${ENGINE}/conversations/${conversationId}/reply`, {
     method: "POST",
     headers: {
@@ -494,13 +503,26 @@ export async function saveBusinessHours(input: BusinessHours) {
 }
 
 // --- Inbox: aksi state percakapan (lewat engine; conversations engine-owned, 01). ---
-async function convAction(path: string, role: string, body?: unknown): Promise<void> {
-  const res = await fetch(`${ENGINE}/conversations/${path}`, {
+// Pastikan percakapan milik tenant sesi sebelum panggil engine (engine internal API
+// percaya BFF; tenant scope WAJIB di-enforce di sini agar tak bocor lintas tenant).
+async function assertConvOwned(session: Session, conversationId: string): Promise<void> {
+  const conv = await getConversation(session, conversationId);
+  if (!conv) throw new Error("Percakapan tidak ditemukan");
+}
+
+async function convAction(
+  conversationId: string,
+  action: string,
+  session: Session,
+  body?: unknown,
+): Promise<void> {
+  await assertConvOwned(session, conversationId);
+  const res = await fetch(`${ENGINE}/conversations/${conversationId}/${action}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
-      "X-Actor-Role": role,
+      "X-Actor-Role": session.role,
     },
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
@@ -513,21 +535,21 @@ async function convAction(path: string, role: string, body?: unknown): Promise<v
 
 export async function resolveConversation(conversationId: string) {
   const session = await requireSession();
-  await convAction(`${conversationId}/resolve`, session.role);
+  await convAction(conversationId, "resolve", session);
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }
 
 export async function reopenConversation(conversationId: string) {
   const session = await requireSession();
-  await convAction(`${conversationId}/reopen`, session.role);
+  await convAction(conversationId, "reopen", session);
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }
 
 export async function returnToBot(conversationId: string) {
   const session = await requireSession();
-  await convAction(`${conversationId}/return-to-bot`, session.role);
+  await convAction(conversationId, "return-to-bot", session);
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }
@@ -535,7 +557,7 @@ export async function returnToBot(conversationId: string) {
 export async function takeoverConversation(conversationId: string) {
   const session = await requireSession();
   // takeover = assign ke diri sendiri (handler=agent).
-  await convAction(`${conversationId}/assign`, session.role, { agent_id: session.id });
+  await convAction(conversationId, "assign", session, { agent_id: session.id });
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }
@@ -543,7 +565,7 @@ export async function takeoverConversation(conversationId: string) {
 export async function assignConversation(conversationId: string, agentId: string) {
   const session = await requireSession();
   requireAbility(session, "conversation.assign");
-  await convAction(`${conversationId}/assign`, session.role, { agent_id: agentId });
+  await convAction(conversationId, "assign", session, { agent_id: agentId });
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }

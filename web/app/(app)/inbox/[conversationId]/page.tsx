@@ -27,7 +27,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
   const session = await requireSession();
   const conv = await getConversation(session, conversationId);
   if (!conv) notFound();
-  const thread = await getThread(conversationId);
+  const thread = await getThread(session, conversationId);
   const channelType = (conv.channel?.type ?? "wa_official") as ChannelType;
   const meta = CHANNEL_META[channelType];
   const name = conv.contact?.name ?? conv.contact?.phone ?? "Tanpa Nama";

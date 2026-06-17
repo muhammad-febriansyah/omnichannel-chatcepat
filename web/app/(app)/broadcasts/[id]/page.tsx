@@ -63,7 +63,9 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
   if (!b) notFound();
 
   const [channel, counts] = await Promise.all([
-    db.query.channels.findFirst({ where: eq(channels.id, b.channelId) }),
+    db.query.channels.findFirst({
+      where: and(eq(channels.id, b.channelId), eq(channels.tenantId, session.tenantId)),
+    }),
     recipientCounts(session.tenantId, id),
   ]);
 
