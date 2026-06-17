@@ -160,6 +160,7 @@ export async function createAndRunBroadcast(input: {
     headers: {
       "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
       "X-Actor-Role": session.role,
+      "X-Tenant-Id": session.tenantId,
     },
     cache: "no-store",
   });
@@ -180,6 +181,7 @@ export async function sendReply(conversationId: string, body: string) {
       "Content-Type": "application/json",
       "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
       "X-Actor-Role": session.role,
+      "X-Tenant-Id": session.tenantId ?? "",
     },
     body: JSON.stringify({ body }),
     cache: "no-store",
@@ -523,6 +525,7 @@ async function convAction(
       "Content-Type": "application/json",
       "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
       "X-Actor-Role": session.role,
+      "X-Tenant-Id": session.tenantId ?? "",
     },
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",

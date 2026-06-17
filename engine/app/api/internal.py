@@ -33,17 +33,28 @@ def _require(role: str | None, ability: str) -> None:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+def _tenant(x_tenant_id: str | None) -> uuid.UUID:
+    """Tenant dari header X-Tenant-Id (di-set BFF dari sesi). Wajib — scope per-tenant."""
+    if not x_tenant_id:
+        raise HTTPException(status_code=400, detail="X-Tenant-Id wajib")
+    try:
+        return uuid.UUID(x_tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="X-Tenant-Id invalid") from e
+
+
 @router.post("/broadcasts/{broadcast_id}/run")
 async def broadcasts_run(
     broadcast_id: uuid.UUID,
     background: BackgroundTasks,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Bangun recipients (guard opt_in) lalu dispatch di background (throttle)."""
     _auth(x_service_token)
     _require(x_actor_role, "broadcast.manage")
-    result = await run_broadcast(broadcast_id)
+    result = await run_broadcast(broadcast_id, _tenant(x_tenant_id))
     if result.get("status") == "running":
         background.add_task(dispatch, broadcast_id)
     return {"data": result}
@@ -60,13 +71,16 @@ async def conversation_reply(
     payload: ReplyIn,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Agen balas percakapan (takeover + kirim). Butuh conversation.takeover."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.takeover")
     if not payload.body.strip():
         raise HTTPException(status_code=422, detail="pesan kosong")
-    result = await send_agent_reply(conversation_id, payload.body.strip(), payload.agent_id)
+    result = await send_agent_reply(
+        conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
+    )
     return {"data": result}
 
 
@@ -75,11 +89,12 @@ async def conversation_resolve(
     conversation_id: uuid.UUID,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Tandai percakapan selesai. Butuh conversation.takeover."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.takeover")
-    return {"data": await set_status(conversation_id, "resolved")}
+    return {"data": await set_status(conversation_id, "resolved", _tenant(x_tenant_id))}
 
 
 @router.post("/conversations/{conversation_id}/reopen")
@@ -87,11 +102,12 @@ async def conversation_reopen(
     conversation_id: uuid.UUID,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Buka kembali percakapan yang sudah selesai. Butuh conversation.takeover."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.takeover")
-    return {"data": await set_status(conversation_id, "open")}
+    return {"data": await set_status(conversation_id, "open", _tenant(x_tenant_id))}
 
 
 @router.post("/conversations/{conversation_id}/return-to-bot")
@@ -99,11 +115,12 @@ async def conversation_return_to_bot(
     conversation_id: uuid.UUID,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Kembalikan penanganan ke AI agent (handler=bot). Butuh conversation.takeover."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.takeover")
-    return {"data": await set_handler(conversation_id, "bot")}
+    return {"data": await set_handler(conversation_id, "bot", _tenant(x_tenant_id))}
 
 
 class AssignIn(BaseModel):
@@ -116,11 +133,14 @@ async def conversation_assign(
     payload: AssignIn,
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
 ) -> dict:
     """Tugaskan percakapan ke agen. Butuh conversation.assign."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.assign")
-    return {"data": await assign_conversation(conversation_id, payload.agent_id)}
+    return {
+        "data": await assign_conversation(conversation_id, payload.agent_id, _tenant(x_tenant_id))
+    }
 
 
 # --- Knowledge base ingestion (06) ---

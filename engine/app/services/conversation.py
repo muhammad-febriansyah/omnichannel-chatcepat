@@ -15,13 +15,17 @@ from ..repositories import conversations, messages
 
 
 async def send_agent_reply(
-    conversation_id: uuid.UUID, body: str, agent_id: uuid.UUID | None = None
+    conversation_id: uuid.UUID,
+    body: str,
+    agent_id: uuid.UUID | None = None,
+    tenant_id: uuid.UUID | None = None,
 ) -> dict:
     """Agen balas → takeover (handler=agent), persist message, publish outbound + realtime."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
             conv = await conversations.get_with_state(session, conversation_id)
-            if conv is None:
+            # Tenant scope (defense-in-depth): mismatch = tidak ada.
+            if conv is None or (tenant_id is not None and conv.tenant_id != tenant_id):
                 raise ValueError(f"percakapan {conversation_id} tidak ada")
             channel = conv.channel
             contact = conv.contact
@@ -90,21 +94,24 @@ async def _publish_conv_updated(tenant_str: str, conversation_id: uuid.UUID, **f
     )
 
 
-async def _load(session, conversation_id: uuid.UUID):
+async def _load(session, conversation_id: uuid.UUID, tenant_id: uuid.UUID | None = None):
     from sqlalchemy import select
     from ..models import Conversation
 
     conv = await session.scalar(select(Conversation).where(Conversation.id == conversation_id))
-    if conv is None:
+    # Tenant scope (defense-in-depth): mismatch diperlakukan = tidak ada (jangan bocor).
+    if conv is None or (tenant_id is not None and conv.tenant_id != tenant_id):
         raise ValueError(f"percakapan {conversation_id} tidak ada")
     return conv
 
 
-async def set_status(conversation_id: uuid.UUID, status: str) -> dict:
+async def set_status(
+    conversation_id: uuid.UUID, status: str, tenant_id: uuid.UUID | None = None
+) -> dict:
     """Ubah status percakapan (open/resolved). docs/prd/05."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            conv = await _load(session, conversation_id)
+            conv = await _load(session, conversation_id, tenant_id)
             conv.status = status
             conv.updated_at = datetime.now(timezone.utc)
             tenant_str = str(conv.tenant_id)
@@ -112,11 +119,13 @@ async def set_status(conversation_id: uuid.UUID, status: str) -> dict:
     return {"status": status}
 
 
-async def set_handler(conversation_id: uuid.UUID, handler: str) -> dict:
+async def set_handler(
+    conversation_id: uuid.UUID, handler: str, tenant_id: uuid.UUID | None = None
+) -> dict:
     """Pindah penanganan (bot/agent). 'bot' = kembalikan ke AI agent. docs/prd/05."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            conv = await _load(session, conversation_id)
+            conv = await _load(session, conversation_id, tenant_id)
             conv.handler = handler
             if handler == "bot":
                 conv.assigned_agent_id = None
@@ -126,11 +135,13 @@ async def set_handler(conversation_id: uuid.UUID, handler: str) -> dict:
     return {"handler": handler}
 
 
-async def assign_conversation(conversation_id: uuid.UUID, agent_id: uuid.UUID) -> dict:
+async def assign_conversation(
+    conversation_id: uuid.UUID, agent_id: uuid.UUID, tenant_id: uuid.UUID | None = None
+) -> dict:
     """Tugaskan percakapan ke agen (handler=agent). Butuh conversation.assign. docs/prd/05."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            conv = await _load(session, conversation_id)
+            conv = await _load(session, conversation_id, tenant_id)
             conv.assigned_agent_id = agent_id
             conv.handler = "agent"
             conv.updated_at = datetime.now(timezone.utc)
