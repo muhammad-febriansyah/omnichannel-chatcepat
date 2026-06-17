@@ -96,8 +96,15 @@ async def _walk(
                 ctx[node["save_as"]] = ""
             node_id = node.get("next")
         elif ntype == "ai_agent":
-            text = await ai.try_ai(session, conv, channel, contact, inbound)
-            outcome.replies.append(text or DEFAULT_FALLBACK_MESSAGE)
+            res = await ai.try_ai(session, conv, channel, contact, inbound)
+            if res is None:
+                outcome.replies.append(DEFAULT_FALLBACK_MESSAGE)
+            else:
+                if res.reply:
+                    outcome.replies.append(res.reply)
+                if res.handoff:
+                    outcome.handoff = True
+                    return None, True
             node_id = node.get("next")
         elif ntype == "wait_reply":
             return node_id, False  # PAUSE di sini

@@ -34,6 +34,26 @@ async def exists_provider(
     return found is not None
 
 
+async def recent_turns(
+    session: AsyncSession, conversation_id: uuid.UUID, limit: int
+) -> list[Message]:
+    """`limit` pesan terakhir (ada body) urut lama→baru, untuk memori AI (06).
+
+    Termasuk pesan inbound terkini (sudah di-persist sebelum decide). Pemanggil
+    yang melampirkan query terpisah harus membuang turn terakhir bila duplikat.
+    """
+    rows = await session.scalars(
+        select(Message)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.body.isnot(None),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    return list(reversed(list(rows)))
+
+
 async def add_inbound(
     session: AsyncSession,
     *,
