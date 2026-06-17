@@ -39,17 +39,12 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 
-	// Adapter per channel type.
-	registry := channels.NewRegistry(
-		channels.NewTelegram(),
-		channels.NewMetaSender(),
-		channels.NewWhatsmeowStub(),
-	)
 	// Channel store: baca tabel channels (read-only) untuk routing + creds.
 	// Pakai Postgres kalau DSN ada; fallback in-memory utk dev tanpa DB.
+	dbDSN := env("DATABASE_URL_SYNC", "")
 	var store channels.Resolver
-	if dsn := env("DATABASE_URL_SYNC", ""); dsn != "" {
-		pg, err := channels.NewPgChannelStore(ctx, dsn)
+	if dbDSN != "" {
+		pg, err := channels.NewPgChannelStore(ctx, dbDSN)
 		if err != nil {
 			log.Printf("PgChannelStore gagal (%v) → fallback MapChannelStore", err)
 			store = channels.NewMapChannelStore()
@@ -61,6 +56,24 @@ func main() {
 		store = channels.NewMapChannelStore()
 	}
 
+	// WA unofficial (whatsmeow): sesi device di sqlstore Postgres. dsn kosong → nonaktif.
+	wa, err := channels.NewWhatsmeow(ctx, dbDSN, b, store)
+	if err != nil {
+		log.Printf("whatsmeow init gagal (%v) → WA unofficial nonaktif", err)
+		wa = nil
+	}
+	if wa != nil {
+		defer wa.Close()
+		go wa.Restore(ctx) // sambung ulang device tersimpan (non-blocking).
+	}
+
+	// Adapter per channel type.
+	registry := channels.NewRegistry(
+		channels.NewTelegram(),
+		channels.NewMetaSender(),
+		wa,
+	)
+
 	// Outbound worker: consume message.outbound → kirim → publish status.
 	ow := &worker.Outbound{Bus: b, Registry: registry, Store: store, Consumer: "gateway-1"}
 	go ow.Run(ctx)
@@ -71,6 +84,7 @@ func main() {
 		Bus:           b,
 		Resolver:      store,
 		WS:            wsHandler,
+		WA:            wa,
 		MetaAppSecret: env("META_APP_SECRET", ""),
 		MetaVerifyTok: env("META_VERIFY_TOKEN", ""),
 	}

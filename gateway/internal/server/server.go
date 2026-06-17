@@ -20,6 +20,7 @@ type Server struct {
 	Bus           *bus.Bus
 	Resolver      channels.Resolver
 	WS            *ws.Handler
+	WA            *channels.Whatsmeow
 	MetaAppSecret string
 	MetaVerifyTok string
 }
@@ -143,11 +144,68 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// --- WA unofficial onboarding (stub) ---
+// --- WA unofficial onboarding (whatsmeow QR pairing) ---
 
-func (s *Server) handleChannelOps(w http.ResponseWriter, _ *http.Request) {
-	// TODO(04): connect-unofficial → mulai sesi whatsmeow → balikan QR; /qr SSE sampai paired.
-	http.Error(w, "whatsmeow belum diimplementasi", http.StatusNotImplemented)
+// handleChannelOps: GET/POST /channels/{id}/connect-unofficial → SSE stream QR.
+// Event SSE: `qr` (kode QR), `paired` (device JID — web simpan ke channel), `error`.
+func (s *Server) handleChannelOps(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/channels/")
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "connect-unofficial" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	channelID := parts[0]
+
+	if s.WA == nil {
+		http.Error(w, "whatsmeow nonaktif", http.StatusServiceUnavailable)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming tidak didukung", http.StatusInternalServerError)
+		return
+	}
+
+	info, err := s.Resolver.Lookup(r.Context(), channelID)
+	if err != nil {
+		http.Error(w, "channel tidak ditemukan", http.StatusNotFound)
+		return
+	}
+
+	events, err := s.WA.PairDevice(channelID, info.TenantID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, open := <-events:
+			if !open {
+				return
+			}
+			switch {
+			case ev.Err != nil:
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", ev.Err.Error())
+				flusher.Flush()
+				return
+			case ev.Done:
+				fmt.Fprintf(w, "event: paired\ndata: %s\n\n", ev.JID)
+				flusher.Flush()
+				return
+			case ev.QR != "":
+				fmt.Fprintf(w, "event: qr\ndata: %s\n\n", ev.QR)
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func newEventID() string {
