@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteButton } from "@/components/app/delete-button";
+import { deleteUser } from "@/lib/actions";
 import { initials } from "@/lib/format";
 
 export interface UserRow {
@@ -84,14 +86,18 @@ const columns: ColumnDef<UserRow>[] = [
           <Pencil className="size-4" />
         </Link>
         {!row.original.isSelf && (
-          <Link
-            href={`/settings/users/${row.original.id}/delete`}
-            aria-label="Hapus user"
-            title="Hapus"
-            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger"
-          >
-            <Trash2 className="size-4" />
-          </Link>
+          <DeleteButton
+            onConfirm={() => deleteUser(row.original.id)}
+            title="Hapus user?"
+            description={
+              <>
+                <span className="font-semibold text-foreground">{row.original.name}</span> ({row.original.email}) akan
+                kehilangan akses ke workspace ini.
+              </>
+            }
+            successMessage="User dihapus"
+            triggerLabel="Hapus user"
+          />
         )}
       </div>
     ),

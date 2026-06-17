@@ -46,6 +46,15 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
+  /* Shadow halus ber-tint navy (UI clean, tidak tebal). Override skala Tailwind v4. */
+  --shadow-2xs: 0 1px 2px 0 rgb(30 42 120 / 0.03);
+  --shadow-xs: 0 1px 2px 0 rgb(30 42 120 / 0.04);
+  --shadow-sm: 0 1px 2px 0 rgb(30 42 120 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(30 42 120 / 0.06);
+  --shadow-md: 0 2px 8px -2px rgb(30 42 120 / 0.07);
+  --shadow-lg: 0 8px 20px -6px rgb(30 42 120 / 0.09);
+  --shadow-xl: 0 14px 32px -10px rgb(30 42 120 / 0.11);
+
   /* ChatCepat brand (template web/chatcepat) */
   --color-brand-navy: #1e2a78;
   --color-brand-blue: #3b82f6;
@@ -152,8 +161,8 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: oklch(0.948 0.004 247);
+  --input: oklch(0.94 0.004 247);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);

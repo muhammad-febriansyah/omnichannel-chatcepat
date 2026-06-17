@@ -68,7 +68,7 @@ export default function ConnectChannelPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl p-6">
+    <div className="p-6">
       <Link href="/channels" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Kembali
       </Link>

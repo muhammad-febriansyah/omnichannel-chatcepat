@@ -77,7 +77,7 @@ export function BroadcastWizard({
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="p-6">
       <Link href="/broadcasts" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Kembali
       </Link>

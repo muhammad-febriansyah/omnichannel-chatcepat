@@ -367,7 +367,6 @@ export async function deleteContact(id: string) {
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   await db.delete(contacts).where(and(eq(contacts.id, id), eq(contacts.tenantId, session.tenantId)));
   revalidatePath("/contacts");
-  redirect("/contacts");
 }
 
 export async function importContacts(
@@ -479,7 +478,6 @@ export async function deleteUser(id: string) {
   if (id === session.id) throw new Error("Tidak bisa menghapus akun sendiri");
   await db.delete(users).where(and(eq(users.id, id), eq(users.tenantId, session.tenantId)));
   revalidatePath("/settings/users");
-  redirect("/settings/users");
 }
 
 // --- Platform: aktifkan / suspend tenant (super_admin, tenant.manage). ---
@@ -655,7 +653,6 @@ export async function deleteTag(id: string) {
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   await db.delete(tags).where(and(eq(tags.id, id), eq(tags.tenantId, session.tenantId)));
   revalidatePath("/tags");
-  redirect("/tags");
 }
 
 // --- Template Pesan (08): WA HSM + balasan cepat ---
@@ -715,5 +712,4 @@ export async function deleteTemplate(id: string) {
     .delete(templates)
     .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
   revalidatePath("/templates");
-  redirect("/templates");
 }

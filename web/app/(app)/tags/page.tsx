@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { tags } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { TagsTable, type TagRow } from "@/components/app/tags-table";
+import { PageHeader } from "@/components/app/page-header";
 
 async function load(tenantId: string | null): Promise<TagRow[]> {
   if (!tenantId) return [];
@@ -26,18 +27,18 @@ export default async function TagsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tag &amp; Label</h1>
-          <p className="text-sm text-muted-foreground">{rows.length} tag · segmentasi kontak untuk broadcast &amp; filter inbox</p>
-        </div>
-        <Link
-          href="/tags/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="size-4" /> Tag Baru
-        </Link>
-      </div>
+      <PageHeader
+        title="Tag & Label"
+        description={`${rows.length} tag · segmentasi kontak untuk broadcast & filter inbox`}
+        actions={
+          <Link
+            href="/tags/new"
+            className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            <Plus className="size-4" /> Tag Baru
+          </Link>
+        }
+      />
       <TagsTable rows={rows} />
     </div>
   );

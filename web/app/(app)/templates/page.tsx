@@ -1,9 +1,13 @@
 import { and, desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Pencil, Trash2, Zap, FileText, FileStack } from "lucide-react";
+import { Plus, Pencil, Zap, FileText, FileStack } from "lucide-react";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
+import { deleteTemplate } from "@/lib/actions";
+import { PageHeader } from "@/components/app/page-header";
+import { EmptyState } from "@/components/app/empty-state";
+import { DeleteButton } from "@/components/app/delete-button";
 
 const KIND_META: Record<string, { label: string; icon: typeof Zap }> = {
   quick_reply: { label: "Balasan Cepat", icon: Zap },
@@ -40,31 +44,30 @@ export default async function TemplatesPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Template Pesan</h1>
-          <p className="text-sm text-muted-foreground">
-            {rows.length} template · WhatsApp (HSM) &amp; balasan cepat
-          </p>
-        </div>
-        <Link
-          href="/templates/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="size-4" /> Template Baru
-        </Link>
-      </div>
+      <PageHeader
+        title="Template Pesan"
+        description={`${rows.length} template · WhatsApp (HSM) & balasan cepat`}
+        actions={
+          <Link
+            href="/templates/new"
+            className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            <Plus className="size-4" /> Template Baru
+          </Link>
+        }
+      />
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-blue-50 text-brand-blue">
-            <FileStack className="size-6" />
-          </div>
-          <p className="mt-3 text-sm font-medium">Belum ada template</p>
-          <Link href="/templates/new" className="mt-1 text-xs font-medium text-brand-blue">
-            Buat template pertama
-          </Link>
-        </div>
+        <EmptyState
+          icon={FileStack}
+          title="Belum ada template"
+          description="Buat balasan cepat atau template WhatsApp (HSM) untuk mempercepat respons."
+          action={
+            <Link href="/templates/new" className="text-xs font-medium text-brand-blue">
+              Buat template pertama
+            </Link>
+          }
+        />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {rows.map((t, i) => {
@@ -102,13 +105,17 @@ export default async function TemplatesPage() {
                   >
                     <Pencil className="size-4" />
                   </Link>
-                  <Link
-                    href={`/templates/${t.id}/delete`}
-                    className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-red-50 hover:text-danger"
-                    aria-label="Hapus"
-                  >
-                    <Trash2 className="size-4" />
-                  </Link>
+                  <DeleteButton
+                    onConfirm={deleteTemplate.bind(null, t.id)}
+                    title="Hapus template?"
+                    description={
+                      <>
+                        Template <span className="font-semibold text-foreground">{t.name}</span> akan dihapus permanen.
+                      </>
+                    }
+                    successMessage="Template dihapus"
+                    triggerLabel="Hapus template"
+                  />
                 </div>
               </div>
             );

@@ -90,7 +90,7 @@ export function UserForm({
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl p-6">
+    <div className="w-full p-6">
       <Link
         href="/settings/users"
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"

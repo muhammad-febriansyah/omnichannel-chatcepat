@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, HelpCircle, Settings, ChevronDown, PanelLeft, User, LogOut } from "lucide-react";
+import { Search, Bell, Settings, ChevronDown, PanelLeft, User, LogOut } from "lucide-react";
 import { logout } from "@/lib/actions";
 import { initials } from "@/lib/format";
 import {
@@ -50,18 +50,6 @@ export function Topbar({ session, onToggleSidebar }: { session: Session; onToggl
         >
           <Bell className="size-[18px]" />
           <span className="absolute right-1.5 top-1.5 size-2 rounded-full border-2 border-card bg-danger" />
-        </button>
-        <button
-          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
-          aria-label="Bantuan"
-        >
-          <HelpCircle className="size-[18px]" />
-        </button>
-        <button
-          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
-          aria-label="Pengaturan"
-        >
-          <Settings className="size-[18px]" />
         </button>
 
         <DropdownMenu>

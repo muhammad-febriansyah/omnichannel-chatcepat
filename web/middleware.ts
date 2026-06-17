@@ -33,7 +33,8 @@ export async function middleware(req: NextRequest) {
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;
   const isLogin = path === "/login";
-  const isPublic = path.startsWith("/opt-in/"); // form opt-in publik (tanpa login)
+  // Publik tanpa login: form opt-in + aset upload (logo/favicon tampil di login/opt-in).
+  const isPublic = path.startsWith("/opt-in/") || path.startsWith("/uploads/");
 
   if (isPublic) return NextResponse.next();
 
