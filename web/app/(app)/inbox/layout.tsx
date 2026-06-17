@@ -1,4 +1,5 @@
 import { ConversationList, ConvItem } from "@/components/app/conversation-list";
+import { InboxPanes } from "@/components/app/inbox-panes";
 import { RealtimeRefresher } from "@/components/app/realtime-refresher";
 import { getConversations } from "@/lib/queries";
 import { requireSession } from "@/lib/session";
@@ -17,10 +18,9 @@ export default async function InboxLayout({ children }: { children: React.ReactN
   }));
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <>
       {session.tenantId && <RealtimeRefresher tenantId={session.tenantId} token="dev" />}
-      <ConversationList items={items} />
-      <div className="flex-1 overflow-hidden">{children}</div>
-    </div>
+      <InboxPanes list={<ConversationList items={items} />}>{children}</InboxPanes>
+    </>
   );
 }

@@ -58,6 +58,82 @@
   --color-ch-messenger: #0084ff;
   --color-ch-telegram: #0088cc;
   --color-ch-facebook: #1877f2;
+
+  /* Login showcase animations (ref: web/chatcepat/login.jsx) */
+  --animate-float: float 3.6s ease-in-out infinite;
+  --animate-bob: bob 4s ease-in-out infinite;
+  --animate-drift: drift 9s ease-in-out infinite;
+  --animate-wave: wave 2.4s ease-in-out infinite;
+  --animate-shake: shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(var(--r, 0deg));
+  }
+  50% {
+    transform: translate(8px, -12px) rotate(var(--r, 0deg));
+  }
+}
+@keyframes wave {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  10% {
+    transform: rotate(14deg);
+  }
+  20% {
+    transform: rotate(-8deg);
+  }
+  30% {
+    transform: rotate(14deg);
+  }
+  40% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+}
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
 }
 
 :root {

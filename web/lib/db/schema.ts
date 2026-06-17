@@ -17,6 +17,8 @@ export const messageStatus = pgEnum("message_status", ['queued', 'sent', 'delive
 export const messageType = pgEnum("message_type", ['text', 'image', 'file', 'template', 'interactive'])
 export const optInSource = pgEnum("opt_in_source", ['import', 'form', 'click_to_chat', 'qr', 'inbound'])
 export const optInStatus = pgEnum("opt_in_status", ['opted_in', 'opted_out', 'unknown'])
+export const templateKind = pgEnum("template_kind", ['hsm', 'quick_reply'])
+export const templateStatus = pgEnum("template_status", ['draft', 'approved', 'rejected'])
 export const tenantPlan = pgEnum("tenant_plan", ['pro', 'business', 'enterprise'])
 export const tenantStatus = pgEnum("tenant_status", ['active', 'suspended'])
 export const userRole = pgEnum("user_role", ['super_admin', 'admin', 'supervisor', 'agent'])
@@ -350,6 +352,27 @@ export const tags = pgTable("tags", {
 			columns: [table.tenantId],
 			foreignColumns: [tenants.id],
 			name: "tags_tenant_id_fkey"
+		}).onDelete("cascade"),
+]);
+
+export const templates = pgTable("templates", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	kind: templateKind().default('quick_reply').notNull(),
+	category: text(),
+	language: text(),
+	body: text().notNull(),
+	status: templateStatus().default('draft').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_template_lookup").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("enum_ops")),
+	uniqueIndex("uq_template_name").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.name.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "templates_tenant_id_fkey"
 		}).onDelete("cascade"),
 ]);
 

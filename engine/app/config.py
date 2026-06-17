@@ -31,10 +31,15 @@ FLOW_STATE_TTL_HOURS = 1
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-opus-4-8")
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
 OPENAI_CHAT_MODEL = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIM = 1536
 RAG_TOP_K = 5
+# Memori AI: jumlah pesan terakhir yang dikirim sebagai konteks percakapan (06).
+AI_HISTORY_LIMIT = int(os.environ.get("AI_HISTORY_LIMIT", "10"))
+# Eskalasi low-confidence: balasan saat AI angkat tangan → handoff ke agen (06).
+AI_ESCALATION_MESSAGE = "Baik, saya hubungkan dengan agen kami. Mohon tunggu sebentar ya."
 
 # Fallback default kalau tak ada flow/AI yang menjawab (06)
 DEFAULT_FALLBACK_MESSAGE = "Terima kasih, pesan Anda kami terima. Agen kami akan segera membalas."

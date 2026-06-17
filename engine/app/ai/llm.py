@@ -1,7 +1,7 @@
 """Abstraksi LLMProvider supaya provider bisa diganti (docs/prd/06 TODO PRODUK).
 
 Default: DISABLED (AI nonaktif → fallback). `LLM_PROVIDER=echo` untuk dev/test.
-`anthropic`/`claude` = real (butuh LLM_API_KEY) — TODO lengkapi.
+`anthropic`/`claude` & `openai` = real (butuh LLM_API_KEY).
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from ..config import (
     EMBEDDING_DIM,
     EMBEDDING_MODEL,
     LLM_API_KEY,
+    LLM_MAX_TOKENS,
     LLM_MODEL,
     LLM_PROVIDER,
     OPENAI_CHAT_MODEL,
@@ -22,12 +23,17 @@ from ..config import (
 
 _TOKEN = re.compile(r"\w+")
 
+# Turn = satu giliran percakapan untuk memori AI. role: "user" | "assistant".
+Turn = dict[str, str]
+
 
 @runtime_checkable
 class LLMProvider(Protocol):
     enabled: bool
 
-    async def complete(self, system: str, user: str) -> str: ...
+    async def complete(
+        self, system: str, user: str, history: list[Turn] | None = None
+    ) -> str: ...
 
     async def embed(self, text: str) -> list[float]: ...
 
@@ -47,7 +53,9 @@ class EchoProvider:
 
     enabled = True
 
-    async def complete(self, system: str, user: str) -> str:
+    async def complete(
+        self, system: str, user: str, history: list[Turn] | None = None
+    ) -> str:
         return f"(echo) {user.strip()}"
 
     async def embed(self, text: str) -> list[float]:
@@ -55,18 +63,30 @@ class EchoProvider:
 
 
 class AnthropicProvider:
-    """Real Claude via Anthropic SDK. TODO: lengkapi embeddings (Anthropic tak punya
-    endpoint embedding — pakai Voyage/penyedia lain). Lihat docs/prd/06."""
+    """Real Claude via Anthropic SDK (messages API). Anthropic tak punya endpoint
+    embedding — `embed()` raise NotImplementedError, agent.try_ai jawab tanpa RAG.
+    Untuk KB/RAG pakai OpenAIProvider (atau Voyage). Lihat docs/prd/06."""
 
     enabled = True
 
     def __init__(self, api_key: str, model: str) -> None:
-        self.api_key = api_key
+        from anthropic import AsyncAnthropic
+
+        self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
-    async def complete(self, system: str, user: str) -> str:
-        # TODO: panggil anthropic.AsyncAnthropic().messages.create(...)
-        raise NotImplementedError("AnthropicProvider.complete belum diimplementasi (06)")
+    async def complete(
+        self, system: str, user: str, history: list[Turn] | None = None
+    ) -> str:
+        messages = [*(history or []), {"role": "user", "content": user}]
+        resp = await self.client.messages.create(
+            model=self.model,
+            max_tokens=LLM_MAX_TOKENS,
+            system=system,
+            messages=messages,
+        )
+        # content = list block; ambil teks saja (skip thinking/tool_use bila ada).
+        return "".join(b.text for b in resp.content if b.type == "text")
 
     async def embed(self, text: str) -> list[float]:
         raise NotImplementedError("Anthropic tak punya embedding API — pakai provider lain")
@@ -85,13 +105,17 @@ class OpenAIProvider:
         self.chat_model = chat_model
         self.embed_model = embed_model
 
-    async def complete(self, system: str, user: str) -> str:
+    async def complete(
+        self, system: str, user: str, history: list[Turn] | None = None
+    ) -> str:
+        messages = [
+            {"role": "system", "content": system},
+            *(history or []),
+            {"role": "user", "content": user},
+        ]
         resp = await self.client.chat.completions.create(
             model=self.chat_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            messages=messages,
         )
         return resp.choices[0].message.content or ""
 

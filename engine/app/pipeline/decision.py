@@ -42,10 +42,11 @@ async def decide(
     if outcome is not None:
         return Decision(replies=outcome.replies, handoff=outcome.handoff)
 
-    # 2. AI agent.
-    text = await ai.try_ai(session, conv, channel, contact, inbound)
-    if text is not None:
-        return Decision(replies=[text])
+    # 2. AI agent (bisa eskalasi ke agen kalau low-confidence).
+    res = await ai.try_ai(session, conv, channel, contact, inbound)
+    if res is not None:
+        replies = [res.reply] if res.reply else []
+        return Decision(replies=replies, handoff=res.handoff)
 
     # 3. Fallback default.
     return Decision(replies=[DEFAULT_FALLBACK_MESSAGE])

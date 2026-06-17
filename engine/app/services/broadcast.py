@@ -30,11 +30,12 @@ from ..repositories import broadcasts, channels, conversations, messages
 log = logging.getLogger("engine.broadcast")
 
 
-async def run_broadcast(broadcast_id: uuid.UUID) -> dict:
+async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
     """Bangun recipients dari audience (partisi opt_in), set status running."""
     async with AsyncSessionLocal() as session, session.begin():
         b = await broadcasts.get(session, broadcast_id)
-        if b is None:
+        # Tenant scope (defense-in-depth): mismatch = tidak ada.
+        if b is None or (tenant_id is not None and b.tenant_id != tenant_id):
             raise ValueError(f"broadcast {broadcast_id} tidak ada")
         if b.status not in ("draft", "scheduled"):
             return {"status": b.status, "skipped": True}

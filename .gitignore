@@ -30,3 +30,7 @@ gateway/bin/
 
 # local compose override
 docker-compose.override.yml
+
+# test artifacts
+.playwright-mcp/
+contact-form-new.png

@@ -1,0 +1,72 @@
+# Production-style smoke stack: runs the BUILT images (no source bind-mounts,
+# no --reload / npm dev override). Use:
+#   docker compose -f docker-compose.smoke.yml up -d --build
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: chatcepat
+      POSTGRES_PASSWORD: chatcepat
+      POSTGRES_DB: chatcepat
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatcepat"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  engine:
+    build: ./engine
+    image: chatcepat-engine        # satu image dipakai bertiga (hindari rebuild terpisah)
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8000:8000"]
+    # uses image CMD: alembic upgrade head && uvicorn (no --reload)
+
+  engine-consumer:
+    image: chatcepat-engine        # reuse image dari service `engine`
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: "python -m app.consumers.inbound_consumer"
+
+  engine-broadcast:
+    image: chatcepat-engine        # reuse image dari service `engine`
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: "python -m app.consumers.broadcast_worker"
+
+  gateway:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8080:8080"]
+
+  web:
+    build: ./web
+    env_file: .env
+    depends_on: [engine]
+    ports: ["3000:3000"]
+    # uses image CMD: npm run dev
+
+volumes:
+  pgdata:

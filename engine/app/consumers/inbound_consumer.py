@@ -6,6 +6,11 @@ import asyncio
 import logging
 import os
 
+from redis.exceptions import (
+    ConnectionError as RedisConnectionError,
+    TimeoutError as RedisTimeoutError,
+)
+
 from ..bus import ack, close, ensure_group, read_group
 from ..config import STREAM_INBOUND
 from ..contracts.events import InboundMessage
@@ -20,7 +25,15 @@ async def run(consumer_name: str | None = None) -> None:
     log.info("inbound consumer '%s' mulai", consumer_name)
     try:
         while True:
-            batch = await read_group(STREAM_INBOUND, consumer_name)
+            try:
+                batch = await read_group(STREAM_INBOUND, consumer_name)
+            except (RedisTimeoutError, RedisConnectionError):
+                # Block idle / blip jaringan — normal, ulangi (jangan matikan consumer).
+                continue
+            except Exception:
+                log.exception("read_group gagal, retry")
+                await asyncio.sleep(1)
+                continue
             for msg_id, fields in batch:
                 try:
                     inbound = InboundMessage.model_validate_json(fields["data"])

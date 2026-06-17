@@ -127,7 +127,7 @@ export default function ConnectChannelPage() {
           <div className="mt-3 flex items-start gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
             <QrCode className="mt-0.5 size-5 shrink-0" />
             <div>
-              Channel dibuat status <b>pending</b>. Scan QR via gateway untuk pairing (TODO).
+              Setelah dibuat, kamu diarahkan ke halaman <b>scan QR</b> untuk pairing.
               Rawan banned untuk broadcast — gunakan hati-hati.
             </div>
           </div>
