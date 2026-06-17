@@ -131,6 +131,7 @@ export async function createAndRunBroadcast(input: {
   channelId: string;
   body: string;
   tags: string[];
+  templateId?: string; // nama template HSM (WA official, di luar window 24 jam)
 }) {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
@@ -150,6 +151,7 @@ export async function createAndRunBroadcast(input: {
       channelId: input.channelId,
       name: input.name.trim(),
       bodySnapshot: input.body,
+      templateId: input.templateId?.trim() || null,
       status: "draft",
       audienceFilter: input.tags.length ? { tags: input.tags } : {},
     })
