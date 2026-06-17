@@ -10,7 +10,7 @@ export function InboxPanes({ list, children }: { list: React.ReactNode; children
   const isThread = pathname !== "/inbox";
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex h-full min-h-0">
       <div className={cn("w-full shrink-0 lg:w-80", isThread && "hidden lg:flex")}>{list}</div>
       <div className={cn("flex-1 overflow-hidden", !isThread && "hidden lg:block")}>{children}</div>
     </div>
