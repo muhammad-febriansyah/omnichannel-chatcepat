@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { UsersTable, type UserRow } from "@/components/app/users-table";
+import { PageHeader } from "@/components/app/page-header";
 
 async function load(tenantId: string | null, selfId: string): Promise<UserRow[]> {
   if (!tenantId) return [];
@@ -33,18 +34,20 @@ export default async function UsersPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tim</h1>
-          <p className="text-sm text-muted-foreground">{rows.length} anggota</p>
-        </div>
-        <Link
-          href="/settings/users/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <UserPlus className="size-4" /> Undang Anggota
-        </Link>
-      </div>
+      <PageHeader
+        title="Tim"
+        description={`${rows.length} anggota`}
+        actions={
+          <>
+            <Link
+              href="/settings/users/new"
+              className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              <UserPlus className="size-4" /> Undang Anggota
+            </Link>
+          </>
+        }
+      />
 
       <UsersTable rows={rows} />
     </div>

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { createFlow } from "@/lib/actions";
+import { PageHeader } from "@/components/app/page-header";
 
 async function load(tenantId: string | null) {
   if (!tenantId) return [];
@@ -24,17 +25,17 @@ export default async function FlowsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Otomasi</h1>
-          <p className="text-sm text-muted-foreground">{rows.length} flow</p>
-        </div>
-        <form action={createFlow}>
-          <button className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90">
-            <Plus className="size-4" /> Flow Baru
-          </button>
-        </form>
-      </div>
+      <PageHeader
+        title="Otomasi"
+        description={`${rows.length} flow`}
+        actions={
+          <form action={createFlow}>
+            <button className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90">
+              <Plus className="size-4" /> Flow Baru
+            </button>
+          </form>
+        }
+      />
 
       {rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card py-16 text-center">

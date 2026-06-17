@@ -2,6 +2,7 @@ import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send } from "lucide-re
 import { requireSession } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 import { getReportStats } from "@/lib/report-stats";
+import { PageHeader } from "@/components/app/page-header";
 
 const CONV_STATUS: Record<string, { label: string; color: string }> = {
   open: { label: "Terbuka", color: "#3b82f6" },
@@ -64,10 +65,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Laporan</h1>
-        <p className="text-sm text-muted-foreground">Ringkasan metrik & performa workspace.</p>
-      </div>
+      <PageHeader title="Laporan" description="Ringkasan metrik & performa workspace." />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => {
