@@ -32,6 +32,8 @@ func (s *Server) Routes() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/webhooks/meta/wa", s.handleMetaWA)
+	mux.HandleFunc("/webhooks/meta/ig", s.handleMessenger) // Instagram DM
+	mux.HandleFunc("/webhooks/meta/fb", s.handleMessenger) // Facebook Messenger
 	mux.HandleFunc("/webhooks/telegram/", s.handleTelegram) // /webhooks/telegram/{channel_id}
 	mux.HandleFunc("/channels/", s.handleChannelOps)        // connect-unofficial / qr (stub)
 	if s.WS != nil {
@@ -75,6 +77,57 @@ func (s *Server) handleMetaWA(w http.ResponseWriter, r *http.Request) {
 		cid, _, err := s.Resolver.LookupByExternal(r.Context(), contracts.ChannelTypeWaOfficial, p.PhoneNumberID)
 		if err != nil {
 			log.Printf("meta webhook: %v", err)
+			continue
+		}
+		inb := p.Inbound
+		inb.ChannelId = cid
+		inb.EventId = newEventID()
+		inb.DedupKey = cid + ":" + inb.ProviderMessageId
+		if _, err := s.Bus.PublishInbound(r.Context(), &inb); err != nil {
+			log.Printf("publish inbound gagal: %v", err)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// --- Meta Messenger (Facebook + Instagram) ---
+
+// handleMessenger menerima webhook Messenger/Instagram. GET = verify challenge,
+// POST = verify HMAC → parse → resolve channel by (type, page/ig id) → publish inbound.
+// Channel type ditentukan dari payload (object page/instagram), bukan dari path.
+func (s *Server) handleMessenger(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		q := r.URL.Query()
+		challenge, ok := channels.VerifyChallenge(
+			s.MetaVerifyTok, q.Get("hub.mode"), q.Get("hub.verify_token"), q.Get("hub.challenge"),
+		)
+		if !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(challenge))
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if !channels.VerifySignature(s.MetaAppSecret, body, r.Header.Get("X-Hub-Signature-256")) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	parsed, err := channels.ParseMessenger(body)
+	if err != nil {
+		http.Error(w, "parse error", http.StatusBadRequest)
+		return
+	}
+	for _, p := range parsed {
+		cid, _, err := s.Resolver.LookupByExternal(r.Context(), p.Inbound.ChannelType, p.ExternalID)
+		if err != nil {
+			log.Printf("messenger webhook: %v", err)
 			continue
 		}
 		inb := p.Inbound
