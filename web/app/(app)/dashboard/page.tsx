@@ -64,6 +64,34 @@ function greeting(hour: number) {
   return "Selamat Malam";
 }
 
+type Kpi = {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  tone: string;
+  trend: number;
+  up: boolean;
+  spark: number[];
+};
+
+// KPI per role: admin = ringkasan bisnis; supervisor = operasional tim & SLA.
+function kpisFor(role: string, c: { conversations: number; open: number; contacts: number; broadcasts: number }): Kpi[] {
+  if (role === "supervisor") {
+    return [
+      { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", trend: 4.2, up: true, spark: [70, 72, 75, 80, 78, 84, 87] },
+      { icon: CheckCircle2, label: "Resolusi Minggu Ini", value: "94%", tone: "#10B981", trend: 2.1, up: true, spark: [80, 82, 85, 88, 90, 92, 94] },
+      { icon: Clock, label: "Rata-rata Respon", value: "1m 24s", tone: "#3B82F6", trend: 6.0, up: false, spark: [110, 104, 98, 96, 92, 88, 84] },
+      { icon: UserPlus, label: "Agen Aktif", value: String(TEAM.length), tone: "#8B5CF6", trend: 0, up: true, spark: [4, 5, 5, 4, 5, 5, 5] },
+    ];
+  }
+  return [
+    { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#3B82F6", trend: 12.5, up: true, spark: [22, 28, 26, 34, 40, 52, 64] },
+    { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", trend: 4.2, up: true, spark: [70, 72, 75, 80, 78, 84, 87] },
+    { icon: Clock, label: "Total Kontak", value: cleanIDR(c.contacts), tone: "#8B5CF6", trend: 8.1, up: true, spark: [40, 44, 48, 52, 60, 68, 75] },
+    { icon: CheckCircle2, label: "Broadcast", value: cleanIDR(c.broadcasts), tone: "#10B981", trend: 1.8, up: true, spark: [12, 18, 16, 22, 28, 30, 36] },
+  ];
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -118,21 +146,22 @@ export default async function DashboardPage() {
   }).format(now);
 
   const firstName = session.name.split(/\s+/)[0];
+  const roleLabel = session.role === "supervisor" ? "Ringkasan operasional tim" : "Ringkasan workspace";
+  const kpis = kpisFor(session.role, c);
 
   return (
     <div className="flex flex-col gap-6 p-6">
       <PageHeader
         title={`${greeting(wibHour)}, ${firstName}!`}
-        description={dateStr}
+        description={`${dateStr} · ${roleLabel}`}
         actions={<DateRangePicker />}
       />
 
-      {/* Stat cards */}
+      {/* Stat cards — per role */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={MessageSquare} label="Total Percakapan" value={cleanIDR(c.conversations)} tone="#3B82F6" trend={12.5} up spark={[22, 28, 26, 34, 40, 52, 64]} />
-        <StatCard icon={Inbox} label="Inbox Terbuka" value={cleanIDR(c.open)} tone="#F59E0B" trend={4.2} up spark={[70, 72, 75, 80, 78, 84, 87]} />
-        <StatCard icon={Clock} label="Total Kontak" value={cleanIDR(c.contacts)} tone="#8B5CF6" trend={8.1} up spark={[40, 44, 48, 52, 60, 68, 75]} />
-        <StatCard icon={CheckCircle2} label="Broadcast" value={cleanIDR(c.broadcasts)} tone="#10B981" trend={1.8} up spark={[12, 18, 16, 22, 28, 30, 36]} />
+        {kpis.map((k) => (
+          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} tone={k.tone} trend={k.trend} up={k.up} spark={k.spark} />
+        ))}
       </div>
 
       {/* Charts row */}
