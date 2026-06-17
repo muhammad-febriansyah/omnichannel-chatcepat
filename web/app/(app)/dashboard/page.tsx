@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/session";
 import { cleanIDR, initials } from "@/lib/format";
 import { Sparkline, ChannelVolumeChart, ChannelDonut, type ChannelKey } from "@/components/app/charts";
 import { DateRangePicker } from "@/components/app/date-range";
+import { PageHeader } from "@/components/app/page-header";
 
 async function counts(tenantId: string | null) {
   if (!tenantId) return { conversations: 0, open: 0, contacts: 0, broadcasts: 0 };
@@ -119,17 +120,12 @@ export default async function DashboardPage() {
   const firstName = session.name.split(/\s+/)[0];
 
   return (
-    <div className="flex flex-col gap-6 p-7 sm:p-8">
-      {/* Page head */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-brand-navy">
-            {greeting(wibHour)}, {firstName}! <span className="inline-block origin-[70%_70%] animate-wave">👋</span>
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{dateStr}</p>
-        </div>
-        <DateRangePicker />
-      </div>
+    <div className="flex flex-col gap-6 p-6">
+      <PageHeader
+        title={`${greeting(wibHour)}, ${firstName}!`}
+        description={dateStr}
+        actions={<DateRangePicker />}
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
