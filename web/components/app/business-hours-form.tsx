@@ -30,7 +30,7 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
     "h-10 rounded-lg border border-border bg-background px-2.5 text-sm tabular-nums outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10 disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
-    <div className="mx-auto w-full max-w-3xl p-6">
+    <div className="w-full p-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">

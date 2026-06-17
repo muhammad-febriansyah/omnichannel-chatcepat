@@ -21,7 +21,7 @@ export default async function WebSettingsPage() {
   const initial = normalizeWebSettings(raw);
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="p-6">
       <Link
         href="/settings"
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"

@@ -7,7 +7,7 @@ Stack ter-scaffold resmi: Next 16, React 19, Tailwind v4, shadcn/ui, goey-toast.
 
 ## Aturan keras
 
-- **Tidak ada modal untuk CRUD.** Create/edit/delete = halaman terpisah (route sendiri). Konfirmasi hapus = halaman konfirmasi, **bukan** `confirm()`.
+- **Create/edit = halaman terpisah** (route sendiri). **Hapus = konfirmasi via `AlertDialog`** (`components/app/delete-button.tsx`, base-ui/shadcn) langsung di list/tabel — **bukan** halaman konfirmasi, **bukan** `confirm()` native. Server action delete cukup `revalidatePath` (tanpa `redirect`); toast feedback di client.
 - **Tidak ada `alert()`/`confirm()` native.** Semua feedback lewat **goey-toast** (`gooeyToast` dari `@/components/ui/goey-toaster`). Aksi async → `gooeyToast.promise`. Pesan Bahasa Indonesia.
 - Komponen UI **hanya** dari shadcn/ui (`npx shadcn@latest add ...`). Jangan bikin primitif dari nol. Font **Poppins** (`--font-poppins`).
 - Form: **react-hook-form + Zod**. Pesan validasi **Bahasa Indonesia**.

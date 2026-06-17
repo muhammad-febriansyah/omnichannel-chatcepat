@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteButton } from "@/components/app/delete-button";
+import { deleteContact } from "@/lib/actions";
 import { initials } from "@/lib/format";
 
 export interface ContactRow {
@@ -83,14 +85,18 @@ const columns: ColumnDef<ContactRow>[] = [
         >
           <Pencil className="size-4" />
         </Link>
-        <Link
-          href={`/contacts/${row.original.id}/delete`}
-          aria-label="Hapus kontak"
-          title="Hapus"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger"
-        >
-          <Trash2 className="size-4" />
-        </Link>
+        <DeleteButton
+          onConfirm={() => deleteContact(row.original.id)}
+          title="Hapus kontak?"
+          description={
+            <>
+              Kontak <span className="font-semibold text-foreground">{row.original.name ?? row.original.phone ?? "ini"}</span> akan
+              dihapus permanen beserta riwayatnya.
+            </>
+          }
+          successMessage="Kontak dihapus"
+          triggerLabel="Hapus kontak"
+        />
       </div>
     ),
   },

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteButton } from "@/components/app/delete-button";
+import { deleteTag } from "@/lib/actions";
 
 export interface TagRow {
   id: string;
@@ -45,14 +47,18 @@ const columns: ColumnDef<TagRow>[] = [
         >
           <Pencil className="size-4" />
         </Link>
-        <Link
-          href={`/tags/${row.original.id}/delete`}
-          aria-label="Hapus tag"
-          title="Hapus"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger"
-        >
-          <Trash2 className="size-4" />
-        </Link>
+        <DeleteButton
+          onConfirm={() => deleteTag(row.original.id)}
+          title="Hapus tag?"
+          description={
+            <>
+              Tag <span className="font-semibold text-foreground">{row.original.name}</span> akan dihapus. Kontak yang
+              sudah ditandai tidak otomatis berubah.
+            </>
+          }
+          successMessage="Tag dihapus"
+          triggerLabel="Hapus tag"
+        />
       </div>
     ),
   },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import {
   Save,
   Globe,
@@ -13,6 +13,9 @@ import {
   MessageCircle,
   Mail,
   MapPin,
+  Upload,
+  X,
+  Loader2,
 } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -29,6 +32,85 @@ function Field({ label, children, hint }: { label: string; children: React.React
       {children}
       {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
+  );
+}
+
+// Picker gambar: pilih file → unggah ke /api/upload → simpan URL hasil. Tanpa input URL.
+function ImageUpload({
+  label,
+  hint,
+  value,
+  accept,
+  preview,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  accept: string;
+  preview: "logo" | "icon";
+  onChange: (url: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // izinkan pilih file sama lagi
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal mengunggah");
+      onChange(data.url as string);
+      gooeyToast.success("Gambar terunggah");
+    } catch (err) {
+      gooeyToast.error(err instanceof Error ? err.message : "Gagal mengunggah");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Field label={label} hint={hint}>
+      <input ref={ref} type="file" accept={accept} onChange={onFile} className="hidden" />
+      <div className="flex items-center gap-3">
+        <div
+          className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-slate-50 ${
+            preview === "logo" ? "h-12 w-20" : "size-12"
+          }`}
+        >
+          {value ? (
+            // eslint-disable-next-line @next/next/no-img-element -- aset brand arbitrer
+            <img src={value} alt={label} className="size-full object-contain p-1" />
+          ) : (
+            <ImageIcon className="size-5 text-muted-foreground" />
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => ref.current?.click()}
+          disabled={busy}
+          className="flex h-11 items-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium transition hover:bg-card disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+          {busy ? "Mengunggah…" : value ? "Ganti" : "Unggah"}
+        </button>
+        {value && !busy && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="flex size-11 items-center justify-center rounded-lg border border-border text-muted-foreground transition hover:bg-card hover:text-foreground"
+            aria-label="Hapus gambar"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -85,29 +167,26 @@ export function WebSettingsForm({ initial }: { initial: WebSettings }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg"><ImageIcon className="size-5 text-brand-blue" /> Logo &amp; Favicon</CardTitle>
-          <CardDescription>URL aset brand. Tampil di login, form opt-in, dan tab browser.</CardDescription>
+          <CardDescription>Unggah aset brand. Tampil di login, form opt-in, dan tab browser.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Logo (URL)" hint="Rasio landscape, PNG/SVG transparan.">
-              <input value={v.logoUrl} onChange={(e) => set({ logoUrl: e.target.value })} placeholder="/logo.png" className={`${inputCls} font-mono text-xs`} />
-              {v.logoUrl && (
-                <div className="mt-2 flex h-12 items-center rounded-lg border border-border bg-slate-50 px-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- URL eksternal arbitrer */}
-                  <img src={v.logoUrl} alt="logo" className="h-7 w-auto object-contain" />
-                </div>
-              )}
-            </Field>
-            <Field label="Favicon (URL)" hint="Ukuran kecil, .ico / .png 32×32.">
-              <input value={v.faviconUrl} onChange={(e) => set({ faviconUrl: e.target.value })} placeholder="/favicon.ico" className={`${inputCls} font-mono text-xs`} />
-              {v.faviconUrl && (
-                <div className="mt-2 flex h-12 items-center gap-2 rounded-lg border border-border bg-slate-50 px-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- URL eksternal arbitrer */}
-                  <img src={v.faviconUrl} alt="favicon" className="size-6 object-contain" />
-                  <span className="text-xs text-muted-foreground">pratinjau</span>
-                </div>
-              )}
-            </Field>
+            <ImageUpload
+              label="Logo"
+              hint="Rasio landscape, PNG/SVG transparan. Maks 2 MB."
+              value={v.logoUrl}
+              accept="image/png,image/svg+xml,image/webp,image/jpeg"
+              preview="logo"
+              onChange={(url) => set({ logoUrl: url })}
+            />
+            <ImageUpload
+              label="Favicon"
+              hint="Ukuran kecil, .ico / .png 32×32. Maks 2 MB."
+              value={v.faviconUrl}
+              accept="image/x-icon,image/vnd.microsoft.icon,image/png"
+              preview="icon"
+              onChange={(url) => set({ faviconUrl: url })}
+            />
           </div>
         </CardContent>
       </Card>
@@ -125,7 +204,14 @@ export function WebSettingsForm({ initial }: { initial: WebSettings }) {
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Keywords" hint="Pisahkan dengan koma."><input value={v.seo.keywords} onChange={(e) => setSeo({ keywords: e.target.value })} className={inputCls} /></Field>
-            <Field label="OG Image (URL)"><input value={v.seo.ogImage} onChange={(e) => setSeo({ ogImage: e.target.value })} className={`${inputCls} font-mono text-xs`} /></Field>
+            <ImageUpload
+              label="OG Image"
+              hint="Gambar share sosmed, ideal 1200×630. Maks 2 MB."
+              value={v.seo.ogImage}
+              accept="image/png,image/jpeg,image/webp"
+              preview="logo"
+              onChange={(url) => setSeo({ ogImage: url })}
+            />
           </div>
         </CardContent>
       </Card>

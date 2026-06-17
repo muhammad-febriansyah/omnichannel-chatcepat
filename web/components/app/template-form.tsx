@@ -51,7 +51,7 @@ export function TemplateForm({
   ];
 
   return (
-    <div className="mx-auto w-full max-w-xl p-6">
+    <div className="w-full p-6">
       <Link href="/templates" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Kembali ke Template
       </Link>
