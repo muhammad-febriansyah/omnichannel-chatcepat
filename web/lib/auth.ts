@@ -10,6 +10,7 @@ export interface SessionPayload {
   tenantId: string | null;
   name: string;
   email: string;
+  avatarUrl?: string | null;
 }
 
 function secret(): Uint8Array {

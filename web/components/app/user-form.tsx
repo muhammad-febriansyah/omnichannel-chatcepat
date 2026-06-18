@@ -8,6 +8,8 @@ import { z } from "zod";
 import { Save, ArrowLeft, User, Mail, ShieldCheck, KeyRound, Activity } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ActionLink } from "@/components/app/action-link";
+import { Button } from "@/components/ui/button";
 import { createUser, updateUser } from "@/lib/actions";
 
 function makeSchema(isEdit: boolean) {
@@ -182,19 +184,12 @@ export function UserForm({
           </CardContent>
 
           <CardFooter className="justify-end gap-2 border-t border-border">
-            <Link
-              href="/settings/users"
-              className="flex h-11 items-center rounded-lg border border-border bg-card px-5 text-sm font-medium hover:bg-slate-50"
-            >
+            <ActionLink href="/settings/users" variant="outline" className="px-5">
               Batal
-            </Link>
-            <button
-              type="submit"
-              disabled={pending}
-              className="flex h-11 items-center gap-2 rounded-lg bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-            >
+            </ActionLink>
+            <Button type="submit" size="lg" disabled={pending} className="px-5">
               <Save className="size-4" /> {pending ? "Menyimpan…" : isEdit ? "Simpan Perubahan" : "Buat Akun"}
-            </button>
+            </Button>
           </CardFooter>
         </Card>
       </form>

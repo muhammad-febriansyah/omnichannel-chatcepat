@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LayoutDashboard, Building2, ShieldCheck, LogOut } from "lucide-react";
+import { LayoutDashboard, Building2, ShieldCheck, Tags, LogOut } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { logout } from "@/lib/actions";
 import { initials } from "@/lib/format";
@@ -40,6 +40,12 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             <Building2 className="size-5 shrink-0" strokeWidth={1.75} /> Tenant
+          </Link>
+          <Link
+            href="/admin/plans"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Tags className="size-5 shrink-0" strokeWidth={1.75} /> Paket
           </Link>
         </nav>
 

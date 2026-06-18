@@ -1,5 +1,4 @@
 import { desc, eq } from "drizzle-orm";
-import Link from "next/link";
 import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
@@ -7,12 +6,21 @@ import { requireSession } from "@/lib/session";
 import { CHANNEL_META, ChannelType, statusLabel } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
+import { ActionLink } from "@/components/app/action-link";
+import { StatusPill, type PillTone } from "@/components/app/status-pill";
 
-const STATUS_CLS: Record<string, string> = {
-  connected: "bg-emerald-50 text-emerald-700",
-  pending: "bg-amber-50 text-amber-700",
-  disconnected: "bg-red-50 text-red-700",
-  banned: "bg-red-50 text-red-700",
+const STATUS_TONE: Record<string, PillTone> = {
+  connected: "emerald",
+  pending: "amber",
+  disconnected: "red",
+  banned: "red",
+};
+
+const DOT_CLS: Record<string, string> = {
+  connected: "bg-emerald-500",
+  pending: "bg-amber-500",
+  disconnected: "bg-red-500",
+  banned: "bg-red-500",
 };
 
 async function load(tenantId: string | null) {
@@ -31,20 +39,18 @@ export default async function ChannelsPage() {
   const session = await requireSession();
   const rows = await load(session.tenantId);
 
+  const connected = rows.filter((c) => c.status === "connected").length;
+
   return (
     <div className="p-6">
       <PageHeader
+        icon={Plug}
         title="Channel"
-        description={`${rows.length} channel terhubung`}
+        description={rows.length ? `${rows.length} channel · ${connected} terhubung` : "WhatsApp, Telegram, IG, FB"}
         actions={
-          <>
-            <Link
-              href="/channels/connect"
-              className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              <Plus className="size-4" /> Hubungkan Channel
-            </Link>
-          </>
+          <ActionLink href="/channels/connect">
+            <Plus className="size-4" /> Hubungkan Channel
+          </ActionLink>
         }
       />
 
@@ -54,20 +60,25 @@ export default async function ChannelsPage() {
           title="Belum ada channel"
           description="Hubungkan WhatsApp, Telegram, atau channel lain untuk mulai menerima pesan."
           action={
-            <Link href="/channels/connect" className="text-xs font-medium text-brand-blue">
-              Hubungkan channel pertama
-            </Link>
+            <ActionLink href="/channels/connect">
+              <Plus className="size-4" /> Hubungkan channel pertama
+            </ActionLink>
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((c) => {
             const meta = CHANNEL_META[c.type as ChannelType];
+            const tone = STATUS_TONE[c.status] ?? "slate";
+            const dot = DOT_CLS[c.status] ?? "bg-slate-400";
             return (
-              <div key={c.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div
+                key={c.id}
+                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:shadow-md"
+              >
                 <div className="flex items-center gap-3">
                   <div
-                    className="flex size-10 items-center justify-center rounded-lg text-xs font-bold text-white"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
                     style={{ background: meta?.color ?? "#94a3b8" }}
                   >
                     {meta?.short}
@@ -76,19 +87,19 @@ export default async function ChannelsPage() {
                     <div className="truncate text-sm font-semibold">{c.name}</div>
                     <div className="text-xs text-muted-foreground">{meta?.label}</div>
                   </div>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CLS[c.status] ?? "bg-slate-100 text-slate-600"}`}
-                  >
+                  <StatusPill tone={tone} className="shrink-0 gap-1.5">
+                    <span className={`size-1.5 rounded-full ${dot}`} />
                     {statusLabel(c.status)}
-                  </span>
+                  </StatusPill>
                 </div>
                 {c.type === "wa_unofficial" && c.status !== "connected" && (
-                  <Link
+                  <ActionLink
                     href={`/channels/${c.id}/pair`}
-                    className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-medium text-brand-blue hover:bg-slate-50"
+                    variant="outline"
+                    className="w-full"
                   >
-                    <QrCode className="size-3.5" /> Scan QR untuk pairing
-                  </Link>
+                    <QrCode className="size-4" /> Scan QR untuk pairing
+                  </ActionLink>
                 )}
               </div>
             );

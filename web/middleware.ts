@@ -9,6 +9,7 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
   { prefix: "/settings/users", ability: "user.manage" },
   { prefix: "/settings/business-hours", ability: "flow.manage" },
   { prefix: "/settings/web", ability: "billing.tenant" },
+  { prefix: "/billing", ability: "billing.tenant" },
   { prefix: "/contacts", ability: "contact.view" },
   { prefix: "/tags", ability: "contact.manage" },
   { prefix: "/templates", ability: "broadcast.manage" },
@@ -33,8 +34,12 @@ export async function middleware(req: NextRequest) {
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;
   const isLogin = path === "/login";
-  // Publik tanpa login: form opt-in + aset upload (logo/favicon tampil di login/opt-in).
-  const isPublic = path.startsWith("/opt-in/") || path.startsWith("/uploads/");
+  // Publik tanpa login: landing (/), form opt-in, aset upload, callback Duitku (server-to-server).
+  const isPublic =
+    path === "/" ||
+    path.startsWith("/opt-in/") ||
+    path.startsWith("/uploads/") ||
+    path.startsWith("/api/duitku/");
 
   if (isPublic) return NextResponse.next();
 

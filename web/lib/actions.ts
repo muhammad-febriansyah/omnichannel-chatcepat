@@ -13,6 +13,7 @@ import { getConversation } from "./queries";
 import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
+import { deleteUpload } from "./uploads";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -33,6 +34,7 @@ export async function login(email: string, password: string) {
     tenantId: user.tenantId,
     name: user.name,
     email: user.email,
+    avatarUrl: user.avatarUrl,
   });
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
@@ -50,6 +52,71 @@ export async function logout() {
   const store = await cookies();
   store.delete(SESSION_COOKIE);
   redirect("/login");
+}
+
+// Tulis ulang cookie sesi (JWT) supaya name/avatar terbaru kebawa ke topbar tanpa re-login.
+async function reissueSession(
+  session: Session,
+  patch: { name?: string; avatarUrl?: string | null },
+) {
+  const token = await signSession({
+    sub: session.id,
+    role: session.role as Role,
+    tenantId: session.tenantId,
+    name: patch.name ?? session.name,
+    email: session.email,
+    avatarUrl: patch.avatarUrl !== undefined ? patch.avatarUrl : session.avatarUrl,
+  });
+  const store = await cookies();
+  store.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
+}
+
+// --- Profil sendiri (self-service; semua role yang login). ---
+// avatarUrl: undefined = tidak diubah, null/"" = hapus foto, string = ganti foto.
+// Foto lama dihapus dari disk saat diganti/dihapus.
+export async function updateProfile(input: {
+  name: string;
+  avatarUrl?: string | null;
+  password?: string;
+}) {
+  const session = await requireSession();
+  const name = input.name.trim();
+  if (!name) throw new Error("Nama wajib diisi");
+  if (name.length > 120) throw new Error("Nama maksimal 120 karakter");
+
+  const current = await db.query.users.findFirst({ where: eq(users.id, session.id) });
+  if (!current) throw new Error("User tidak ditemukan");
+
+  const patch: Record<string, unknown> = { name, updatedAt: new Date().toISOString() };
+
+  const newAvatar = input.avatarUrl === undefined ? undefined : input.avatarUrl || null;
+  const avatarChanged = newAvatar !== undefined && newAvatar !== current.avatarUrl;
+  if (avatarChanged) patch.avatarUrl = newAvatar;
+
+  if (input.password) {
+    if (input.password.length < 6) throw new Error("Password minimal 6 karakter");
+    patch.passwordHash = await bcrypt.hash(input.password, 10);
+  }
+
+  await db.update(users).set(patch).where(eq(users.id, session.id));
+
+  // Hapus file foto lama (hanya aset lokal /uploads) setelah DB sukses.
+  if (avatarChanged && current.avatarUrl) await deleteUpload(current.avatarUrl);
+
+  await reissueSession(session, {
+    name,
+    avatarUrl: avatarChanged ? newAvatar : current.avatarUrl,
+  });
+
+  revalidatePath("/profile");
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 type ChannelType = "wa_official" | "wa_unofficial" | "instagram" | "facebook" | "telegram";

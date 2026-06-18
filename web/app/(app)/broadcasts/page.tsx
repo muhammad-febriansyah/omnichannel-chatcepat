@@ -1,11 +1,11 @@
 import { desc, eq } from "drizzle-orm";
-import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Send } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { BroadcastsTable, type BroadcastRow } from "@/components/app/broadcasts-table";
 import { PageHeader } from "@/components/app/page-header";
+import { ActionLink } from "@/components/app/action-link";
 
 async function load(tenantId: string | null): Promise<BroadcastRow[]> {
   if (!tenantId) return [];
@@ -38,15 +38,13 @@ export default async function BroadcastsPage() {
   return (
     <div className="p-6">
       <PageHeader
+        icon={Send}
         title="Broadcast"
         description={`${rows.length} broadcast`}
         actions={
-          <Link
-            href="/broadcasts/new"
-            className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
+          <ActionLink href="/broadcasts/new">
             <Plus className="size-4" /> Broadcast Baru
-          </Link>
+          </ActionLink>
         }
       />
 

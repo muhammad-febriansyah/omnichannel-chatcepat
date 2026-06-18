@@ -1,11 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
-import { Plus, Upload, Link2 } from "lucide-react";
-import Link from "next/link";
+import { Plus, Upload, Link2, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { ContactsTable, type ContactRow } from "@/components/app/contacts-table";
 import { PageHeader } from "@/components/app/page-header";
+import { ActionLink } from "@/components/app/action-link";
 
 async function load(tenantId: string | null): Promise<ContactRow[]> {
   if (!tenantId) return [];
@@ -35,28 +35,20 @@ export default async function ContactsPage() {
   return (
     <div className="p-6">
       <PageHeader
+        icon={Users}
         title="Kontak"
         description={`${rows.length} kontak`}
         actions={
           <>
-            <Link
-              href="/contacts/acquire"
-              className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium hover:bg-slate-50"
-            >
+            <ActionLink href="/contacts/acquire" variant="outline">
               <Link2 className="size-4" /> Akuisisi
-            </Link>
-            <Link
-              href="/contacts/import"
-              className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium hover:bg-slate-50"
-            >
+            </ActionLink>
+            <ActionLink href="/contacts/import" variant="outline">
               <Upload className="size-4" /> Import
-            </Link>
-            <Link
-              href="/contacts/new"
-              className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
+            </ActionLink>
+            <ActionLink href="/contacts/new">
               <Plus className="size-4" /> Kontak Baru
-            </Link>
+            </ActionLink>
           </>
         }
       />

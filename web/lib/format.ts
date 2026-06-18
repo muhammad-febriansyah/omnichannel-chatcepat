@@ -54,3 +54,41 @@ export function timeAgo(date: Date | string | null): string {
   if (s < 86400) return `${Math.floor(s / 3600)}j`;
   return `${Math.floor(s / 86400)}h`;
 }
+
+// Jam pesan (HH:MM, WIB) untuk bubble chat.
+export function clock(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
+// Kunci hari (YYYY-MM-DD) di zona WIB — untuk mengelompokkan pesan per tanggal.
+export function dayKey(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
+// Label pemisah tanggal di thread: "Hari ini" / "Kemarin" / "12 Juni 2026".
+export function dayLabel(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const key = dayKey(d);
+  if (key === dayKey(new Date())) return "Hari ini";
+  if (key === dayKey(new Date(Date.now() - 86_400_000))) return "Kemarin";
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}

@@ -1,11 +1,15 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Upload, FileUp, Info } from "lucide-react";
+import { ArrowLeft, Upload, FileUp } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { importContacts } from "@/lib/actions";
+import { ActionLink } from "@/components/app/action-link";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/app/page-header";
+import { SectionCard } from "@/components/app/section-card";
+import { StatusPill } from "@/components/app/status-pill";
 
 type Row = { name: string; phone: string };
 
@@ -55,83 +59,74 @@ export default function ImportContactsPage() {
   }
 
   return (
-    <div className="p-6">
-      <Link
-        href="/contacts"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
+    <div className="space-y-5 p-6">
+      <ActionLink href="/contacts" variant="ghost" size="default" className="-ml-2 w-fit gap-1.5">
         <ArrowLeft className="size-4" /> Kembali ke Kontak
-      </Link>
+      </ActionLink>
 
-      <h1 className="text-2xl font-bold tracking-tight">Import Kontak</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Format CSV: <code className="rounded bg-muted px-1.5 py-0.5 text-xs">nama,telepon</code> per baris. Header
-        opsional.
-      </p>
+      <PageHeader
+        icon={Upload}
+        title="Import Kontak"
+        description={
+          <>
+            Format CSV: <code className="rounded bg-muted px-1.5 py-0.5 text-xs">nama,telepon</code> per baris. Header
+            opsional.
+          </>
+        }
+      />
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-        <Info className="mt-0.5 size-4 shrink-0" />
+      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+        <StatusPill tone="amber">Belum opt-in</StatusPill>
         <span>
-          Kontak hasil import berstatus <b>belum opt-in</b> — tidak bisa dikirimi broadcast sampai consent diperoleh.
-          Hanya import kontak milik tenant sendiri.
+          Kontak hasil import <b>tidak bisa dikirimi broadcast</b> sampai consent diperoleh. Hanya import kontak milik
+          tenant sendiri.
         </span>
       </div>
 
-      <div className="mt-5">
-        <div className="mb-2 flex items-center justify-between">
-          <label htmlFor="csv" className="text-sm font-medium text-foreground">
-            Tempel CSV
-          </label>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
-          >
-            <FileUp className="size-3.5" /> Unggah file .csv
-          </button>
-          <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} className="hidden" />
-        </div>
+      <SectionCard
+        title="Tempel CSV"
+        action={
+          <Button type="button" variant="outline" size="default" onClick={() => fileRef.current?.click()}>
+            <FileUp className="size-4" /> Unggah file .csv
+          </Button>
+        }
+      >
+        <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} className="hidden" />
         <textarea
           id="csv"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={10}
           placeholder={"Budi Santoso,628111111111\nSari Indah,628122222222"}
-          className="w-full rounded-xl border border-border bg-card p-3 font-mono text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+          className="w-full rounded-xl border border-border bg-background p-3 font-mono text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
         />
-      </div>
 
-      {rows.length > 0 && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4">
-          <p className="text-sm font-medium">
-            {rows.length} baris terdeteksi <span className="font-normal text-muted-foreground">(preview 5 pertama)</span>
-          </p>
-          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-            {rows.slice(0, 5).map((r, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="font-medium text-foreground">{r.name || "—"}</span>
-                <span>·</span>
-                <span>{r.phone || "—"}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {rows.length > 0 && (
+          <div className="mt-4 rounded-xl border border-border bg-muted/50 p-4">
+            <p className="text-sm font-medium">
+              {rows.length} baris terdeteksi{" "}
+              <span className="font-normal text-muted-foreground">(preview 5 pertama)</span>
+            </p>
+            <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+              {rows.slice(0, 5).map((r, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="font-medium text-foreground">{r.name || "—"}</span>
+                  <span>·</span>
+                  <span>{r.phone || "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </SectionCard>
 
-      <div className="mt-6 flex gap-2">
-        <button
-          onClick={submit}
-          disabled={pending || rows.length === 0}
-          className="flex h-11 items-center gap-2 rounded-xl bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-        >
-          <Upload className="size-4" /> {pending ? "Mengimport…" : `Import ${rows.length || ""} kontak`}
-        </button>
-        <Link
-          href="/contacts"
-          className="flex h-11 items-center rounded-xl border border-border bg-card px-5 text-sm font-medium hover:bg-slate-50"
-        >
+      <div className="flex gap-2">
+        <ActionLink href="/contacts" variant="outline" className="px-5">
           Batal
-        </Link>
+        </ActionLink>
+        <Button onClick={submit} disabled={pending || rows.length === 0} size="lg" className="px-5">
+          <Upload className="size-4" /> {pending ? "Mengimport…" : `Import ${rows.length || ""} kontak`}
+        </Button>
       </div>
     </div>
   );

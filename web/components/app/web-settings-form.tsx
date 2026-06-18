@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { saveWebSettings } from "@/lib/actions";
 import type { WebSettings } from "@/lib/web-settings";
 
@@ -79,7 +80,7 @@ function ImageUpload({
       <input ref={ref} type="file" accept={accept} onChange={onFile} className="hidden" />
       <div className="flex items-center gap-3">
         <div
-          className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-slate-50 ${
+          className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/50 ${
             preview === "logo" ? "h-12 w-20" : "size-12"
           }`}
         >
@@ -266,13 +267,9 @@ export function WebSettingsForm({ initial }: { initial: WebSettings }) {
           </Field>
         </CardContent>
         <CardFooter className="justify-end border-t border-border">
-          <button
-            onClick={submit}
-            disabled={pending}
-            className="flex h-11 items-center gap-2 rounded-lg bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-          >
+          <Button onClick={submit} size="lg" disabled={pending} className="px-5">
             <Save className="size-4" /> {pending ? "Menyimpan…" : "Simpan Pengaturan"}
-          </button>
+          </Button>
         </CardFooter>
       </Card>
     </div>

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Save, MessageSquareText, Zap, FileText } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ActionLink } from "@/components/app/action-link";
 import { cn } from "@/lib/utils";
 import { createTemplate, updateTemplate } from "@/lib/actions";
 
@@ -76,7 +78,9 @@ export function TemplateForm({
                       onClick={() => setKind(k.value)}
                       className={cn(
                         "rounded-xl border p-3 text-left transition",
-                        kind === k.value ? "border-brand-blue bg-blue-50" : "border-border bg-card hover:bg-slate-50",
+                        kind === k.value
+                          ? "border-brand-blue bg-blue-50 dark:bg-blue-500/10"
+                          : "border-border bg-card hover:bg-muted/50",
                       )}
                     >
                       <div className="flex items-center gap-2">
@@ -151,16 +155,12 @@ export function TemplateForm({
           </CardContent>
 
           <CardFooter className="justify-end gap-2 border-t border-border">
-            <Link href="/templates" className="flex h-11 items-center rounded-lg border border-border bg-card px-5 text-sm font-medium hover:bg-slate-50">
+            <ActionLink href="/templates" variant="outline" className="px-5">
               Batal
-            </Link>
-            <button
-              type="submit"
-              disabled={pending}
-              className="flex h-11 items-center gap-2 rounded-lg bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-            >
+            </ActionLink>
+            <Button type="submit" size="lg" disabled={pending} className="px-5">
               <Save className="size-4" /> {pending ? "Menyimpan…" : "Simpan Template"}
-            </button>
+            </Button>
           </CardFooter>
         </Card>
       </form>

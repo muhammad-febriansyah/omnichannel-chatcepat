@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteButton } from "@/components/app/delete-button";
+import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { deleteContact } from "@/lib/actions";
 import { initials } from "@/lib/format";
 
@@ -17,10 +18,10 @@ export interface ContactRow {
   tags: string[];
 }
 
-const OPTIN: Record<string, { label: string; cls: string }> = {
-  opted_in: { label: "Opted-in", cls: "bg-emerald-50 text-emerald-700" },
-  opted_out: { label: "Opted-out", cls: "bg-red-50 text-red-700" },
-  unknown: { label: "Unknown", cls: "bg-slate-100 text-slate-600" },
+const OPTIN: Record<string, { label: string; tone: PillTone }> = {
+  opted_in: { label: "Opted-in", tone: "emerald" },
+  opted_out: { label: "Opted-out", tone: "red" },
+  unknown: { label: "Unknown", tone: "slate" },
 };
 
 const columns: ColumnDef<ContactRow>[] = [
@@ -48,7 +49,7 @@ const columns: ColumnDef<ContactRow>[] = [
     header: "Opt-in",
     cell: ({ row }) => {
       const o = OPTIN[row.original.optInStatus] ?? OPTIN.unknown;
-      return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${o.cls}`}>{o.label}</span>;
+      return <StatusPill tone={o.tone}>{o.label}</StatusPill>;
     },
   },
   {
@@ -64,7 +65,7 @@ const columns: ColumnDef<ContactRow>[] = [
     cell: ({ row }) => (
       <div className="flex flex-wrap gap-1">
         {row.original.tags.slice(0, 3).map((t) => (
-          <span key={t} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px]">
+          <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
             {t}
           </span>
         ))}
@@ -81,7 +82,7 @@ const columns: ColumnDef<ContactRow>[] = [
           href={`/contacts/${row.original.id}/edit`}
           aria-label="Edit kontak"
           title="Edit"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-brand-blue"
+          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-brand-blue"
         >
           <Pencil className="size-4" />
         </Link>

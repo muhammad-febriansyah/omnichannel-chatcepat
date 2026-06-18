@@ -16,6 +16,7 @@ import {
   Plug,
   UserCog,
   Tag,
+  CreditCard,
   Settings,
   LifeBuoy,
   MessageCircle,
@@ -58,6 +59,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { href: "/channels", label: "Channel", icon: Plug, dot: true, ability: "channel.view" },
       { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage" },
       { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage" },
+      { href: "/billing", label: "Tagihan & Paket", icon: CreditCard, ability: "billing.tenant" },
       { href: "/settings", label: "Pengaturan", icon: Settings },
     ],
   },
@@ -70,12 +72,16 @@ export function Sidebar({
   role,
   stats,
   support,
+  logoUrl,
+  siteName,
 }: {
   workspaceName?: string;
   collapsed?: boolean;
   role: Role;
   stats: SidebarStats;
   support?: SupportContact;
+  logoUrl?: string;
+  siteName?: string;
 }) {
   const pathname = usePathname();
   const sections = SECTIONS.map((sec) => ({
@@ -110,9 +116,14 @@ export function Sidebar({
         collapsed ? "w-[72px] p-2.5" : "w-60 p-4",
       )}
     >
-      {/* Brand */}
+      {/* Brand — logo dari web_settings tenant; fallback CCLogo. Collapsed pakai ikon (logo landscape tak muat). */}
       <div className={cn("pt-1", collapsed ? "flex justify-center" : "px-2")}>
-        <CCLogo variant="dark" size={30} withWordmark={!collapsed} />
+        {logoUrl && !collapsed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- aset brand arbitrer (upload tenant)
+          <img src={logoUrl} alt={siteName ?? "Logo"} className="h-8 w-auto max-w-full object-contain" />
+        ) : (
+          <CCLogo variant="dark" size={30} withWordmark={!collapsed} />
+        )}
       </div>
 
       {/* Nav */}

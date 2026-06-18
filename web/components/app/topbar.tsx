@@ -54,8 +54,13 @@ export function Topbar({ session, onToggleSidebar }: { session: Session; onToggl
 
         <DropdownMenu>
           <DropdownMenuTrigger className="ml-1 flex h-10 items-center gap-2 rounded-[10px] border border-border bg-card py-1 pl-1 pr-2.5 outline-none transition-colors hover:border-muted-foreground/40 hover:bg-background focus-visible:border-brand-blue data-[popup-open]:border-brand-blue data-[popup-open]:bg-background">
-            <span className="relative grid size-[30px] place-items-center rounded-lg bg-gradient-to-br from-brand-navy to-brand-blue text-[11px] font-bold tracking-wide text-white">
-              {initials(session.name)}
+            <span className="relative grid size-[30px] place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-brand-navy to-brand-blue text-[11px] font-bold tracking-wide text-white">
+              {session.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- aset upload user
+                <img src={session.avatarUrl} alt={session.name} className="size-full object-cover" />
+              ) : (
+                initials(session.name)
+              )}
               <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card bg-success" />
             </span>
             <span className="hidden flex-col items-start leading-tight sm:flex">
@@ -74,7 +79,7 @@ export function Topbar({ session, onToggleSidebar }: { session: Session; onToggl
               </span>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/settings")}>
+            <DropdownMenuItem onClick={() => router.push("/profile")}>
               <User className="size-4" /> Profil
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/settings")}>

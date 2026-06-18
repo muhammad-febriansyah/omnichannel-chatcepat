@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
 import { getWebSettingsBySlug, metadataFrom } from "@/lib/web-settings-server";
-import { CCLogo } from "@/components/app/charts";
+import { BrandLogo } from "@/components/app/brand-logo";
 import { OptInForm } from "@/components/app/opt-in-form";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -27,11 +27,13 @@ export default async function OptInPage({ params }: { params: Promise<{ slug: st
   }
   if (!tenant) notFound();
 
+  const ws = await getWebSettingsBySlug(slug);
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-brand-navy via-brand-blue to-brand-light p-6">
       <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-xl">
         <div className="mb-6 flex flex-col items-center text-center">
-          <CCLogo variant="dark" size={36} />
+          <BrandLogo logoUrl={ws.logoUrl} siteName={ws.siteName} variant="dark" size={36} />
           <h1 className="mt-4 text-xl font-bold tracking-tight text-brand-navy">Berlangganan {tenant.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">Dapatkan update & promo langsung di WhatsApp kamu.</p>
         </div>

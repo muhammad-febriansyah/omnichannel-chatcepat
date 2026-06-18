@@ -165,7 +165,7 @@ export function ChannelVolumeChart({ data }: { data: { ch: ChannelKey; value: nu
           {Array.from({ length: yTicks + 1 }).map((_, i) => (
             <span
               key={i}
-              className="absolute inset-x-0 h-px bg-slate-100"
+              className="absolute inset-x-0 h-px bg-border"
               style={{ top: `${(i / yTicks) * 100}%` }}
             />
           ))}
@@ -245,7 +245,7 @@ export function ChannelDonut({ data }: { data: { ch: ChannelKey; value: number }
               <ChannelLogo ch={d.ch} size={16} />
               <span className="font-medium text-foreground">{CHANNELS[d.ch].name}</span>
               <span className="text-[12.5px] font-medium text-muted-foreground">{cleanIDR(d.value)}</span>
-              <span className="min-w-[38px] rounded-md bg-slate-100 px-1.5 py-0.5 text-center text-[12.5px] font-bold text-foreground">
+              <span className="min-w-[38px] rounded-md bg-muted px-1.5 py-0.5 text-center text-[12.5px] font-bold text-foreground">
                 {Math.round((d.value / total) * 100)}%
               </span>
             </li>

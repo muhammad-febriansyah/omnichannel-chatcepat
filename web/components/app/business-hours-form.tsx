@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Save, Clock } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { DAYS, type BusinessHours, type DayKey } from "@/lib/business-hours";
 import { saveBusinessHours } from "@/lib/actions";
 
@@ -42,7 +43,7 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <div className="divide-y divide-slate-100 rounded-xl border border-border">
+          <div className="divide-y divide-border rounded-xl border border-border">
             {DAYS.map(({ key, label }) => {
               const d = bh.days[key];
               return (
@@ -93,13 +94,9 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
         </CardContent>
 
         <CardFooter className="justify-end border-t border-border">
-          <button
-            onClick={submit}
-            disabled={pending}
-            className="flex h-11 items-center gap-2 rounded-lg bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-          >
+          <Button onClick={submit} size="lg" disabled={pending} className="px-5">
             <Save className="size-4" /> {pending ? "Menyimpan…" : "Simpan Jam Kerja"}
-          </button>
+          </Button>
         </CardFooter>
       </Card>
     </div>

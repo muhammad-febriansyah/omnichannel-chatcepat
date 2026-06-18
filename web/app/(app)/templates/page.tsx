@@ -1,5 +1,4 @@
 import { and, desc, eq } from "drizzle-orm";
-import Link from "next/link";
 import { Plus, Pencil, Zap, FileText, FileStack } from "lucide-react";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
@@ -8,16 +7,18 @@ import { deleteTemplate } from "@/lib/actions";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { DeleteButton } from "@/components/app/delete-button";
+import { ActionLink } from "@/components/app/action-link";
+import { StatusPill, type PillTone } from "@/components/app/status-pill";
 
 const KIND_META: Record<string, { label: string; icon: typeof Zap }> = {
   quick_reply: { label: "Balasan Cepat", icon: Zap },
   hsm: { label: "WhatsApp HSM", icon: FileText },
 };
 
-const STATUS_CLS: Record<string, string> = {
-  approved: "bg-emerald-50 text-emerald-700",
-  draft: "bg-amber-50 text-amber-700",
-  rejected: "bg-red-50 text-red-700",
+const STATUS_TONE: Record<string, PillTone> = {
+  approved: "emerald",
+  draft: "amber",
+  rejected: "red",
 };
 const STATUS_LABEL: Record<string, string> = {
   approved: "Aktif",
@@ -45,15 +46,13 @@ export default async function TemplatesPage() {
   return (
     <div className="p-6">
       <PageHeader
+        icon={FileText}
         title="Template Pesan"
         description={`${rows.length} template · WhatsApp (HSM) & balasan cepat`}
         actions={
-          <Link
-            href="/templates/new"
-            className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
+          <ActionLink href="/templates/new">
             <Plus className="size-4" /> Template Baru
-          </Link>
+          </ActionLink>
         }
       />
 
@@ -63,9 +62,9 @@ export default async function TemplatesPage() {
           title="Belum ada template"
           description="Buat balasan cepat atau template WhatsApp (HSM) untuk mempercepat respons."
           action={
-            <Link href="/templates/new" className="text-xs font-medium text-brand-blue">
-              Buat template pertama
-            </Link>
+            <ActionLink href="/templates/new">
+              <Plus className="size-4" /> Buat template pertama
+            </ActionLink>
           }
         />
       ) : (
@@ -78,33 +77,33 @@ export default async function TemplatesPage() {
                 key={t.id}
                 className={`flex items-center gap-4 px-4 py-3 ${i > 0 ? "border-t border-border" : ""}`}
               >
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand-blue">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300">
                   <Icon className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold">{t.name}</span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                    <StatusPill tone="slate" className="shrink-0">
                       {meta.label}
-                    </span>
+                    </StatusPill>
                     {t.kind === "hsm" && (
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_CLS[t.status] ?? "bg-slate-100 text-slate-600"}`}
-                      >
+                      <StatusPill tone={STATUS_TONE[t.status] ?? "slate"} className="shrink-0">
                         {STATUS_LABEL[t.status] ?? t.status}
-                      </span>
+                      </StatusPill>
                     )}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.body}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Link
+                  <ActionLink
                     href={`/templates/${t.id}/edit`}
-                    className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-slate-100 hover:text-foreground"
+                    variant="ghost"
+                    size="icon"
                     aria-label="Edit"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     <Pencil className="size-4" />
-                  </Link>
+                  </ActionLink>
                   <DeleteButton
                     onConfirm={deleteTemplate.bind(null, t.id)}
                     title="Hapus template?"

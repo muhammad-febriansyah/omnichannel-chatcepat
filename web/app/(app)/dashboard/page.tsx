@@ -1,11 +1,14 @@
 import { sql } from "drizzle-orm";
-import { MessageSquare, Inbox, Clock, CheckCircle2, TrendingUp, TrendingDown, ChevronRight, Plug, Send, Tag, UserPlus, Zap } from "lucide-react";
+import { MessageSquare, Inbox, Clock, CheckCircle2, Info, Plug, Send, Tag, UserPlus, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/session";
 import { cleanIDR, initials } from "@/lib/format";
-import { Sparkline, ChannelVolumeChart, ChannelDonut, type ChannelKey } from "@/components/app/charts";
+import { ChannelVolumeChart, ChannelDonut, type ChannelKey } from "@/components/app/charts";
 import { DateRangePicker } from "@/components/app/date-range";
 import { PageHeader } from "@/components/app/page-header";
+import { StatCard } from "@/components/app/stat-card";
+import { SectionCard } from "@/components/app/section-card";
+import { SampleBadge } from "@/components/app/status-pill";
 
 async function counts(tenantId: string | null) {
   if (!tenantId) return { conversations: 0, open: 0, contacts: 0, broadcasts: 0 };
@@ -64,69 +67,24 @@ function greeting(hour: number) {
   return "Selamat Malam";
 }
 
-type Kpi = {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  tone: string;
-  trend: number;
-  up: boolean;
-  spark: number[];
-};
+type Kpi = { icon: React.ElementType; label: string; value: string; tone: string; spark: number[] };
 
 // KPI per role: admin = ringkasan bisnis; supervisor = operasional tim & SLA.
 function kpisFor(role: string, c: { conversations: number; open: number; contacts: number; broadcasts: number }): Kpi[] {
   if (role === "supervisor") {
     return [
-      { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", trend: 4.2, up: true, spark: [70, 72, 75, 80, 78, 84, 87] },
-      { icon: CheckCircle2, label: "Resolusi Minggu Ini", value: "94%", tone: "#10B981", trend: 2.1, up: true, spark: [80, 82, 85, 88, 90, 92, 94] },
-      { icon: Clock, label: "Rata-rata Respon", value: "1m 24s", tone: "#3B82F6", trend: 6.0, up: false, spark: [110, 104, 98, 96, 92, 88, 84] },
-      { icon: UserPlus, label: "Agen Aktif", value: String(TEAM.length), tone: "#8B5CF6", trend: 0, up: true, spark: [4, 5, 5, 4, 5, 5, 5] },
+      { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: [70, 72, 75, 80, 78, 84, 87] },
+      { icon: CheckCircle2, label: "Resolusi Minggu Ini", value: "94%", tone: "#10B981", spark: [80, 82, 85, 88, 90, 92, 94] },
+      { icon: Clock, label: "Rata-rata Respon", value: "1m 24s", tone: "#3B82F6", spark: [110, 104, 98, 96, 92, 88, 84] },
+      { icon: UserPlus, label: "Agen Aktif", value: String(TEAM.length), tone: "#8B5CF6", spark: [4, 5, 5, 4, 5, 5, 5] },
     ];
   }
   return [
-    { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#3B82F6", trend: 12.5, up: true, spark: [22, 28, 26, 34, 40, 52, 64] },
-    { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", trend: 4.2, up: true, spark: [70, 72, 75, 80, 78, 84, 87] },
-    { icon: Clock, label: "Total Kontak", value: cleanIDR(c.contacts), tone: "#8B5CF6", trend: 8.1, up: true, spark: [40, 44, 48, 52, 60, 68, 75] },
-    { icon: CheckCircle2, label: "Broadcast", value: cleanIDR(c.broadcasts), tone: "#10B981", trend: 1.8, up: true, spark: [12, 18, 16, 22, 28, 30, 36] },
+    { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#3B82F6", spark: [22, 28, 26, 34, 40, 52, 64] },
+    { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: [70, 72, 75, 80, 78, 84, 87] },
+    { icon: Clock, label: "Total Kontak", value: cleanIDR(c.contacts), tone: "#8B5CF6", spark: [40, 44, 48, 52, 60, 68, 75] },
+    { icon: CheckCircle2, label: "Broadcast", value: cleanIDR(c.broadcasts), tone: "#10B981", spark: [12, 18, 16, 22, 28, 30, 36] },
   ];
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  tone,
-  spark,
-  trend,
-  up,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  tone: string;
-  spark: number[];
-  trend: number;
-  up: boolean;
-}) {
-  const Trend = up ? TrendingUp : TrendingDown;
-  const tColor = up ? "#10B981" : "#EF4444";
-  return (
-    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-5 transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(15,23,42,0.06)]">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="grid size-10 place-items-center rounded-xl" style={{ background: `${tone}1F`, color: tone }}>
-          <Icon className="size-5" strokeWidth={1.75} />
-        </span>
-        <Sparkline data={spark} color={tone} />
-      </div>
-      <div className="text-[13px] font-medium text-muted-foreground">{label}</div>
-      <div className="text-3xl font-bold tracking-tight text-brand-navy">{value}</div>
-      <div className="mt-1 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: tColor }}>
-        <Trend className="size-3.5" /> {up ? "+" : ""}
-        {trend}% <span className="font-medium text-muted-foreground">dari kemarin</span>
-      </div>
-    </div>
-  );
 }
 
 export default async function DashboardPage() {
@@ -157,11 +115,20 @@ export default async function DashboardPage() {
         actions={<DateRangePicker />}
       />
 
-      {/* Stat cards — per role */}
+      {/* KPI — angka asli dari workspace */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k) => (
-          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} tone={k.tone} trend={k.trend} up={k.up} spark={k.spark} />
+          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} tone={k.tone} spark={k.spark} />
         ))}
+      </div>
+
+      {/* Catatan jujur: pisahkan data asli vs contoh supaya tidak membingungkan */}
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <Info className="mt-0.5 size-4 shrink-0" />
+        <p>
+          Angka <b>KPI</b> di atas diambil langsung dari workspace kamu. Grafik channel, tabel tim, dan aktivitas di bawah masih{" "}
+          <b>data contoh</b> sampai channel & tim terhubung.
+        </p>
       </div>
 
       {/* Charts row */}
@@ -173,16 +140,7 @@ export default async function DashboardPage() {
       {/* Panels row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
         {/* Team table */}
-        <div className="rounded-2xl border border-border bg-card p-5 sm:px-6">
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h3 className="text-base font-semibold tracking-tight text-foreground">Top Performer Tim</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">Berdasarkan resolusi minggu ini</p>
-            </div>
-            <button className="inline-flex items-center gap-0.5 text-[12.5px] font-semibold text-brand-blue hover:text-brand-navy">
-              Lihat Semua <ChevronRight className="size-3.5" />
-            </button>
-          </div>
+        <SectionCard title="Top Performer Tim" description="Berdasarkan resolusi minggu ini" action={<SampleBadge />} contentClassName="pt-2">
           <div className="grid grid-cols-[32px_1.4fr_1fr_1fr_1fr] items-center gap-3 border-b-2 border-border px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span>#</span>
             <span>Agent</span>
@@ -193,9 +151,9 @@ export default async function DashboardPage() {
           {TEAM.map((a) => (
             <div
               key={a.rank}
-              className="grid grid-cols-[32px_1.4fr_1fr_1fr_1fr] items-center gap-3 border-b border-slate-100 px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-background"
+              className="grid grid-cols-[32px_1.4fr_1fr_1fr_1fr] items-center gap-3 border-b border-border px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-muted/50"
             >
-              <span className={`grid size-[26px] place-items-center rounded-lg text-xs font-bold ${RANK_BG[a.rank] ?? "bg-slate-100 text-muted-foreground"}`}>
+              <span className={`grid size-[26px] place-items-center rounded-lg text-xs font-bold ${RANK_BG[a.rank] ?? "bg-muted text-muted-foreground"}`}>
                 {a.rank}
               </span>
               <span className="flex min-w-0 items-center gap-2.5">
@@ -204,46 +162,37 @@ export default async function DashboardPage() {
                 </span>
                 <span className="truncate font-semibold">{a.name}</span>
               </span>
-              <span className="font-semibold text-brand-navy">{a.convs}</span>
-              <span className="font-semibold tabular-nums text-brand-navy">{a.response}</span>
+              <span className="font-semibold text-brand-navy dark:text-foreground">{a.convs}</span>
+              <span className="font-semibold tabular-nums text-brand-navy dark:text-foreground">{a.response}</span>
               <span className="flex items-center gap-2">
-                <span className="min-w-7 text-[13px] font-bold text-brand-navy">{a.csat}</span>
-                <span className="h-1.5 max-w-20 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <span className="min-w-7 text-[13px] font-bold text-brand-navy dark:text-foreground">{a.csat}</span>
+                <span className="h-1.5 max-w-20 flex-1 overflow-hidden rounded-full bg-muted">
                   <span className="block h-full rounded-full bg-gradient-to-r from-brand-blue to-brand-light" style={{ width: `${(a.csat / 5) * 100}%` }} />
                 </span>
               </span>
             </div>
           ))}
-        </div>
+        </SectionCard>
 
         {/* Activity feed */}
-        <div className="rounded-2xl border border-border bg-card p-5 sm:px-6">
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h3 className="text-base font-semibold tracking-tight text-foreground">Aktivitas Terbaru</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">Live update</p>
-            </div>
-            <button className="inline-flex items-center gap-0.5 text-[12.5px] font-semibold text-brand-blue hover:text-brand-navy">
-              Lihat Semua <ChevronRight className="size-3.5" />
-            </button>
-          </div>
+        <SectionCard title="Aktivitas Terbaru" description="Riwayat tindakan terakhir" action={<SampleBadge />} contentClassName="pt-2">
           <ul className="flex flex-col">
             {ACTIVITY.map((a, i) => {
               const Icon = a.icon;
               return (
-                <li key={i} className="grid grid-cols-[32px_1fr] gap-3 border-b border-slate-100 py-3 last:border-0">
+                <li key={i} className="grid grid-cols-[32px_1fr] gap-3 border-b border-border py-3 last:border-0">
                   <span className="grid size-8 place-items-center rounded-[10px]" style={{ background: a.bg, color: a.fg }}>
                     <Icon className="size-3.5" strokeWidth={2} />
                   </span>
                   <div>
-                    <p className="text-[13.5px] leading-snug text-brand-navy">{a.text}</p>
+                    <p className="text-[13.5px] leading-snug text-foreground">{a.text}</p>
                     <span className="mt-0.5 inline-block text-[11.5px] text-muted-foreground">{a.time}</span>
                   </div>
                 </li>
               );
             })}
           </ul>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

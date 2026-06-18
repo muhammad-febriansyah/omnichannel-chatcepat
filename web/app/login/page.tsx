@@ -497,7 +497,7 @@ export default function LoginPage() {
 
           {/* Demo hint */}
           <div className="mt-5 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
-            Demo: <span className="font-medium text-foreground">admin@chatcepat.com</span> /{" "}
+            Demo: <span className="font-medium text-foreground">admin@chatcepat.id</span> /{" "}
             <span className="font-medium text-foreground">admin123</span>
           </div>
 

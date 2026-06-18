@@ -10,6 +10,7 @@ import type { Role, SessionUser } from "./rbac";
 export interface Session extends SessionUser {
   name: string;
   email: string;
+  avatarUrl: string | null;
   tenantName: string | null;
 }
 
@@ -34,6 +35,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     tenantId: payload.tenantId,
     name: payload.name,
     email: payload.email,
+    avatarUrl: payload.avatarUrl ?? null,
     tenantName,
   };
 });

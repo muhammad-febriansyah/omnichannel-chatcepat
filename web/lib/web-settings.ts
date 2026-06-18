@@ -41,7 +41,7 @@ export const DEFAULT_WEB_SETTINGS: WebSettings = {
     whatsapp: "6281200000000",
   },
   contact: {
-    email: "halo@chatcepat.com",
+    email: "halo@chatcepat.id",
     phone: "+62 812-0000-0000",
     address: "Jakarta, Indonesia",
   },

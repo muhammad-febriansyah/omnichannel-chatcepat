@@ -14,12 +14,16 @@ export function AppShell({
   workspaceName,
   stats,
   support,
+  logoUrl,
+  siteName,
   children,
 }: {
   session: Session;
   workspaceName?: string;
   stats: SidebarStats;
   support?: SupportContact;
+  logoUrl?: string;
+  siteName?: string;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -58,7 +62,7 @@ export function AppShell({
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <Sidebar workspaceName={workspaceName} collapsed={collapsed} role={session.role} stats={stats} support={support} />
+        <Sidebar workspaceName={workspaceName} collapsed={collapsed} role={session.role} stats={stats} support={support} logoUrl={logoUrl} siteName={siteName} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

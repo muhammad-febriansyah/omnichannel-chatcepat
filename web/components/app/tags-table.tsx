@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteButton } from "@/components/app/delete-button";
+import { ActionLink } from "@/components/app/action-link";
 import { deleteTag } from "@/lib/actions";
 
 export interface TagRow {
@@ -39,14 +39,16 @@ const columns: ColumnDef<TagRow>[] = [
     enableSorting: false,
     cell: ({ row }) => (
       <div className="flex items-center justify-end gap-1">
-        <Link
+        <ActionLink
           href={`/tags/${row.original.id}/edit`}
+          variant="ghost"
+          size="icon"
           aria-label="Edit tag"
           title="Edit"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-brand-blue"
+          className="text-muted-foreground hover:text-brand-blue"
         >
           <Pencil className="size-4" />
-        </Link>
+        </ActionLink>
         <DeleteButton
           onConfirm={() => deleteTag(row.original.id)}
           title="Hapus tag?"
