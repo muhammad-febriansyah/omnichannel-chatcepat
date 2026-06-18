@@ -1,6 +1,6 @@
 """Seed data dev. Jalankan: make seed (atau python -m app.seed).
 
-Buat tenant Demo + admin user (idempoten). Login web: admin@chatcepat.com / admin123.
+Buat tenant Demo + admin user (idempoten). Login web: admin@chatcepat.id / admin123.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from .db import AsyncSessionLocal, engine
 from .models import Tenant, User
 
-ADMIN_EMAIL = "admin@chatcepat.com"
+ADMIN_EMAIL = "admin@chatcepat.id"
 ADMIN_PASSWORD = "admin123"
 
 

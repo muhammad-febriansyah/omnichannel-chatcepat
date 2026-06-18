@@ -24,3 +24,4 @@ class User(UUIDPkMixin, TimestampMixin, Base):
         user_status, nullable=False, server_default="invited"
     )
     last_active_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    avatar_url: Mapped[str | None] = mapped_column(sa.Text)

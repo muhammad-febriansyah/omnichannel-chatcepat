@@ -85,6 +85,7 @@ broadcast_recipient_status = pg_enum(
 )
 template_kind = pg_enum("hsm", "quick_reply", name="template_kind")
 template_status = pg_enum("draft", "approved", "rejected", name="template_status")
+order_status = pg_enum("pending", "paid", "failed", "expired", name="order_status")
 
 # Nama semua ENUM — dipakai migration untuk create/drop type berurutan.
 ENUM_NAMES = [
@@ -93,5 +94,5 @@ ENUM_NAMES = [
     "conversation_handler", "message_direction", "message_sender", "message_type",
     "message_status", "flow_status", "flow_trigger", "knowledge_source_type",
     "knowledge_status", "broadcast_status", "broadcast_recipient_status",
-    "template_kind", "template_status",
+    "template_kind", "template_status", "order_status",
 ]
