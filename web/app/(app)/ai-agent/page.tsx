@@ -1,11 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { knowledgeDocuments, tenants } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { AiAgentPanel } from "@/components/app/ai-agent-panel";
 
 export default async function AiAgentPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("knowledge.manage");
   let persona = "";
   let docs: { id: string; title: string; status: string; sourceType: string }[] = [];
   if (session.tenantId) {

@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { CHANNEL_META, ChannelType, statusLabel } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -36,7 +36,7 @@ async function load(tenantId: string | null) {
 }
 
 export default async function ChannelsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("channel.view");
   const rows = await load(session.tenantId);
 
   const connected = rows.filter((c) => c.status === "connected").length;

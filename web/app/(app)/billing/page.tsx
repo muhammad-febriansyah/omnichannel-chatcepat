@@ -1,5 +1,5 @@
 import { Check, Sparkles, Crown, CreditCard } from "lucide-react";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { listActivePlans, startCheckout } from "@/lib/billing-actions";
 import { PLAN_LABEL } from "@/lib/plan";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export default async function BillingPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("billing.tenant");
   const plans = await listActivePlans();
   const canBuy = can(session, "billing.tenant");
 

@@ -2,7 +2,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { UserPlus, UsersRound } from "lucide-react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { UsersTable, type UserRow } from "@/components/app/users-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
@@ -29,7 +29,7 @@ async function load(tenantId: string | null, selfId: string): Promise<UserRow[]>
 }
 
 export default async function UsersPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("user.manage");
   const rows = await load(session.tenantId, session.id);
 
   return (

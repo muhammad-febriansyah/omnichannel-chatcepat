@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { tenants } from "./db/schema";
 import { SESSION_COOKIE, verifySession } from "./auth";
-import type { Role, SessionUser } from "./rbac";
+import { can, type Ability, type Role, type SessionUser } from "./rbac";
 
 export interface Session extends SessionUser {
   name: string;
@@ -44,5 +44,13 @@ export const getSession = cache(async (): Promise<Session | null> => {
 export async function requireSession(): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/login");
+  return s;
+}
+
+// Gating halaman server-side: wajib login + punya ability, else redirect.
+// Penegakan baca (read) — mutasi tetap pakai requireAbility di Server Action.
+export async function requirePageAbility(ability: Ability): Promise<Session> {
+  const s = await requireSession();
+  if (!can(s, ability)) redirect("/dashboard");
   return s;
 }

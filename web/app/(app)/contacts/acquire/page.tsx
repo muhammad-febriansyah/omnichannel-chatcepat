@@ -2,14 +2,14 @@ import { eq } from "drizzle-orm";
 import { ArrowLeft, UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { AcquireTools } from "@/components/app/acquire-tools";
 import { ActionLink } from "@/components/app/action-link";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusPill } from "@/components/app/status-pill";
 
 export default async function AcquirePage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("contact.manage");
   let slug = "";
   if (session.tenantId) {
     try {

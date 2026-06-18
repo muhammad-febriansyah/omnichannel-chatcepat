@@ -32,7 +32,10 @@ export async function getActiveWebSettings(): Promise<WebSettings> {
 
 // Bangun objek Metadata Next dari WebSettings.
 export function metadataFrom(ws: WebSettings): Metadata {
+  // metadataBase: resolusi URL absolut utk OG/Twitter image (crawler butuh absolut).
+  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
   return {
+    metadataBase: new URL(base),
     title: ws.seo.title || ws.siteName,
     description: ws.seo.description,
     keywords: ws.seo.keywords,

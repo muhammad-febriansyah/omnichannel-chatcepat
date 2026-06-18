@@ -13,8 +13,17 @@ export interface SessionPayload {
   avatarUrl?: string | null;
 }
 
+const DEV_SECRET = "dev-secret-change-me-in-production";
+
 function secret(): Uint8Array {
-  const s = process.env.NEXTAUTH_SECRET || "dev-secret-change-me-in-production";
+  const s = process.env.NEXTAUTH_SECRET;
+  // Prod WAJIB set secret kuat — fallback hardcoded = JWT bisa dipalsu. Fail-hard.
+  if (!s || s === DEV_SECRET) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_SECRET wajib di-set (string acak ≥32 char) di production");
+    }
+    return new TextEncoder().encode(DEV_SECRET);
+  }
   return new TextEncoder().encode(s);
 }
 

@@ -2,7 +2,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { Settings } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants, users } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { normalizeWebSettings } from "@/lib/web-settings";
 import { normalizeBusinessHours } from "@/lib/business-hours";
 import { PageHeader } from "@/components/app/page-header";
@@ -30,7 +30,7 @@ async function loadUsers(tenantId: string, selfId: string): Promise<UserRow[]> {
 }
 
 export default async function SettingsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("billing.tenant");
 
   let raw: Record<string, unknown> | undefined;
   let teamUsers: UserRow[] = [];

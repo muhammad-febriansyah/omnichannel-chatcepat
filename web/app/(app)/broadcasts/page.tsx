@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Plus, Send } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { BroadcastsTable, type BroadcastRow } from "@/components/app/broadcasts-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
@@ -32,7 +32,7 @@ async function load(tenantId: string | null): Promise<BroadcastRow[]> {
 }
 
 export default async function BroadcastsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   const rows = await load(session.tenantId);
 
   return (

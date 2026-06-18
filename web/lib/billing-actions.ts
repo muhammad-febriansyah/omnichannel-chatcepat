@@ -92,7 +92,8 @@ export async function startCheckout(planId: string) {
   if (!plan) throw new Error("Paket tidak ditemukan / tidak aktif");
 
   const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
-  const merchantOrderId = `CC-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
+  // ID order unik & tak tertebak (hindari koleksi/enumerasi) — crypto, bukan Math.random.
+  const merchantOrderId = `CC-${crypto.randomUUID().replace(/-/g, "").slice(0, 18).toUpperCase()}`;
 
   const [order] = await db
     .insert(orders)

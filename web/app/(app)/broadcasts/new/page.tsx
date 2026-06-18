@@ -1,11 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, tags as tagsTable, templates } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { BroadcastWizard, type TemplateOpt } from "@/components/app/broadcast-wizard";
 
 export default async function NewBroadcastPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   let chans: { id: string; name: string; type: string }[] = [];
   let tagNames: string[] = [];
   let tmpls: TemplateOpt[] = [];

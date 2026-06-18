@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { Plus, Pencil, Zap, FileText, FileStack } from "lucide-react";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { deleteTemplate } from "@/lib/actions";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -40,7 +40,7 @@ async function load(tenantId: string | null) {
 }
 
 export default async function TemplatesPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   const rows = await load(session.tenantId);
 
   return (

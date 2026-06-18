@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { Plus, Upload, Link2, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { ContactsTable, type ContactRow } from "@/components/app/contacts-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
@@ -29,7 +29,7 @@ async function load(tenantId: string | null): Promise<ContactRow[]> {
 }
 
 export default async function ContactsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("contact.view");
   const rows = await load(session.tenantId);
 
   return (

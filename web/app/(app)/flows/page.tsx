@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Plus, Workflow, Zap, ArrowRight, ListChecks } from "lucide-react";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { createFlow } from "@/lib/actions";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -23,7 +23,7 @@ async function load(tenantId: string | null) {
 }
 
 export default async function FlowsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("flow.manage");
   const rows = await load(session.tenantId);
 
   const active = rows.filter((f) => f.status === "active").length;

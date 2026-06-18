@@ -175,6 +175,7 @@ export async function attachWaDevice(channelId: string, jid: string) {
 // --- Broadcast: estimasi audience (opt-in dipaksa). ---
 export async function previewAudience(tags: string[]): Promise<number> {
   const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
   if (!session.tenantId) return 0;
   try {
     const conds = [

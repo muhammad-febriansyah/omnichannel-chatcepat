@@ -3,12 +3,12 @@ import { eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { normalizeBusinessHours } from "@/lib/business-hours";
 import { BusinessHoursForm } from "@/components/app/business-hours-form";
 
 export default async function BusinessHoursPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("flow.manage");
   let raw: unknown = undefined;
   if (session.tenantId) {
     try {

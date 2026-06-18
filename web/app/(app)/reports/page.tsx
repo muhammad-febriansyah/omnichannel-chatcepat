@@ -1,5 +1,5 @@
 import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send, BarChart3 } from "lucide-react";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 import { getReportStats } from "@/lib/report-stats";
 import { PageHeader } from "@/components/app/page-header";
@@ -50,7 +50,7 @@ function Breakdown({ title, rows, map, total }: { title: string; rows: { status:
 }
 
 export default async function ReportsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("report.view");
   const s = await getReportStats(session.tenantId);
   const resRate = s.conversations ? Math.round((s.resolved / s.conversations) * 100) : 0;
   const maxDay = Math.max(1, ...s.msgPerDay.map((d) => d.n));

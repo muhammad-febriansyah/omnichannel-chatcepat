@@ -26,6 +26,11 @@ export async function POST(req: Request) {
   const order = await db.query.orders.findFirst({ where: eq(orders.merchantOrderId, merchantOrderId) });
   if (!order) return new NextResponse("Order not found", { status: 404 });
 
+  // Cross-check nilai bayar vs order (defense-in-depth; signature sudah lindungi amount).
+  if (Math.round(Number(amount)) !== Number(order.amountIdr)) {
+    return new NextResponse("Amount mismatch", { status: 400 });
+  }
+
   const raw = Object.fromEntries(form.entries());
 
   // resultCode "00" = sukses. Lainnya = gagal.

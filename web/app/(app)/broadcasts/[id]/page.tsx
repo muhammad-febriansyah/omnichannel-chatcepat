@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Send, CheckCheck, XCircle, ShieldOff, Clock } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts, channels } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { cleanIDR, CHANNEL_META, type ChannelType } from "@/lib/format";
 import { ActionLink } from "@/components/app/action-link";
 import { StatusPill } from "@/components/app/status-pill";
@@ -56,7 +56,7 @@ async function recipientCounts(tenantId: string, broadcastId: string) {
 
 export default async function BroadcastDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   if (!session.tenantId) notFound();
 
   const b = await db.query.broadcasts.findFirst({
