@@ -19,15 +19,17 @@ import { deleteUpload } from "./uploads";
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
 // --- Auth ---
-export async function login(email: string, password: string) {
+// Catatan: Next.js menyensor pesan Error yang di-throw dari Server Action di
+// production (digest only). Kembalikan { error } agar pesan sampai ke form.
+export async function login(email: string, password: string): Promise<{ error: string }> {
   const user = await db.query.users.findFirst({
     where: eq(users.email, email.trim().toLowerCase()),
   });
   if (!user || !user.passwordHash || user.status !== "active") {
-    throw new Error("Email atau password salah");
+    return { error: "Email atau password salah" };
   }
   const okPw = await bcrypt.compare(password, user.passwordHash);
-  if (!okPw) throw new Error("Email atau password salah");
+  if (!okPw) return { error: "Email atau password salah" };
 
   const token = await signSession({
     sub: user.id,

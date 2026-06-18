@@ -86,7 +86,14 @@ export default function LoginForm({ logoUrl, siteName }: { logoUrl?: string | nu
     }
     start(async () => {
       try {
-        await login(email, pw);
+        const res = await login(email, pw);
+        // Sukses → login() redirect (lempar NEXT_REDIRECT, ditangani Next).
+        // Gagal auth → res.error berisi pesan yang aman ditampilkan.
+        if (res?.error) {
+          gooeyToast.error(res.error);
+          setShake(true);
+          setTimeout(() => setShake(false), 450);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Gagal masuk";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
