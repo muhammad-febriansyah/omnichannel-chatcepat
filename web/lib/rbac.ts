@@ -75,6 +75,7 @@ export interface SessionUser {
 
 export function can(user: Pick<SessionUser, "role"> | null, ability: Ability): boolean {
   if (!user) return false;
+  if (user.role === "super_admin") return true; // god-mode: akses semua fitur
   return ROLE_ABILITIES[user.role]?.has(ability) ?? false;
 }
 

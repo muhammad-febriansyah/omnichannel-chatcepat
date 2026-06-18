@@ -25,7 +25,7 @@ export function CtaBand() {
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                href="/login"
+                href="/register"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-brand-navy shadow-sm transition hover:bg-white/90 sm:w-auto"
               >
                 Coba Gratis <ArrowRight className="size-4" />

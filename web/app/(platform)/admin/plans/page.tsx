@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { asc } from "drizzle-orm";
-import { Plus, Pencil, Package } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 import { db } from "@/lib/db";
 import { plans } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
@@ -9,6 +9,7 @@ import { rupiah } from "@/lib/format";
 import { deletePlan } from "@/lib/billing-actions";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
+import { EditButton } from "@/components/app/action-button";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { DeleteButton } from "@/components/app/delete-button";
 
@@ -95,17 +96,8 @@ export default async function PlansPage() {
                       {p.highlight ? <StatusPill tone="amber">Populer</StatusPill> : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <ActionLink
-                          href={`/admin/plans/${p.id}/edit`}
-                          variant="ghost"
-                          size="sm"
-                          aria-label="Edit paket"
-                          title="Edit paket"
-                          className="size-8 p-0"
-                        >
-                          <Pencil className="size-4" />
-                        </ActionLink>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <EditButton href={`/admin/plans/${p.id}/edit`} />
                         <DeleteButton
                           onConfirm={deletePlan.bind(null, p.id)}
                           title="Hapus paket?"

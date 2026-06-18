@@ -7,6 +7,7 @@ import { addKnowledge, previewAi, savePersona } from "@/lib/actions";
 import { PageHeader } from "@/components/app/page-header";
 import { SectionCard } from "@/components/app/section-card";
 import { StatusPill } from "@/components/app/status-pill";
+import { statusLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 
 type Doc = { id: string; title: string; status: string; sourceType: string };
@@ -132,7 +133,7 @@ export function AiAgentPanel({ persona, docs }: { persona: string; docs: Doc[] }
             {docs.map((d) => (
               <div key={d.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
                 <span className="truncate">{d.title}</span>
-                <StatusPill tone={d.status === "ready" ? "emerald" : "amber"}>{d.status}</StatusPill>
+                <StatusPill tone={d.status === "ready" ? "emerald" : "amber"}>{statusLabel(d.status)}</StatusPill>
               </div>
             ))}
           </div>

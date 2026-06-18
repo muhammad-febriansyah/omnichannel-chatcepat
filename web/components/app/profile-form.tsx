@@ -9,14 +9,7 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { updateProfile } from "@/lib/actions";
-import { initials } from "@/lib/format";
-
-const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Super Admin",
-  admin: "Admin",
-  supervisor: "Supervisor",
-  agent: "Agent",
-};
+import { initials, roleLabel } from "@/lib/format";
 
 const schema = z
   .object({
@@ -127,7 +120,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
           <div className="text-center">
             <p className="max-w-[200px] truncate text-sm font-semibold text-foreground">{nameVal}</p>
             <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy">
-              <ShieldCheck className="size-3" /> {ROLE_LABEL[initial.role] ?? initial.role}
+              <ShieldCheck className="size-3" /> {roleLabel(initial.role)}
             </span>
           </div>
 

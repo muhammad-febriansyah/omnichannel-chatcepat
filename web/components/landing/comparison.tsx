@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Check, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { SectionHeading } from "./section-heading";
 import { Reveal } from "./reveal";
 
@@ -40,24 +41,24 @@ export function Comparison() {
           {/* header */}
           <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border bg-muted/40 px-5 py-4 sm:px-7">
             <span className="text-sm font-semibold text-foreground">Kapabilitas</span>
-            <span className="w-20 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:w-28">
+            <span className="flex w-20 justify-center text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:w-28">
               CS Manual
             </span>
-            <span className="w-20 text-center text-xs font-semibold uppercase tracking-wider text-brand-blue sm:w-28">
-              ChatCepat
+            <span className="flex w-20 justify-center sm:w-28">
+              <Badge className="bg-brand-blue text-white">ChatCepat</Badge>
             </span>
           </div>
 
           {ROWS.map((r) => (
             <div
               key={r.label}
-              className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border px-5 py-4 last:border-0 sm:px-7"
+              className="group grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border px-5 py-4 transition-colors last:border-0 hover:bg-muted/30 sm:px-7"
             >
               <span className="text-sm text-foreground">{r.label}</span>
               <span className="flex w-20 justify-center sm:w-28">
                 <Cell ok={r.manual} />
               </span>
-              <span className="flex w-20 justify-center sm:w-28">
+              <span className="flex w-20 justify-center rounded-lg bg-brand-blue/[0.04] py-1 sm:w-28">
                 <Cell ok={r.chatcepat} />
               </span>
             </div>
@@ -66,7 +67,7 @@ export function Comparison() {
 
         <Reveal className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
-            href="/login"
+            href="/register"
             className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-navy px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-navy/25 transition hover:bg-brand-navy/90 sm:w-auto"
           >
             Beralih ke ChatCepat

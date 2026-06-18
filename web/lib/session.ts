@@ -1,10 +1,10 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { tenants } from "./db/schema";
-import { SESSION_COOKIE, verifySession } from "./auth";
+import { ACTING_TENANT_COOKIE, SESSION_COOKIE, verifySession } from "./auth";
 import { can, type Ability, type Role, type SessionUser } from "./rbac";
 
 export interface Session extends SessionUser {
@@ -12,6 +12,9 @@ export interface Session extends SessionUser {
   email: string;
   avatarUrl: string | null;
   tenantName: string | null;
+  isSuperAdmin: boolean;
+  // super_admin god-mode: tenant yang sedang dilihat (impersonasi). null untuk role tenant biasa.
+  actingTenantId: string | null;
 }
 
 // Baca sesi dari cookie JWT httpOnly. null = belum login.
@@ -20,10 +23,27 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const payload = await verifySession(store.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
 
+  const isSuperAdmin = payload.role === "super_admin";
+  // super_admin tak punya tenant sendiri → pakai acting tenant (cookie), default tenant pertama.
+  let tenantId = payload.tenantId;
+  let actingTenantId: string | null = null;
+  if (isSuperAdmin) {
+    const cookieTenant = store.get(ACTING_TENANT_COOKIE)?.value || null;
+    try {
+      const acting = cookieTenant
+        ? await db.query.tenants.findFirst({ where: eq(tenants.id, cookieTenant) })
+        : await db.query.tenants.findFirst({ orderBy: asc(tenants.createdAt) });
+      actingTenantId = acting?.id ?? null;
+    } catch {
+      actingTenantId = null;
+    }
+    tenantId = actingTenantId;
+  }
+
   let tenantName: string | null = null;
   try {
-    if (payload.tenantId) {
-      const t = await db.query.tenants.findFirst({ where: eq(tenants.id, payload.tenantId) });
+    if (tenantId) {
+      const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
       tenantName = t?.name ?? null;
     }
   } catch {
@@ -32,11 +52,13 @@ export const getSession = cache(async (): Promise<Session | null> => {
   return {
     id: payload.sub,
     role: payload.role as Role,
-    tenantId: payload.tenantId,
+    tenantId,
     name: payload.name,
     email: payload.email,
     avatarUrl: payload.avatarUrl ?? null,
     tenantName,
+    isSuperAdmin,
+    actingTenantId,
   };
 });
 

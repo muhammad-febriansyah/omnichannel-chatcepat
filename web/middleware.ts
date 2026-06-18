@@ -33,7 +33,7 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;
-  const isLogin = path === "/login";
+  const isAuthPage = path === "/login" || path === "/register";
   // Publik tanpa login: landing (/), form opt-in, aset upload, callback Duitku (server-to-server).
   const isPublic =
     path === "/" ||
@@ -43,20 +43,17 @@ export async function middleware(req: NextRequest) {
 
   if (isPublic) return NextResponse.next();
 
-  if (!valid && !isLogin) {
+  if (!valid && !isAuthPage) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (valid && isLogin) {
+  if (valid && isAuthPage) {
     return NextResponse.redirect(new URL(landingFor(valid.role), req.url));
   }
 
   // Pisah bidang platform vs tenant.
   if (valid) {
     const isPlatform = path === "/admin" || path.startsWith("/admin/");
-    // super_admin hanya di /admin; selain itu lempar ke /admin.
-    if (valid.role === "super_admin" && !isPlatform) {
-      return NextResponse.redirect(new URL("/admin", req.url));
-    }
+    // super_admin god-mode: boleh ke semua halaman (platform + operasional tenant).
     // Role tenant tidak boleh masuk /admin.
     if (valid.role !== "super_admin" && isPlatform) {
       return NextResponse.redirect(new URL(landingFor(valid.role), req.url));

@@ -5,7 +5,6 @@ import { FloatingActions } from "@/components/landing/floating-actions";
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { TrustStrip } from "@/components/landing/trust-strip";
-import { Stats } from "@/components/landing/stats";
 import { Features } from "@/components/landing/features";
 import { ProductPreview } from "@/components/landing/product-preview";
 import { UseCases } from "@/components/landing/use-cases";
@@ -34,7 +33,6 @@ export default async function Home() {
       <main className="flex-1">
         <Hero />
         <TrustStrip />
-        <Stats />
         <Features />
         <ProductPreview />
         <UseCases />

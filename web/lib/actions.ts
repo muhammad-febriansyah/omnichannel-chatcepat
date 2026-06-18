@@ -9,8 +9,9 @@ import { db } from "./db";
 import { broadcasts, channels, contacts, flows, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
+import { registerTelegramWebhook } from "./telegram";
 import { getConversation } from "./queries";
-import { COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
+import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
@@ -48,10 +49,100 @@ export async function login(email: string, password: string) {
   redirect(user.role === "super_admin" ? "/admin" : user.role === "agent" ? "/inbox" : "/dashboard");
 }
 
+// Self-signup: bikin tenant baru + user owner (role admin), lalu login otomatis.
+export async function register(input: { business: string; name: string; email: string; password: string }) {
+  const business = input.business.trim();
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!business) throw new Error("Nama bisnis wajib diisi");
+  if (!name) throw new Error("Nama wajib diisi");
+  if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
+  if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
+
+  const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (existing) throw new Error("Email sudah terdaftar");
+
+  // Slug unik dari nama bisnis (fallback "tenant"), tambah sufiks -2, -3, ... bila bentrok.
+  const base = business.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "tenant";
+  let slug = base;
+  for (let i = 2; ; i++) {
+    const taken = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
+    if (!taken) break;
+    slug = `${base}-${i}`;
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 10);
+
+  let user: typeof users.$inferSelect;
+  try {
+    user = await db.transaction(async (tx) => {
+      const [tenant] = await tx.insert(tenants).values({ name: business, slug }).returning();
+      const [u] = await tx
+        .insert(users)
+        .values({ tenantId: tenant.id, name, email, passwordHash, role: "admin", status: "active" })
+        .returning();
+      return u;
+    });
+  } catch {
+    throw new Error("Gagal mendaftar. Coba lagi.");
+  }
+
+  const token = await signSession({
+    sub: user.id,
+    role: user.role as Role,
+    tenantId: user.tenantId,
+    name: user.name,
+    email: user.email,
+    avatarUrl: user.avatarUrl,
+  });
+  const store = await cookies();
+  store.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
+  redirect("/dashboard");
+}
+
 export async function logout() {
   const store = await cookies();
   store.delete(SESSION_COOKIE);
+  store.delete(ACTING_TENANT_COOKIE);
   redirect("/login");
+}
+
+// --- Super-admin god-mode: tenant switcher ---
+// Daftar tenant untuk dropdown switcher (super_admin only).
+export async function listTenants(): Promise<{ id: string; name: string; slug: string }[]> {
+  const session = await requireSession();
+  if (!session.isSuperAdmin) return [];
+  try {
+    return await db.query.tenants.findMany({
+      columns: { id: true, name: true, slug: true },
+      orderBy: (t, { asc }) => asc(t.name),
+    });
+  } catch {
+    return []; // DB tak tersedia → switcher kosong, app tetap jalan.
+  }
+}
+
+// Set tenant aktif yang dilihat super_admin (impersonasi). Hanya super_admin.
+export async function setActingTenant(tenantId: string) {
+  const session = await requireSession();
+  if (!session.isSuperAdmin) throw new Error("Hanya super admin");
+  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
+  if (!t) throw new Error("Tenant tidak ditemukan");
+  const store = await cookies();
+  store.set(ACTING_TENANT_COOKIE, tenantId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
+  revalidatePath("/", "layout");
 }
 
 // Tulis ulang cookie sesi (JWT) supaya name/avatar terbaru kebawa ke topbar tanpa re-login.
@@ -146,6 +237,31 @@ export async function createChannel(input: {
       externalId: input.externalId || null,
     })
     .returning({ id: channels.id });
+
+  // Telegram: daftarkan webhook ke Bot API supaya pesan masuk diterima gateway.
+  // Butuh TELEGRAM_WEBHOOK_BASE (URL publik gateway). Tanpa env ini, dilewati (dev).
+  if (input.type === "telegram") {
+    const base = process.env.TELEGRAM_WEBHOOK_BASE;
+    if (base) {
+      try {
+        const { secret } = await registerTelegramWebhook(input.credentials.bot_token, base, row.id);
+        await db
+          .update(channels)
+          .set({ credentials: { ...input.credentials, tg_secret: secret } })
+          .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
+      } catch (e) {
+        await db
+          .update(channels)
+          .set({ status: "pending" })
+          .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
+        const msg = e instanceof Error ? e.message : "tidak diketahui";
+        throw new Error(
+          `Channel dibuat, tapi webhook Telegram gagal didaftarkan: ${msg}. Cek TELEGRAM_WEBHOOK_BASE & bot token.`,
+        );
+      }
+    }
+  }
+
   revalidatePath("/channels");
   // wa_unofficial → lanjut ke halaman pairing QR; lainnya langsung selesai.
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");

@@ -2,6 +2,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -162,6 +163,18 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	if channelID == "" {
 		http.Error(w, "channel_id wajib", http.StatusBadRequest)
 		return
+	}
+
+	// Verifikasi secret_token (X-Telegram-Bot-Api-Secret-Token) bila channel punya
+	// tg_secret — cegah injeksi pesan palsu ke URL webhook. Legacy tanpa secret = lolos.
+	if info, err := s.Resolver.Lookup(r.Context(), channelID); err == nil {
+		if want := info.Credentials.String("tg_secret"); want != "" {
+			got := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+				http.Error(w, "invalid secret", http.StatusUnauthorized)
+				return
+			}
+		}
 	}
 
 	var upd struct {

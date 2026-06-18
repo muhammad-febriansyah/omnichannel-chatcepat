@@ -88,7 +88,7 @@ export function Hero() {
             className="mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-start lg:justify-start"
           >
             <Link
-              href="/login"
+              href="/register"
               className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-navy px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-brand-navy/25 transition hover:bg-brand-navy/90 sm:w-auto"
             >
               Coba Gratis

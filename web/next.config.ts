@@ -12,6 +12,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Sembunyikan badge "N" Next.js (indikator dev) di pojok layar.
+  devIndicators: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

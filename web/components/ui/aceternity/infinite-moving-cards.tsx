@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Quote, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface MovingCard {
   quote: string;
   name: string;
   title: string;
+  rating?: number;
 }
 
 // Aceternity-style InfiniteMovingCards — duplicates items and scrolls via CSS animation.
@@ -59,13 +61,25 @@ export function InfiniteMovingCards({
         {items.map((item, idx) => (
           <li
             key={idx}
-            className="relative w-[320px] max-w-full shrink-0 rounded-2xl border border-border bg-card px-6 py-5 shadow-sm sm:w-[400px]"
+            className="relative w-[320px] max-w-full shrink-0 rounded-2xl border border-border bg-card px-6 py-5 shadow-sm transition-shadow duration-300 hover:shadow-lg sm:w-[400px]"
           >
+            <Quote aria-hidden className="absolute right-5 top-5 size-7 text-brand-blue/15" />
             <blockquote>
-              <p className="text-sm leading-relaxed text-foreground">&ldquo;{item.quote}&rdquo;</p>
-              <footer className="mt-4 flex items-center gap-3">
-                <span className="inline-flex size-9 items-center justify-center rounded-full bg-brand-blue/10 text-sm font-semibold text-brand-blue dark:text-brand-light">
-                  {item.name.charAt(0)}
+              <span className="flex items-center gap-0.5" aria-label={`Rating ${item.rating ?? 5} dari 5`}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star
+                    key={i}
+                    className={cn(
+                      "size-3.5",
+                      i < (item.rating ?? 5) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30",
+                    )}
+                  />
+                ))}
+              </span>
+              <p className="mt-3 text-sm leading-relaxed text-foreground">&ldquo;{item.quote}&rdquo;</p>
+              <footer className="mt-4 flex items-center gap-3 border-t border-border pt-4">
+                <span className="inline-flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-navy to-brand-blue text-xs font-bold text-white shadow-sm">
+                  {item.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
                 </span>
                 <span className="flex flex-col">
                   <cite className="text-sm font-semibold not-italic text-foreground">{item.name}</cite>

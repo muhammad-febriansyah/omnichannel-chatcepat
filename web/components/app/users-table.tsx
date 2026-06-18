@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteButton } from "@/components/app/delete-button";
+import { EditButton } from "@/components/app/action-button";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { deleteUser } from "@/lib/actions";
 import { initials } from "@/lib/format";
@@ -77,15 +76,8 @@ const columns: ColumnDef<UserRow>[] = [
     header: () => <span className="sr-only">Aksi</span>,
     enableSorting: false,
     cell: ({ row }) => (
-      <div className="flex items-center justify-end gap-1">
-        <Link
-          href={`/settings/users/${row.original.id}/edit`}
-          aria-label="Edit user"
-          title="Edit"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-brand-blue"
-        >
-          <Pencil className="size-4" />
-        </Link>
+      <div className="flex items-center justify-end gap-1.5">
+        <EditButton href={`/settings/users/${row.original.id}/edit`} />
         {!row.original.isSelf && (
           <DeleteButton
             onConfirm={() => deleteUser(row.original.id)}

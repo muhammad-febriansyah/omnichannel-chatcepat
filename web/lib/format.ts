@@ -29,10 +29,28 @@ const STATUS_LABEL: Record<string, string> = {
   connected: "Terhubung",
   disconnected: "Terputus",
   banned: "Diblokir",
+  active: "Aktif",
+  suspended: "Ditangguhkan",
+  // Status dokumen knowledge base (AI Agent)
+  ready: "Siap",
+  processing: "Diproses",
+  failed: "Gagal",
 };
 
 export function statusLabel(s: string): string {
-  return STATUS_LABEL[s] ?? s;
+  return STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+}
+
+// Label peran (role) berbahasa Indonesia yang familiar untuk user.
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  supervisor: "Supervisor",
+  agent: "Agen",
+};
+
+export function roleLabel(r: string): string {
+  return ROLE_LABEL[r] ?? r.replace(/_/g, " ");
 }
 
 export function initials(name: string | null | undefined): string {

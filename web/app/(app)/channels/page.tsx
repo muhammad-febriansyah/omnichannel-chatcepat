@@ -7,6 +7,7 @@ import { CHANNEL_META, ChannelType, statusLabel } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { ActionLink } from "@/components/app/action-link";
+import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 
 const STATUS_TONE: Record<string, PillTone> = {
@@ -78,10 +79,10 @@ export default async function ChannelsPage() {
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className="flex size-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
                     style={{ background: meta?.color ?? "#94a3b8" }}
                   >
-                    {meta?.short}
+                    <ChannelIcon type={c.type as ChannelType} className="size-6 text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold">{c.name}</div>
@@ -93,13 +94,17 @@ export default async function ChannelsPage() {
                   </StatusPill>
                 </div>
                 {c.type === "wa_unofficial" && c.status !== "connected" && (
-                  <ActionLink
-                    href={`/channels/${c.id}/pair`}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    <QrCode className="size-4" /> Scan QR untuk pairing
-                  </ActionLink>
+                  <div className="flex justify-end">
+                    <ActionLink
+                      href={`/channels/${c.id}/pair`}
+                      variant="outline"
+                      size="icon-lg"
+                      aria-label="Scan QR untuk pairing"
+                      title="Scan QR untuk pairing"
+                    >
+                      <QrCode className="size-4" />
+                    </ActionLink>
+                  </div>
                 )}
               </div>
             );

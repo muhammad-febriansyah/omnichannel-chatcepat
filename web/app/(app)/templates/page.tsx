@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { Plus, Pencil, Zap, FileText, FileStack } from "lucide-react";
+import { Plus, Zap, FileText, FileStack } from "lucide-react";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { DeleteButton } from "@/components/app/delete-button";
 import { ActionLink } from "@/components/app/action-link";
+import { EditButton } from "@/components/app/action-button";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 
 const KIND_META: Record<string, { label: string; icon: typeof Zap }> = {
@@ -94,16 +95,8 @@ export default async function TemplatesPage() {
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.body}</p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <ActionLink
-                    href={`/templates/${t.id}/edit`}
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Edit"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Pencil className="size-4" />
-                  </ActionLink>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <EditButton href={`/templates/${t.id}/edit`} />
                   <DeleteButton
                     onConfirm={deleteTemplate.bind(null, t.id)}
                     title="Hapus template?"
@@ -113,7 +106,6 @@ export default async function TemplatesPage() {
                       </>
                     }
                     successMessage="Template dihapus"
-                    triggerLabel="Hapus template"
                   />
                 </div>
               </div>

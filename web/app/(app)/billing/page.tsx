@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Check, Sparkles, Crown, CreditCard } from "lucide-react";
 import { requirePageAbility } from "@/lib/session";
 import { can } from "@/lib/rbac";
@@ -11,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 export default async function BillingPage() {
   const session = await requirePageAbility("billing.tenant");
+  // super_admin tidak berlangganan — kelola paket di konsol platform.
+  if (session.isSuperAdmin) redirect("/admin/plans");
   const plans = await listActivePlans();
   const canBuy = can(session, "billing.tenant");
 

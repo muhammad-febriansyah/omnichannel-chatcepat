@@ -1,8 +1,9 @@
-"use client";
-
-import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { SectionHeading } from "./section-heading";
 import { Reveal } from "./reveal";
 
@@ -33,47 +34,27 @@ const FAQS = [
   },
 ];
 
-function FaqItem({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="border-b border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-4 py-5 text-left"
-      >
-        <span className="text-sm font-semibold text-foreground sm:text-base">{q}</span>
-        <ChevronDown
-          className={`size-5 shrink-0 text-muted-foreground transition-transform duration-300 ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.28, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <p className="pb-5 text-sm leading-relaxed text-muted-foreground">{a}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 export function Faq() {
   return (
     <section id="faq" className="scroll-mt-20 py-20 sm:py-28">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <SectionHeading eyebrow="FAQ" title="Pertanyaan yang sering diajukan" />
         <Reveal className="mt-10">
-          {FAQS.map((f) => (
-            <FaqItem key={f.q} q={f.q} a={f.a} />
-          ))}
+          <Accordion
+            multiple={false}
+            className="overflow-hidden rounded-3xl border border-border bg-card/60 px-5 shadow-sm sm:px-7"
+          >
+            {FAQS.map((f, i) => (
+              <AccordionItem key={f.q} value={`item-${i}`}>
+                <AccordionTrigger className="gap-4 py-5 text-sm font-semibold text-foreground hover:no-underline sm:text-base">
+                  {f.q}
+                </AccordionTrigger>
+                <AccordionContent className="pr-8 text-sm leading-relaxed text-muted-foreground">
+                  {f.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </Reveal>
       </div>
     </section>

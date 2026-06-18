@@ -32,12 +32,15 @@ export function Navbar({ logoUrl, siteName }: { logoUrl?: string | null; siteNam
         </Link>
         <NavItems items={NAV_ITEMS} />
         <div className="relative z-20 flex items-center gap-2">
-          <Link href="/login" className="px-3 py-2 text-sm font-medium text-foreground transition-colors hover:text-brand-blue">
+          <Link
+            href="/login"
+            className="inline-flex items-center rounded-full border border-border bg-card/60 px-4 py-2 text-sm font-semibold text-foreground shadow-sm backdrop-blur transition hover:border-brand-blue/40 hover:bg-card hover:text-brand-blue"
+          >
             Masuk
           </Link>
           <Link
-            href="/login"
-            className="inline-flex items-center rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-navy"
+            href="/register"
+            className="inline-flex items-center rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-brand-blue/20 transition hover:bg-brand-navy hover:shadow-md"
           >
             Coba Gratis
           </Link>
@@ -67,14 +70,14 @@ export function Navbar({ logoUrl, siteName }: { logoUrl?: string | null; siteNam
             <Link
               href="/login"
               onClick={() => setOpen(false)}
-              className="flex-1 rounded-full border border-border px-4 py-2.5 text-center text-sm font-medium text-foreground"
+              className="flex flex-1 items-center justify-center rounded-full border border-border bg-card px-4 py-2.5 text-center text-sm font-semibold text-foreground"
             >
               Masuk
             </Link>
             <Link
-              href="/login"
+              href="/register"
               onClick={() => setOpen(false)}
-              className="flex-1 rounded-full bg-brand-blue px-4 py-2.5 text-center text-sm font-semibold text-white"
+              className="flex flex-1 items-center justify-center rounded-full bg-brand-blue px-4 py-2.5 text-center text-sm font-semibold text-white"
             >
               Coba Gratis
             </Link>

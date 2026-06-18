@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { requireSession } from "@/lib/session";
 import { getSidebarStats } from "@/lib/sidebar-stats";
 import { getWebSettingsByTenant } from "@/lib/web-settings-server";
+import { listTenants } from "@/lib/actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -16,6 +17,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     logoUrl = ws.logoUrl || undefined;
     siteName = ws.siteName || undefined;
   }
+  // super_admin: daftar tenant untuk switcher topbar (god-mode).
+  const tenants = session.isSuperAdmin ? await listTenants() : undefined;
   return (
     <AppShell
       session={session}
@@ -24,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       support={support}
       logoUrl={logoUrl}
       siteName={siteName}
+      tenants={tenants}
     >
       {children}
     </AppShell>

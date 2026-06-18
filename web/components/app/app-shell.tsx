@@ -16,6 +16,7 @@ export function AppShell({
   support,
   logoUrl,
   siteName,
+  tenants,
   children,
 }: {
   session: Session;
@@ -24,6 +25,7 @@ export function AppShell({
   support?: SupportContact;
   logoUrl?: string;
   siteName?: string;
+  tenants?: { id: string; name: string; slug: string }[];
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -66,7 +68,7 @@ export function AppShell({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Topbar session={session} onToggleSidebar={toggle} />
+        <Topbar session={session} onToggleSidebar={toggle} tenants={tenants} />
         <Breadcrumbs />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
