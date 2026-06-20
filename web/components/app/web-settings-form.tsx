@@ -125,7 +125,14 @@ const SOCIALS: { key: keyof WebSettings["social"]; label: string; icon: React.El
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, ph: "628xxxxxxxxxx" },
 ];
 
-export function WebSettingsForm({ initial }: { initial: WebSettings }) {
+export function WebSettingsForm({
+  initial,
+  action,
+}: {
+  initial: WebSettings;
+  // Override penyimpan (mis. konsol platform → simpan ke tenant platform). Default = tenant login.
+  action?: (v: WebSettings) => Promise<void>;
+}) {
   const [v, setV] = useState<WebSettings>(initial);
   const [pending, start] = useTransition();
 
@@ -137,7 +144,7 @@ export function WebSettingsForm({ initial }: { initial: WebSettings }) {
   function submit() {
     start(async () => {
       try {
-        await saveWebSettings(v);
+        await (action ?? saveWebSettings)(v);
         gooeyToast.success("Pengaturan website tersimpan");
       } catch (err) {
         gooeyToast.error(err instanceof Error ? err.message : "Gagal menyimpan");

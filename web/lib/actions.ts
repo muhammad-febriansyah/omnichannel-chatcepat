@@ -985,6 +985,23 @@ export async function saveWebSettings(input: WebSettings) {
   revalidatePath("/settings/web");
 }
 
+// --- Pengaturan Platform: branding situs publik (landing/login). Hanya admin platform. ---
+// Target = tenant platform (env PLATFORM_TENANT_SLUG, fallback tenant tertua), bukan acting tenant.
+export async function savePlatformWebSettings(input: WebSettings) {
+  const session = await requireSession();
+  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  const slug = process.env.PLATFORM_TENANT_SLUG;
+  const t = slug
+    ? await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
+    : await db.query.tenants.findFirst({ orderBy: (tt, { asc }) => asc(tt.createdAt) });
+  if (!t) throw new Error("Tenant platform tidak ditemukan");
+  const web_settings = normalizeWebSettings(input);
+  const settings = { ...((t.settings as Record<string, unknown>) ?? {}), web_settings };
+  await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, t.id));
+  revalidatePath("/admin/settings");
+  revalidatePath("/", "layout");
+}
+
 // --- Tag & Label (segmentasi kontak, web-owned). RBAC contact.manage. ---
 export async function createTag(input: { name: string; color: string }) {
   const session = await requireSession();

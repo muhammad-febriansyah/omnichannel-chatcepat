@@ -296,3 +296,40 @@ export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
     return [];
   }
 }
+
+// --- Aktivitas terkini (derivasi dari data yang ada, BUKAN audit log penuh) ---
+// Gabungan event: tenant baru, user baru, transaksi. Untuk jejak audit lengkap
+// (login admin, suspend, dll) butuh tabel audit khusus (migration engine).
+
+export interface ActivityItem {
+  kind: "tenant" | "user" | "order";
+  title: string;
+  subtitle: string;
+  at: string;
+}
+
+export async function getRecentActivity(limit = 40): Promise<ActivityItem[]> {
+  try {
+    const r = await db.execute(
+      sql`(SELECT 'tenant' kind, name title, 'Tenant baru terdaftar' subtitle, created_at at FROM tenants)
+          UNION ALL
+          (SELECT 'user' kind, u.name title, coalesce(t.name,'Platform') || ' · user baru' subtitle, u.created_at at
+             FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id)
+          UNION ALL
+          (SELECT 'order' kind, o.plan_name title,
+                  t.name || ' · transaksi ' || o.status subtitle, o.created_at at
+             FROM orders o JOIN tenants t ON t.id = o.tenant_id)
+          ORDER BY at DESC
+          LIMIT ${limit}`,
+    );
+    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    return rows.map((row) => ({
+      kind: String(row.kind) as ActivityItem["kind"],
+      title: String(row.title),
+      subtitle: String(row.subtitle),
+      at: String(row.at),
+    }));
+  } catch {
+    return [];
+  }
+}
