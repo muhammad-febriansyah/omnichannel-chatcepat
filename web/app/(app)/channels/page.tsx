@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/app/empty-state";
 import { ActionLink } from "@/components/app/action-link";
 import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
+import { Suspense } from "react";
+import { ConnectToast } from "./connect-toast";
 
 const STATUS_TONE: Record<string, PillTone> = {
   connected: "emerald",
@@ -44,6 +46,9 @@ export default async function ChannelsPage() {
 
   return (
     <div className="p-6">
+      <Suspense fallback={null}>
+        <ConnectToast />
+      </Suspense>
       <PageHeader
         icon={Plug}
         title="Channel"

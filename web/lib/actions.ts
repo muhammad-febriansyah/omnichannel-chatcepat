@@ -10,11 +10,13 @@ import { broadcasts, channels, contacts, flows, tags, templates, tenants, users 
 import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
+import { encryptCreds, decryptCreds } from "./channel-crypto";
 import { getConversation } from "./queries";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
+import { FB_OAUTH_COOKIE, listPages, subscribePageToApp, verifyOAuthSession } from "./facebook";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -47,11 +49,11 @@ export async function login(email: string, password: string): Promise<{ error: s
     path: "/",
     maxAge: COOKIE_MAX_AGE,
   });
-  // Landing per-role: super_admin → konsol platform, agent → inbox, sisanya dashboard.
-  redirect(user.role === "super_admin" ? "/admin" : user.role === "agent" ? "/inbox" : "/dashboard");
+  // Landing per-role: admin platform → konsol platform, client → dashboard tenant.
+  redirect(user.role === "admin" ? "/admin" : "/dashboard");
 }
 
-// Self-signup: bikin tenant baru + user owner (role admin), lalu login otomatis.
+// Self-signup: bikin tenant baru + user owner (role client), lalu login otomatis.
 export async function register(input: { business: string; name: string; email: string; password: string }) {
   const business = input.business.trim();
   const name = input.name.trim();
@@ -81,7 +83,7 @@ export async function register(input: { business: string; name: string; email: s
       const [tenant] = await tx.insert(tenants).values({ name: business, slug }).returning();
       const [u] = await tx
         .insert(users)
-        .values({ tenantId: tenant.id, name, email, passwordHash, role: "admin", status: "active" })
+        .values({ tenantId: tenant.id, name, email, passwordHash, role: "client", status: "active" })
         .returning();
       return u;
     });
@@ -115,11 +117,11 @@ export async function logout() {
   redirect("/login");
 }
 
-// --- Super-admin god-mode: tenant switcher ---
-// Daftar tenant untuk dropdown switcher (super_admin only).
+// --- Admin platform god-mode: tenant switcher ---
+// Daftar tenant untuk dropdown switcher (admin platform only).
 export async function listTenants(): Promise<{ id: string; name: string; slug: string }[]> {
   const session = await requireSession();
-  if (!session.isSuperAdmin) return [];
+  if (!session.isPlatformAdmin) return [];
   try {
     return await db.query.tenants.findMany({
       columns: { id: true, name: true, slug: true },
@@ -130,10 +132,10 @@ export async function listTenants(): Promise<{ id: string; name: string; slug: s
   }
 }
 
-// Set tenant aktif yang dilihat super_admin (impersonasi). Hanya super_admin.
+// Set tenant aktif yang dilihat admin platform (impersonasi). Hanya admin.
 export async function setActingTenant(tenantId: string) {
   const session = await requireSession();
-  if (!session.isSuperAdmin) throw new Error("Hanya super admin");
+  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
   if (!t) throw new Error("Tenant tidak ditemukan");
   const store = await cookies();
@@ -235,7 +237,7 @@ export async function createChannel(input: {
       type: input.type,
       name: input.name.trim(),
       status,
-      credentials: input.credentials,
+      credentials: encryptCreds(input.credentials), // AES-256-GCM at-rest
       externalId: input.externalId || null,
     })
     .returning({ id: channels.id });
@@ -249,7 +251,7 @@ export async function createChannel(input: {
         const { secret } = await registerTelegramWebhook(input.credentials.bot_token, base, row.id);
         await db
           .update(channels)
-          .set({ credentials: { ...input.credentials, tg_secret: secret } })
+          .set({ credentials: encryptCreds({ ...input.credentials, tg_secret: secret }) })
           .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
       } catch (e) {
         await db
@@ -269,6 +271,44 @@ export async function createChannel(input: {
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
 }
 
+// --- Facebook/Instagram OAuth: finalisasi pilih Page → subscribe webhook + simpan channel. ---
+// Dipanggil dari halaman pilih Page setelah callback OAuth. User token long-lived dibaca
+// dari cookie httpOnly (FB_OAUTH_COOKIE), bukan input user → tak bisa dipalsu.
+export async function connectMetaPage(pageId: string): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+
+  const store = await cookies();
+  const sealed = store.get(FB_OAUTH_COOKIE)?.value;
+  const oauth = sealed ? await verifyOAuthSession(sealed) : null;
+  if (!oauth || oauth.tenantId !== session.tenantId) {
+    throw new Error("Sesi OAuth kedaluwarsa, ulangi Login dengan Facebook");
+  }
+
+  // Ambil ulang daftar Page pakai user token → temukan Page Access Token utk pageId.
+  const pages = await listPages(oauth.userToken);
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) throw new Error("Page tidak ditemukan atau akses dicabut");
+
+  // Subscribe app ke webhook Page — wajib supaya pesan masuk diteruskan ke gateway.
+  await subscribePageToApp(page.id, page.access_token);
+
+  // Channel type = platform OAuth (facebook | instagram). external_id = Page ID (resolver gateway).
+  await db.insert(channels).values({
+    tenantId: session.tenantId,
+    type: oauth.platform,
+    name: page.name,
+    status: "connected",
+    credentials: encryptCreds({ access_token: page.access_token, page_id: page.id }),
+    externalId: page.id,
+  });
+
+  store.delete(FB_OAUTH_COOKIE);
+  revalidatePath("/channels");
+  redirect("/channels?connected=1");
+}
+
 // --- WA unofficial: simpan device JID hasil pairing (dipanggil dari halaman QR). ---
 export async function attachWaDevice(channelId: string, jid: string) {
   const session = await requireSession();
@@ -282,7 +322,9 @@ export async function attachWaDevice(channelId: string, jid: string) {
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
   if (!ch) throw new Error("Channel tidak ditemukan");
 
-  const creds = { ...(ch.credentials as Record<string, unknown>), device_jid: jid };
+  // Decrypt existing dulu (back-compat) → merge device_jid → encrypt ulang semua.
+  const plain = decryptCreds(ch.credentials as Record<string, unknown>);
+  const creds = encryptCreds({ ...plain, device_jid: jid });
   await db
     .update(channels)
     .set({ status: "connected", externalId: jid, credentials: creds, updatedAt: sql`now()` })
@@ -591,16 +633,14 @@ export async function importContacts(
   return { inserted: ins.length, skipped: clean.length - ins.length };
 }
 
-// --- Tim / Users (kelola user & role, 03). RBAC user.manage. ---
-type TenantRole = "admin" | "supervisor" | "agent";
+// --- Tim / Users (kelola anggota workspace, 03). RBAC user.manage. ---
+// Semua anggota tenant berrole "client" (akses penuh). admin = platform, tak dibuat di sini.
 type UserStatusInput = "active" | "invited" | "disabled";
-const ASSIGNABLE_ROLES: TenantRole[] = ["admin", "supervisor", "agent"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function createUser(input: {
   name: string;
   email: string;
-  role: TenantRole;
   password: string;
 }) {
   const session = await requireSession();
@@ -611,7 +651,6 @@ export async function createUser(input: {
   if (!name) throw new Error("Nama wajib diisi");
   if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
   if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
-  if (!ASSIGNABLE_ROLES.includes(input.role)) throw new Error("Role tidak valid");
   const passwordHash = await bcrypt.hash(input.password, 10);
   try {
     await db.insert(users).values({
@@ -619,7 +658,7 @@ export async function createUser(input: {
       name,
       email,
       passwordHash,
-      role: input.role,
+      role: "client",
       status: "active",
     });
   } catch {
@@ -631,20 +670,18 @@ export async function createUser(input: {
 
 export async function updateUser(
   id: string,
-  input: { name: string; role: TenantRole; status: UserStatusInput; password?: string },
+  input: { name: string; status: UserStatusInput; password?: string },
 ) {
   const session = await requireSession();
   requireAbility(session, "user.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   const name = input.name.trim();
   if (!name) throw new Error("Nama wajib diisi");
-  if (!ASSIGNABLE_ROLES.includes(input.role)) throw new Error("Role tidak valid");
   if (id === session.id && input.status !== "active") {
     throw new Error("Tidak bisa menonaktifkan akun sendiri");
   }
   const patch: Record<string, unknown> = {
     name,
-    role: input.role,
     status: input.status,
     updatedAt: new Date().toISOString(),
   };
@@ -666,7 +703,7 @@ export async function deleteUser(id: string) {
   revalidatePath("/settings/users");
 }
 
-// --- Platform: aktifkan / suspend tenant (super_admin, tenant.manage). ---
+// --- Platform: aktifkan / suspend tenant (admin platform, tenant.manage). ---
 export async function setTenantStatus(id: string, status: "active" | "suspended") {
   const session = await requireSession();
   requireAbility(session, "tenant.manage");

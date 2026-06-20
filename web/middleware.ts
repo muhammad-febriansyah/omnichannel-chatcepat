@@ -23,9 +23,8 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
 
 // Landing aman per-role (pasti punya ability halaman tujuan → tidak loop).
 function landingFor(role: Role): string {
-  if (role === "super_admin") return "/admin";
-  if (role === "agent") return "/inbox";
-  return "/dashboard";
+  if (role === "admin") return "/admin"; // admin platform → konsol platform
+  return "/dashboard"; // client → dashboard tenant
 }
 
 // Gate admin panel: wajib login + cek ability per halaman.
@@ -39,7 +38,8 @@ export async function middleware(req: NextRequest) {
     path === "/" ||
     path.startsWith("/opt-in/") ||
     path.startsWith("/uploads/") ||
-    path.startsWith("/api/duitku/");
+    path.startsWith("/api/duitku/") ||
+    path.startsWith("/api/meta/");
 
   if (isPublic) return NextResponse.next();
 
@@ -53,9 +53,9 @@ export async function middleware(req: NextRequest) {
   // Pisah bidang platform vs tenant.
   if (valid) {
     const isPlatform = path === "/admin" || path.startsWith("/admin/");
-    // super_admin god-mode: boleh ke semua halaman (platform + operasional tenant).
-    // Role tenant tidak boleh masuk /admin.
-    if (valid.role !== "super_admin" && isPlatform) {
+    // admin platform god-mode: boleh ke semua halaman (platform + operasional tenant).
+    // client tidak boleh masuk /admin.
+    if (valid.role !== "admin" && isPlatform) {
       return NextResponse.redirect(new URL(landingFor(valid.role), req.url));
     }
 

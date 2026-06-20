@@ -2,7 +2,18 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, QrCode, Check, Loader2, Lock, KeyRound, Plug, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  QrCode,
+  Check,
+  Loader2,
+  Lock,
+  KeyRound,
+  Plug,
+  ChevronRight,
+  ShieldCheck,
+  ChevronDown,
+} from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { createChannel } from "@/lib/actions";
 import { CHANNEL_META, ChannelType } from "@/lib/format";
@@ -49,9 +60,12 @@ export default function ConnectChannelPage() {
   const [type, setType] = useState<ChannelType>("telegram");
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
+  const [advanced, setAdvanced] = useState(false);
   const [pending, start] = useTransition();
 
   const fields = FIELDS[type];
+  // Meta (FB/IG) pakai OAuth "Login dengan Facebook" — form manual hanya fallback lanjutan.
+  const isMeta = type === "facebook" || type === "instagram";
 
   function submit() {
     if (!name.trim()) {
@@ -109,6 +123,7 @@ export default function ConnectChannelPage() {
                   onClick={() => {
                     setType(t.value);
                     setCreds({});
+                    setAdvanced(false);
                   }}
                   className={cn(
                     "group relative flex flex-col gap-3 rounded-2xl border p-4 text-left transition-all duration-200",
@@ -170,6 +185,63 @@ export default function ConnectChannelPage() {
               </div>
             </div>
 
+            {/* Meta (FB/IG): jalur utama = OAuth 1-klik, tanpa copy-paste token. */}
+            {isMeta ? (
+              <div className="space-y-4 p-5">
+                <MetaOAuthFlow platform={type as "facebook" | "instagram"} label={selectedType?.label ?? ""} />
+
+                {/* Fallback lanjutan: input token manual (advanced) */}
+                <button
+                  type="button"
+                  onClick={() => setAdvanced((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+                >
+                  <span>Punya token sendiri? Input manual</span>
+                  <ChevronDown className={cn("size-4 transition-transform", advanced && "rotate-180")} />
+                </button>
+
+                {advanced && (
+                  <div className="space-y-4 rounded-xl border border-dashed border-border bg-muted/30 p-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">Nama Channel</label>
+                      <div className="relative">
+                        <Plug className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="mis. Page Toko Utama"
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    {fields.map((f) => (
+                      <div key={f.key}>
+                        <label className="mb-1.5 block text-sm font-medium">{f.label}</label>
+                        <div className="relative">
+                          <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            value={creds[f.key] ?? ""}
+                            onChange={(e) => setCreds((c) => ({ ...c, [f.key]: e.target.value }))}
+                            placeholder={f.placeholder}
+                            className={cn(inputCls, "font-mono")}
+                          />
+                        </div>
+                        {f.hint && <p className="mt-1.5 text-xs text-muted-foreground">{f.hint}</p>}
+                      </div>
+                    ))}
+                    <Button onClick={submit} disabled={pending} variant="outline" size="lg" className="w-full">
+                      {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+                      {pending ? "Menghubungkan…" : "Hubungkan manual"}
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Lock className="size-3" />
+                  Kredensial dienkripsi at-rest (AES-256-GCM).
+                </div>
+              </div>
+            ) : (
             <div className="space-y-4 p-5">
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Nama Channel</label>
@@ -220,11 +292,50 @@ export default function ConnectChannelPage() {
 
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
                 <Lock className="size-3" />
-                Kredensial dienkripsi sebelum disimpan.
+                Kredensial dienkripsi at-rest (AES-256-GCM).
               </div>
             </div>
+            )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Jalur OAuth Meta: tombol "Login dengan Facebook" → /oauth/start (redirect dialog Meta).
+function MetaOAuthFlow({ platform, label }: { platform: "facebook" | "instagram"; label: string }) {
+  const [redirecting, setRedirecting] = useState(false);
+  const steps = [
+    "Klik tombol, login & pilih halaman di Facebook",
+    "Beri izin akses pesan ke ChatCepat",
+    "Selesai — pesan masuk langsung ke inbox",
+  ];
+  return (
+    <div className="space-y-4">
+      <ol className="space-y-2.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex items-start gap-3 text-sm">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-brand-navy dark:bg-blue-500/15 dark:text-blue-300">
+              {i + 1}
+            </span>
+            <span className="leading-snug text-muted-foreground">{s}</span>
+          </li>
+        ))}
+      </ol>
+
+      <a
+        href={`/api/channels/facebook/oauth/start?platform=${platform}`}
+        onClick={() => setRedirecting(true)}
+        className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-xl bg-[#1877f2] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1568d8] active:scale-[0.99]"
+      >
+        {redirecting ? <Loader2 className="size-5 animate-spin" /> : <ChannelIcon type={platform} className="size-5" />}
+        {redirecting ? "Mengarahkan…" : `Login dengan ${label}`}
+      </a>
+
+      <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-snug text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0" />
+        <span>Aman lewat Meta resmi. ChatCepat tak pernah melihat kata sandi Facebook-mu.</span>
       </div>
     </div>
   );
