@@ -182,6 +182,18 @@ export async function listPages(userToken: string): Promise<FbPage[]> {
   }));
 }
 
+// IG Business Account ID yang ter-link ke Page (null kalau Page tak punya IG Professional).
+// Dipakai sbg external_id channel instagram — resolver gateway match pakai id ini.
+export async function getInstagramAccount(pageId: string, pageToken: string): Promise<string | null> {
+  const url = new URL(`${GRAPH}/${pageId}`);
+  url.searchParams.set("fields", "instagram_business_account{id}");
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) await graphError(res);
+  const j = (await res.json()) as { instagram_business_account?: { id?: string } };
+  return j.instagram_business_account?.id ?? null;
+}
+
 // Subscribe app ke webhook Page → pesan masuk mulai dikirim ke callback gateway.
 export async function subscribePageToApp(pageId: string, pageToken: string): Promise<void> {
   const url = new URL(`${GRAPH}/${pageId}/subscribed_apps`);

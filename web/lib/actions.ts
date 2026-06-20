@@ -16,7 +16,7 @@ import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, SESSION_COOKIE, signSession } fro
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
-import { FB_OAUTH_COOKIE, listPages, subscribePageToApp, verifyOAuthSession } from "./facebook";
+import { FB_OAUTH_COOKIE, getInstagramAccount, listPages, subscribePageToApp, verifyOAuthSession } from "./facebook";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -294,14 +294,29 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   // Subscribe app ke webhook Page — wajib supaya pesan masuk diteruskan ke gateway.
   await subscribePageToApp(page.id, page.access_token);
 
-  // Channel type = platform OAuth (facebook | instagram). external_id = Page ID (resolver gateway).
+  // Resolver gateway match inbound pakai entry.id webhook:
+  //   facebook  → entry.id = Page ID
+  //   instagram → entry.id = Instagram Business Account ID (BUKAN Page ID)
+  // Jadi utk IG, external_id harus IG account id yg ter-link ke Page.
+  let externalId = page.id;
+  if (oauth.platform === "instagram") {
+    const igId = await getInstagramAccount(page.id, page.access_token);
+    if (!igId) {
+      throw new Error(
+        `Page "${page.name}" belum tertaut akun Instagram Professional. Tautkan IG ke Page dulu di Meta Business.`,
+      );
+    }
+    externalId = igId;
+  }
+
+  // Page Access Token dipakai kirim balasan (FB & IG messaging via page token).
   await db.insert(channels).values({
     tenantId: session.tenantId,
     type: oauth.platform,
     name: page.name,
     status: "connected",
     credentials: encryptCreds({ access_token: page.access_token, page_id: page.id }),
-    externalId: page.id,
+    externalId,
   });
 
   store.delete(FB_OAUTH_COOKIE);
