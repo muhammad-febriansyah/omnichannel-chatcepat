@@ -98,8 +98,10 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const isPlatformAdmin = role === "admin";
-  // admin platform (god-mode): konsol platform di atas, semua menu kebuka tanpa plan-lock.
-  const baseSections = isPlatformAdmin ? [PLATFORM_SECTION, ...SECTIONS] : SECTIONS;
+  // admin platform: HANYA konsol platform (tracking tenant, paket, transaksi). Menu
+  // operasional omnichannel (inbox, kontak, broadcast, channel, dll) disembunyikan —
+  // itu ranah tenant, bukan super admin.
+  const baseSections = isPlatformAdmin ? [PLATFORM_SECTION] : SECTIONS;
   // Filter per-role (hide), lalu tandai `locked` per-paket (tampil tapi terkunci).
   const sections = baseSections
     .map((sec) => ({
