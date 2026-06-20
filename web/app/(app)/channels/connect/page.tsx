@@ -20,6 +20,7 @@ import { CHANNEL_META, ChannelType } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChannelIcon } from "@/components/app/channel-icon";
+import { WaEmbeddedSignup } from "./wa-embedded-signup";
 
 type Tag = { label: string; tone: "green" | "blue" | "amber" | "slate" };
 
@@ -64,8 +65,11 @@ export default function ConnectChannelPage() {
   const [pending, start] = useTransition();
 
   const fields = FIELDS[type];
-  // Meta (FB/IG) pakai OAuth "Login dengan Facebook" — form manual hanya fallback lanjutan.
+  // Meta (FB/IG) pakai OAuth "Login dengan Facebook"; WA pakai Embedded Signup.
+  // Untuk semua ini form manual hanya fallback lanjutan (advanced).
   const isMeta = type === "facebook" || type === "instagram";
+  const isWaOfficial = type === "wa_official";
+  const hasGuidedFlow = isMeta || isWaOfficial;
 
   function submit() {
     if (!name.trim()) {
@@ -185,10 +189,14 @@ export default function ConnectChannelPage() {
               </div>
             </div>
 
-            {/* Meta (FB/IG): jalur utama = OAuth 1-klik, tanpa copy-paste token. */}
-            {isMeta ? (
+            {/* FB/IG = OAuth 1-klik; WA = Embedded Signup. Form manual hanya fallback. */}
+            {hasGuidedFlow ? (
               <div className="space-y-4 p-5">
-                <MetaOAuthFlow platform={type as "facebook" | "instagram"} label={selectedType?.label ?? ""} />
+                {isMeta ? (
+                  <MetaOAuthFlow platform={type as "facebook" | "instagram"} label={selectedType?.label ?? ""} />
+                ) : (
+                  <WaEmbeddedSignup />
+                )}
 
                 {/* Fallback lanjutan: input token manual (advanced) */}
                 <button

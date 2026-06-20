@@ -24,6 +24,12 @@ import {
   unsubscribePageFromApp,
   verifyOAuthSession,
 } from "./facebook";
+import {
+  exchangeWaCode,
+  getWaPhoneInfo,
+  registerWaPhone,
+  subscribeWabaToApp,
+} from "./whatsapp";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -329,6 +335,59 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   store.delete(FB_OAUTH_COOKIE);
   revalidatePath("/channels");
   redirect("/channels?connected=1");
+}
+
+// --- WhatsApp Cloud Embedded Signup: finalisasi (tukar code → subscribe → register → simpan). ---
+// Dipanggil dari client setelah FB JS SDK selesai. code, wabaId, phoneNumberId dari SDK.
+export async function connectWhatsAppEmbedded(input: {
+  code: string;
+  wabaId: string;
+  phoneNumberId: string;
+}): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!input.code || !input.wabaId || !input.phoneNumberId) {
+    throw new Error("Data Embedded Signup tidak lengkap");
+  }
+
+  // 1. Tukar code → business token (non-expiring).
+  const token = await exchangeWaCode(input.code);
+
+  // 2. Subscribe app ke WABA → webhook pesan aktif.
+  await subscribeWabaToApp(input.wabaId, token);
+
+  // 3. Register nomor ke Cloud API (best-effort — bisa sudah ter-register).
+  try {
+    await registerWaPhone(input.phoneNumberId, token, "000000");
+  } catch {
+    /* sudah register / butuh PIN custom → tetap lanjut simpan channel */
+  }
+
+  // 4. Nama channel dari display number.
+  let name = "WhatsApp";
+  try {
+    const info = await getWaPhoneInfo(input.phoneNumberId, token);
+    name = info.verifiedName || info.displayPhoneNumber || name;
+  } catch {
+    /* abaikan — pakai default */
+  }
+
+  // external_id = phone_number_id (resolver gateway WA). credentials utk kirim balasan.
+  await db.insert(channels).values({
+    tenantId: session.tenantId,
+    type: "wa_official",
+    name,
+    status: "connected",
+    credentials: encryptCreds({
+      access_token: token,
+      phone_number_id: input.phoneNumberId,
+      waba_id: input.wabaId,
+    }),
+    externalId: input.phoneNumberId,
+  });
+
+  revalidatePath("/channels");
 }
 
 // --- Putuskan (logout) channel: unsubscribe webhook Meta (best-effort) + hapus row. ---
