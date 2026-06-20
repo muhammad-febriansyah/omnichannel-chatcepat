@@ -1,10 +1,10 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Save, Package } from "lucide-react";
+import { Save, Package, Plus, X, Check } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -275,17 +275,24 @@ export function PlanForm({
                 )}
               </div>
               <div>
-                <label htmlFor="features" className="mb-1.5 block text-sm font-medium text-foreground">
-                  Fitur
-                </label>
-                <textarea
-                  id="features"
-                  {...register("features")}
-                  rows={5}
-                  placeholder={"Unlimited agen\nAuto-reply AI\nBroadcast WhatsApp\nLaporan lengkap"}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+                <label className="mb-1.5 block text-sm font-medium text-foreground">Fitur</label>
+                <Controller
+                  control={control}
+                  name="features"
+                  render={({ field }) => {
+                    const arr = (field.value ?? "")
+                      .toString()
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    return (
+                      <FeatureInput value={arr} onChange={(v) => field.onChange(v.join("\n"))} />
+                    );
+                  }}
                 />
-                <p className="mt-1.5 text-xs text-muted-foreground">Satu fitur per baris.</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Ketik fitur lalu tekan Enter. Klik ✕ untuk menghapus.
+                </p>
               </div>
             </div>
           </div>
@@ -326,6 +333,71 @@ export function PlanForm({
         </CardFooter>
       </Card>
     </form>
+  );
+}
+
+// Input fitur berbasis chip: ketik + Enter tambah, ✕ hapus. Lebih mudah dari textarea.
+function FeatureInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+
+  function add() {
+    const t = draft.trim();
+    if (!t) return;
+    if (!value.includes(t)) onChange([...value, t]);
+    setDraft("");
+  }
+  function remove(i: number) {
+    onChange(value.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-background p-2.5 transition-shadow focus-within:border-brand-blue focus-within:bg-card focus-within:ring-4 focus-within:ring-brand-blue/10">
+      {value.length > 0 && (
+        <ul className="mb-2 flex flex-wrap gap-2">
+          {value.map((f, i) => (
+            <li
+              key={f}
+              className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-brand-navy dark:bg-blue-500/15 dark:text-blue-300"
+            >
+              <Check className="size-3.5 shrink-0 text-brand-blue" />
+              {f}
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                aria-label={`Hapus ${f}`}
+                className="grid size-4 place-items-center rounded-full text-brand-navy/60 transition hover:bg-brand-navy/10 hover:text-brand-navy"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            } else if (e.key === "Backspace" && draft === "" && value.length > 0) {
+              remove(value.length - 1);
+            }
+          }}
+          placeholder={value.length === 0 ? "mis. Unlimited agen" : "Tambah fitur…"}
+          className="h-8 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground/70"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!draft.trim()}
+          className="inline-flex h-8 items-center gap-1 rounded-md bg-brand-blue px-2.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+        >
+          <Plus className="size-3.5" /> Tambah
+        </button>
+      </div>
+    </div>
   );
 }
 
