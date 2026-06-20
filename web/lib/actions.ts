@@ -12,7 +12,7 @@ import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
 import { getConversation } from "./queries";
-import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, SESSION_COOKIE, signSession } from "./auth";
+import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
@@ -160,6 +160,37 @@ export async function setActingTenant(tenantId: string) {
     maxAge: COOKIE_MAX_AGE,
   });
   revalidatePath("/", "layout");
+}
+
+// Mulai impersonasi: admin platform "masuk sebagai tenant" → operasikan menu omnichannel.
+// Set acting tenant + flag impersonasi, lalu arahkan ke dashboard tenant.
+export async function startImpersonation(tenantId: string) {
+  const session = await requireSession();
+  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
+  if (!t) throw new Error("Tenant tidak ditemukan");
+  const store = await cookies();
+  const opts = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  };
+  store.set(ACTING_TENANT_COOKIE, tenantId, opts);
+  store.set(IMPERSONATE_COOKIE, tenantId, opts);
+  revalidatePath("/", "layout");
+  redirect("/dashboard");
+}
+
+// Keluar impersonasi: hapus flag, kembali ke konsol platform.
+export async function stopImpersonation() {
+  const session = await requireSession();
+  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  const store = await cookies();
+  store.delete(IMPERSONATE_COOKIE);
+  revalidatePath("/", "layout");
+  redirect("/admin");
 }
 
 // Tulis ulang cookie sesi (JWT) supaya name/avatar terbaru kebawa ke topbar tanpa re-login.

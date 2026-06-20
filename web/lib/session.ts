@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { tenants } from "./db/schema";
-import { ACTING_TENANT_COOKIE, SESSION_COOKIE, verifySession } from "./auth";
+import { ACTING_TENANT_COOKIE, IMPERSONATE_COOKIE, SESSION_COOKIE, verifySession } from "./auth";
 import { can, type Ability, type Role, type SessionUser } from "./rbac";
 
 export interface Session extends SessionUser {
@@ -15,6 +15,8 @@ export interface Session extends SessionUser {
   isPlatformAdmin: boolean;
   // admin platform god-mode: tenant yang sedang dilihat (impersonasi). null untuk client.
   actingTenantId: string | null;
+  // admin platform sedang masuk sebagai tenant (operasikan menu omnichannel).
+  impersonating: boolean;
 }
 
 // Baca sesi dari cookie JWT httpOnly. null = belum login.
@@ -59,6 +61,8 @@ export const getSession = cache(async (): Promise<Session | null> => {
     tenantName,
     isPlatformAdmin,
     actingTenantId,
+    // Impersonasi aktif hanya bila admin DAN cookie ada DAN tenant target resolve.
+    impersonating: isPlatformAdmin && !!store.get(IMPERSONATE_COOKIE)?.value && !!tenantId,
   };
 });
 

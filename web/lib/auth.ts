@@ -4,6 +4,9 @@ import type { Role } from "./rbac";
 export const SESSION_COOKIE = "cc_session";
 // Tenant yang sedang "dilihat" admin platform (god-mode). Hanya admin yang pakai.
 export const ACTING_TENANT_COOKIE = "cc_acting_tenant";
+// Mode impersonasi: admin platform sedang masuk sebagai tenant (operasikan inbox dll).
+// Berisi tenantId target. Tanpa cookie ini, admin hanya lihat konsol platform.
+export const IMPERSONATE_COOKIE = "cc_impersonate";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 hari
 
 export interface SessionPayload {

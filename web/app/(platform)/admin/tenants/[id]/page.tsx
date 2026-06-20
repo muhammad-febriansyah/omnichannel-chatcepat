@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Plug, Users2, Contact, MessageSquare, Power, PowerOff } from "lucide-react";
+import { ArrowLeft, Plug, Users2, Contact, MessageSquare, Power, PowerOff, LogIn } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { cleanIDR, CHANNEL_META, statusLabel, roleLabel, type ChannelType } from "@/lib/format";
 import { PLAN_LABEL } from "@/lib/plan";
 import { getTenantDetail } from "@/lib/platform-stats";
-import { setTenantStatus } from "@/lib/actions";
+import { setTenantStatus, startImpersonation } from "@/lib/actions";
 
 function fmtDate(iso: string) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -25,6 +25,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
 
   const suspended = t.status === "suspended";
   const toggle = setTenantStatus.bind(null, t.id, suspended ? "active" : "suspended");
+  const impersonate = startImpersonation.bind(null, t.id);
 
   const cards = [
     { label: "Channel", value: t.counts.channels, icon: Plug, tone: "#8b5cf6" },
@@ -65,15 +66,28 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
-        <form action={toggle}>
-          <button
-            type="submit"
-            className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition hover:opacity-90 ${suspended ? "bg-success" : "bg-danger"}`}
-          >
-            {suspended ? <Power className="size-4" /> : <PowerOff className="size-4" />}
-            {suspended ? "Aktifkan" : "Suspend"}
-          </button>
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          {!suspended && (
+            <form action={impersonate}>
+              <button
+                type="submit"
+                className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold transition hover:bg-muted"
+                title="Buka workspace tenant untuk support"
+              >
+                <LogIn className="size-4" /> Masuk sebagai tenant
+              </button>
+            </form>
+          )}
+          <form action={toggle}>
+            <button
+              type="submit"
+              className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition hover:opacity-90 ${suspended ? "bg-success" : "bg-danger"}`}
+            >
+              {suspended ? <Power className="size-4" /> : <PowerOff className="size-4" />}
+              {suspended ? "Aktifkan" : "Suspend"}
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Stats */}

@@ -87,6 +87,7 @@ export function Sidebar({
   support,
   logoUrl,
   siteName,
+  impersonating = false,
 }: {
   workspaceName?: string;
   collapsed?: boolean;
@@ -95,13 +96,18 @@ export function Sidebar({
   support?: SupportContact;
   logoUrl?: string;
   siteName?: string;
+  impersonating?: boolean;
 }) {
   const pathname = usePathname();
   const isPlatformAdmin = role === "admin";
-  // admin platform: HANYA konsol platform (tracking tenant, paket, transaksi). Menu
-  // operasional omnichannel (inbox, kontak, broadcast, channel, dll) disembunyikan —
-  // itu ranah tenant, bukan super admin.
-  const baseSections = isPlatformAdmin ? [PLATFORM_SECTION] : SECTIONS;
+  // admin platform: default HANYA konsol platform (tracking tenant, paket). Menu
+  // operasional omnichannel disembunyikan — itu ranah tenant. Tampil hanya saat
+  // admin "masuk sebagai tenant" (impersonasi) untuk support.
+  const baseSections = isPlatformAdmin
+    ? impersonating
+      ? SECTIONS
+      : [PLATFORM_SECTION]
+    : SECTIONS;
   // Filter per-role (hide), lalu tandai `locked` per-paket (tampil tapi terkunci).
   const sections = baseSections
     .map((sec) => ({
