@@ -52,3 +52,25 @@ BROADCAST_BATCH = 50
 THROTTLE_OFFICIAL_S = 0.1
 THROTTLE_UNOFFICIAL_MIN_S = 8.0
 THROTTLE_UNOFFICIAL_MAX_S = 20.0
+# Rest panjang anti-banned (unofficial): tiap N pesan terkirim, jeda lama acak
+# meniru manusia istirahat. 0 = nonaktif. Hanya berlaku untuk wa_unofficial.
+BROADCAST_REST_EVERY = int(os.environ.get("BROADCAST_REST_EVERY", "20"))
+BROADCAST_REST_MIN_S = float(os.environ.get("BROADCAST_REST_MIN_S", "60"))
+BROADCAST_REST_MAX_S = float(os.environ.get("BROADCAST_REST_MAX_S", "180"))
+
+# Warmup + daily cap anti-banned (unofficial). Cap = batas outbound per rolling
+# 24 jam per channel, naik bertahap sesuai umur channel (hari sejak dibuat).
+# Index = umur hari; nilai = cap. Umur >= panjang list → cap matang (nilai akhir).
+# Override via env WARMUP_DAILY_CAPS="20,40,80,...". 0 = nonaktif (tanpa batas).
+WARMUP_WINDOW_S = 24 * 3600
+
+
+def _parse_caps(raw: str) -> list[int]:
+    try:
+        caps = [int(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        caps = []
+    return caps or [20, 40, 80, 160, 320, 500, 750, 1000]
+
+
+WARMUP_DAILY_CAPS = _parse_caps(os.environ.get("WARMUP_DAILY_CAPS", ""))
