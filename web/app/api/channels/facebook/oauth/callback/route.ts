@@ -3,6 +3,7 @@
 // httpOnly singkat → redirect ke halaman pilih Page. Token Page TIDAK pernah lewat URL.
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { authCookieOptions } from "@/lib/auth";
 import {
   exchangeCodeForUserToken,
   signOAuthSession,
@@ -48,12 +49,6 @@ export async function GET(request: Request) {
   const res = NextResponse.redirect(
     new URL(`/channels/connect/facebook/select?platform=${st.platform}`, request.url),
   );
-  res.cookies.set(FB_OAUTH_COOKIE, sealed, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 15 * 60,
-  });
+  res.cookies.set(FB_OAUTH_COOKIE, sealed, authCookieOptions(15 * 60));
   return res;
 }

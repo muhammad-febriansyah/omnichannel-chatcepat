@@ -51,3 +51,25 @@ export async function verifySession(token: string | undefined): Promise<SessionP
 }
 
 export const COOKIE_MAX_AGE = MAX_AGE;
+
+// Domain cookie lintas-subdomain (mis. ".chatcepat.id"). Wajib di prod supaya sesi
+// tetap kebawa saat OAuth Meta redirect balik ke host berbeda (apex vs www vs app.*).
+// Kosong = host-only (dev/localhost).
+export const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+
+// Opsi standar cookie auth (set). maxAge default = sesi 7 hari.
+export function authCookieOptions(maxAge: number = MAX_AGE) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    domain: COOKIE_DOMAIN,
+    maxAge,
+  };
+}
+
+// Hapus cookie auth — path & domain HARUS sama dgn saat set, else tak terhapus.
+export function authCookieDelete(name: string) {
+  return { name, path: "/", domain: COOKIE_DOMAIN };
+}

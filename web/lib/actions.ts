@@ -12,7 +12,7 @@ import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
 import { getConversation } from "./queries";
-import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession } from "./auth";
+import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
@@ -56,13 +56,7 @@ export async function login(email: string, password: string): Promise<{ error: s
     avatarUrl: user.avatarUrl,
   });
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  store.set(SESSION_COOKIE, token, authCookieOptions(COOKIE_MAX_AGE));
   // Landing per-role: admin platform → konsol platform, client → dashboard tenant.
   redirect(user.role === "admin" ? "/admin" : "/dashboard");
 }
@@ -114,20 +108,14 @@ export async function register(input: { business: string; name: string; email: s
     avatarUrl: user.avatarUrl,
   });
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  store.set(SESSION_COOKIE, token, authCookieOptions(COOKIE_MAX_AGE));
   redirect("/dashboard");
 }
 
 export async function logout() {
   const store = await cookies();
-  store.delete(SESSION_COOKIE);
-  store.delete(ACTING_TENANT_COOKIE);
+  store.delete(authCookieDelete(SESSION_COOKIE));
+  store.delete(authCookieDelete(ACTING_TENANT_COOKIE));
   redirect("/login");
 }
 
@@ -153,13 +141,7 @@ export async function setActingTenant(tenantId: string) {
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
   if (!t) throw new Error("Tenant tidak ditemukan");
   const store = await cookies();
-  store.set(ACTING_TENANT_COOKIE, tenantId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  store.set(ACTING_TENANT_COOKIE, tenantId, authCookieOptions(COOKIE_MAX_AGE));
   revalidatePath("/", "layout");
 }
 
@@ -171,13 +153,7 @@ export async function startImpersonation(tenantId: string) {
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
   if (!t) throw new Error("Tenant tidak ditemukan");
   const store = await cookies();
-  const opts = {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  };
+  const opts = authCookieOptions(COOKIE_MAX_AGE);
   store.set(ACTING_TENANT_COOKIE, tenantId, opts);
   store.set(IMPERSONATE_COOKIE, tenantId, opts);
   await writeAudit(session, {
@@ -196,7 +172,7 @@ export async function stopImpersonation() {
   const session = await requireSession();
   if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
   const store = await cookies();
-  store.delete(IMPERSONATE_COOKIE);
+  store.delete(authCookieDelete(IMPERSONATE_COOKIE));
   revalidatePath("/", "layout");
   redirect("/admin");
 }
@@ -215,13 +191,7 @@ async function reissueSession(
     avatarUrl: patch.avatarUrl !== undefined ? patch.avatarUrl : session.avatarUrl,
   });
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  store.set(SESSION_COOKIE, token, authCookieOptions(COOKIE_MAX_AGE));
 }
 
 // --- Profil sendiri (self-service; semua role yang login). ---
@@ -371,7 +341,7 @@ export async function connectMetaPage(pageId: string): Promise<void> {
     externalId,
   });
 
-  store.delete(FB_OAUTH_COOKIE);
+  store.delete(authCookieDelete(FB_OAUTH_COOKIE));
   revalidatePath("/channels");
   redirect("/channels?connected=1");
 }
