@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "./rbac";
 
 export const SESSION_COOKIE = "cc_session";
-// Tenant yang sedang "dilihat" super_admin (god-mode). Hanya super_admin yang pakai.
+// Tenant yang sedang "dilihat" admin platform (god-mode). Hanya admin yang pakai.
 export const ACTING_TENANT_COOKIE = "cc_acting_tenant";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 hari
 

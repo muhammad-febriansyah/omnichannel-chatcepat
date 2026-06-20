@@ -17,8 +17,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     logoUrl = ws.logoUrl || undefined;
     siteName = ws.siteName || undefined;
   }
-  // super_admin: daftar tenant untuk switcher topbar (god-mode).
-  const tenants = session.isSuperAdmin ? await listTenants() : undefined;
+  // admin platform: daftar tenant untuk switcher topbar (god-mode).
+  const tenants = session.isPlatformAdmin ? await listTenants() : undefined;
   return (
     <AppShell
       session={session}

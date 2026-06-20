@@ -7,10 +7,10 @@ import { listTenants } from "@/lib/actions";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-  // Hanya super_admin. Role tenant dilempar ke panel-nya (middleware juga enforce).
-  if (session.role !== "super_admin") redirect("/dashboard");
+  // Hanya admin platform. client dilempar ke panel-nya (middleware juga enforce).
+  if (session.role !== "admin") redirect("/dashboard");
 
-  // Shell sama persis dgn panel tenant; tenant aktif = acting tenant super_admin.
+  // Shell sama persis dgn panel tenant; tenant aktif = acting tenant admin.
   const stats = await getSidebarStats(session.tenantId);
   let support: { whatsapp?: string; phone?: string; email?: string } | undefined;
   let logoUrl: string | undefined;

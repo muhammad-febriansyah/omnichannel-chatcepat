@@ -11,7 +11,7 @@ async function load(tenantId: string | null, selfId: string): Promise<UserRow[]>
   if (!tenantId) return [];
   try {
     const rows = await db.query.users.findMany({
-      where: and(eq(users.tenantId, tenantId), ne(users.role, "super_admin")),
+      where: and(eq(users.tenantId, tenantId), ne(users.role, "admin")),
       orderBy: [desc(users.createdAt)],
       limit: 200,
     });

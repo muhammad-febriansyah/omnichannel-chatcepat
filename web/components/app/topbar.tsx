@@ -47,8 +47,8 @@ export function Topbar({
       >
         <PanelLeft className="size-[18px]" />
       </button>
-      {session.isSuperAdmin ? (
-        // Super-admin: pilih tenant yang sedang dikelola (god-mode).
+      {session.isPlatformAdmin ? (
+        // Admin platform: pilih tenant yang sedang dikelola (god-mode).
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={pendingSwitch}

@@ -22,7 +22,7 @@ export const templateKind = pgEnum("template_kind", ['hsm', 'quick_reply'])
 export const templateStatus = pgEnum("template_status", ['draft', 'approved', 'rejected'])
 export const tenantPlan = pgEnum("tenant_plan", ['pro', 'business', 'enterprise'])
 export const tenantStatus = pgEnum("tenant_status", ['active', 'suspended'])
-export const userRole = pgEnum("user_role", ['super_admin', 'admin', 'supervisor', 'agent'])
+export const userRole = pgEnum("user_role", ['admin', 'client'])
 export const userStatus = pgEnum("user_status", ['active', 'invited', 'disabled'])
 
 

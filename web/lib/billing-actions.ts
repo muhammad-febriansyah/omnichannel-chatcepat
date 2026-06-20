@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { plans, orders } from "./db/schema";
 import { requireSession } from "./session";
@@ -134,4 +134,20 @@ export async function listActivePlans() {
     where: eq(plans.isActive, true),
     orderBy: [asc(plans.sortOrder), asc(plans.priceIdr)],
   });
+}
+
+// Riwayat transaksi tenant (client). Scoped tenant dari sesi — JANGAN dari input.
+export async function listOrders() {
+  const session = await requireSession();
+  requireAbility(session, "billing.tenant");
+  if (!session.tenantId) return [];
+  try {
+    return await db.query.orders.findMany({
+      where: eq(orders.tenantId, session.tenantId),
+      orderBy: [desc(orders.createdAt)],
+      limit: 100,
+    });
+  } catch {
+    return [];
+  }
 }

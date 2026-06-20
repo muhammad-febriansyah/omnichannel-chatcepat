@@ -43,10 +43,8 @@ export function statusLabel(s: string): string {
 
 // Label peran (role) berbahasa Indonesia yang familiar untuk user.
 const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Super Admin",
   admin: "Admin",
-  supervisor: "Supervisor",
-  agent: "Agen",
+  client: "Client",
 };
 
 export function roleLabel(r: string): string {

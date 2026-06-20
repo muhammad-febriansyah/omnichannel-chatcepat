@@ -18,10 +18,8 @@ export interface UserRow {
 }
 
 const ROLE: Record<string, { label: string; tone: PillTone }> = {
-  super_admin: { label: "Super Admin", tone: "blue" },
   admin: { label: "Admin", tone: "blue" },
-  supervisor: { label: "Supervisor", tone: "amber" },
-  agent: { label: "Agent", tone: "slate" },
+  client: { label: "Client", tone: "slate" },
 };
 const STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: "Aktif", cls: "text-success" },
@@ -54,7 +52,7 @@ const columns: ColumnDef<UserRow>[] = [
     accessorKey: "role",
     header: "Role",
     cell: ({ row }) => {
-      const r = ROLE[row.original.role] ?? ROLE.agent;
+      const r = ROLE[row.original.role] ?? ROLE.client;
       return <StatusPill tone={r.tone}>{r.label}</StatusPill>;
     },
   },

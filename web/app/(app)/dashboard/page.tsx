@@ -69,16 +69,8 @@ function greeting(hour: number) {
 
 type Kpi = { icon: React.ElementType; label: string; value: string; tone: string; spark: number[] };
 
-// KPI per role: admin = ringkasan bisnis; supervisor = operasional tim & SLA.
-function kpisFor(role: string, c: { conversations: number; open: number; contacts: number; broadcasts: number }): Kpi[] {
-  if (role === "supervisor") {
-    return [
-      { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: [70, 72, 75, 80, 78, 84, 87] },
-      { icon: CheckCircle2, label: "Resolusi Minggu Ini", value: "94%", tone: "#10B981", spark: [80, 82, 85, 88, 90, 92, 94] },
-      { icon: Clock, label: "Rata-rata Respon", value: "1m 24s", tone: "#3B82F6", spark: [110, 104, 98, 96, 92, 88, 84] },
-      { icon: UserPlus, label: "Agen Aktif", value: String(TEAM.length), tone: "#8B5CF6", spark: [4, 5, 5, 4, 5, 5, 5] },
-    ];
-  }
+// KPI ringkasan workspace (client).
+function kpisFor(c: { conversations: number; open: number; contacts: number; broadcasts: number }): Kpi[] {
   return [
     { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#3B82F6", spark: [22, 28, 26, 34, 40, 52, 64] },
     { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: [70, 72, 75, 80, 78, 84, 87] },
@@ -104,8 +96,8 @@ export default async function DashboardPage() {
   }).format(now);
 
   const firstName = session.name.split(/\s+/)[0];
-  const roleLabel = session.role === "supervisor" ? "Ringkasan operasional tim" : "Ringkasan workspace";
-  const kpis = kpisFor(session.role, c);
+  const roleLabel = "Ringkasan workspace";
+  const kpis = kpisFor(c);
 
   return (
     <div className="flex flex-col gap-6 p-6">

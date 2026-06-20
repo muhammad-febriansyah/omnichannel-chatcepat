@@ -37,7 +37,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
   if (canAssign && session.tenantId) {
     try {
       const rows = await db.query.users.findMany({
-        where: and(eq(users.tenantId, session.tenantId), eq(users.status, "active"), ne(users.role, "super_admin")),
+        where: and(eq(users.tenantId, session.tenantId), eq(users.status, "active"), ne(users.role, "admin")),
         columns: { id: true, name: true },
         limit: 100,
       });

@@ -4,7 +4,7 @@ import { saveImage } from "@/lib/uploads";
 export const runtime = "nodejs";
 
 // POST /api/avatar — unggah foto profil (multipart). Semua user login boleh (self-service),
-// simpan ke UPLOAD_DIR/<tenantId>/ (super_admin tanpa tenant → "_platform"). Balikkan { url }.
+// simpan ke UPLOAD_DIR/<tenantId>/ (admin platform tanpa tenant → "_platform"). Balikkan { url }.
 export async function POST(request: Request) {
   const session = await requireSession();
 

@@ -12,8 +12,8 @@ export interface Session extends SessionUser {
   email: string;
   avatarUrl: string | null;
   tenantName: string | null;
-  isSuperAdmin: boolean;
-  // super_admin god-mode: tenant yang sedang dilihat (impersonasi). null untuk role tenant biasa.
+  isPlatformAdmin: boolean;
+  // admin platform god-mode: tenant yang sedang dilihat (impersonasi). null untuk client.
   actingTenantId: string | null;
 }
 
@@ -23,11 +23,11 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const payload = await verifySession(store.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
 
-  const isSuperAdmin = payload.role === "super_admin";
-  // super_admin tak punya tenant sendiri → pakai acting tenant (cookie), default tenant pertama.
+  const isPlatformAdmin = payload.role === "admin";
+  // admin platform tak punya tenant sendiri → pakai acting tenant (cookie), default tenant pertama.
   let tenantId = payload.tenantId;
   let actingTenantId: string | null = null;
-  if (isSuperAdmin) {
+  if (isPlatformAdmin) {
     const cookieTenant = store.get(ACTING_TENANT_COOKIE)?.value || null;
     try {
       const acting = cookieTenant
@@ -57,7 +57,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     email: payload.email,
     avatarUrl: payload.avatarUrl ?? null,
     tenantName,
-    isSuperAdmin,
+    isPlatformAdmin,
     actingTenantId,
   };
 });

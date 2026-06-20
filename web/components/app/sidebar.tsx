@@ -37,7 +37,7 @@ type Item = {
   dot?: boolean;
   ability?: Ability; // undefined = selalu tampil
   minPlan?: TenantPlan; // paket minimal; di bawahnya item dikunci (bukan disembunyikan)
-  tenantOnly?: boolean; // hanya role tenant; super_admin disembunyikan (mis. langganan/billing)
+  tenantOnly?: boolean; // hanya client; admin platform disembunyikan (mis. langganan/billing)
 };
 
 const SECTIONS: { title: string; items: Item[] }[] = [
@@ -69,7 +69,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
   },
 ];
 
-// Section khusus super_admin (god-mode) — konsol platform, ditaruh paling atas.
+// Section khusus admin platform (god-mode) — konsol platform, ditaruh paling atas.
 const PLATFORM_SECTION: { title: string; items: Item[] } = {
   title: "Platform",
   items: [
@@ -97,17 +97,17 @@ export function Sidebar({
   siteName?: string;
 }) {
   const pathname = usePathname();
-  const isSuperAdmin = role === "super_admin";
-  // super_admin (god-mode): konsol platform di atas, semua menu kebuka tanpa plan-lock.
-  const baseSections = isSuperAdmin ? [PLATFORM_SECTION, ...SECTIONS] : SECTIONS;
+  const isPlatformAdmin = role === "admin";
+  // admin platform (god-mode): konsol platform di atas, semua menu kebuka tanpa plan-lock.
+  const baseSections = isPlatformAdmin ? [PLATFORM_SECTION, ...SECTIONS] : SECTIONS;
   // Filter per-role (hide), lalu tandai `locked` per-paket (tampil tapi terkunci).
   const sections = baseSections
     .map((sec) => ({
       ...sec,
       items: sec.items
         .filter((it) => !it.ability || can({ role }, it.ability))
-        .filter((it) => !(isSuperAdmin && it.tenantOnly)) // super_admin: sembunyikan menu langganan
-        .map((it) => ({ ...it, locked: !isSuperAdmin && it.minPlan ? !planAllows(stats.plan, it.minPlan) : false })),
+        .filter((it) => !(isPlatformAdmin && it.tenantOnly)) // admin: sembunyikan menu langganan
+        .map((it) => ({ ...it, locked: !isPlatformAdmin && it.minPlan ? !planAllows(stats.plan, it.minPlan) : false })),
     }))
     .filter((sec) => sec.items.length > 0);
 

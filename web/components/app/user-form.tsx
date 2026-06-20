@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Save, ArrowLeft, User, Mail, ShieldCheck, KeyRound, Activity } from "lucide-react";
+import { Save, ArrowLeft, User, Mail, KeyRound, Activity } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ActionLink } from "@/components/app/action-link";
@@ -17,7 +17,6 @@ function makeSchema(isEdit: boolean) {
     .object({
       name: z.string().trim().min(1, "Nama wajib diisi").max(120, "Nama maksimal 120 karakter"),
       email: z.string().trim().email("Email tidak valid"),
-      role: z.enum(["admin", "supervisor", "agent"]),
       status: z.enum(["active", "invited", "disabled"]),
       password: z.string(),
     })
@@ -34,7 +33,6 @@ function makeSchema(isEdit: boolean) {
 type FormValues = {
   name: string;
   email: string;
-  role: "admin" | "supervisor" | "agent";
   status: "active" | "invited" | "disabled";
   password: string;
 };
@@ -42,7 +40,6 @@ type FormValues = {
 export interface UserInitial {
   name: string;
   email: string;
-  role: "admin" | "supervisor" | "agent";
   status: "active" | "invited" | "disabled";
 }
 
@@ -70,7 +67,6 @@ export function UserForm({
     defaultValues: {
       name: initial?.name ?? "",
       email: initial?.email ?? "",
-      role: initial?.role ?? "agent",
       status: initial?.status ?? "active",
       password: "",
     },
@@ -80,9 +76,9 @@ export function UserForm({
     start(async () => {
       try {
         if (isEdit && userId) {
-          await updateUser(userId, { name: v.name, role: v.role, status: v.status, password: v.password || undefined });
+          await updateUser(userId, { name: v.name, status: v.status, password: v.password || undefined });
         } else {
-          await createUser({ name: v.name, email: v.email, role: v.role, password: v.password });
+          await createUser({ name: v.name, email: v.email, password: v.password });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Gagal menyimpan user";
@@ -105,7 +101,7 @@ export function UserForm({
           <CardHeader>
             <CardTitle className="text-xl">{isEdit ? "Edit Anggota Tim" : "Undang Anggota Tim"}</CardTitle>
             <CardDescription>
-              {isEdit ? "Ubah peran, status, atau reset password anggota." : "Buat akun untuk anggota tim baru."}
+              {isEdit ? "Ubah status atau reset password anggota." : "Buat akun untuk anggota tim baru."}
             </CardDescription>
           </CardHeader>
 
@@ -133,35 +129,22 @@ export function UserForm({
               </div>
             </div>
 
-            <div className="border-t border-border pt-6">
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Akses</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="role" className="mb-1.5 block text-sm font-medium text-foreground">Role</label>
+            {isEdit && (
+              <div className="border-t border-border pt-6">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Akses</h3>
+                <div className="sm:max-w-sm">
+                  <label htmlFor="status" className="mb-1.5 block text-sm font-medium text-foreground">Status</label>
                   <div className="relative">
-                    <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <select id="role" {...register("role")} className={`${inputCls} pr-8`}>
-                      <option value="agent">Agent — balas chat yang di-assign</option>
-                      <option value="supervisor">Supervisor — lihat semua chat + assign</option>
-                      <option value="admin">Admin — kelola operasional</option>
+                    <Activity className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <select id="status" {...register("status")} className={`${inputCls} pr-8`}>
+                      <option value="active">Aktif</option>
+                      <option value="invited">Diundang</option>
+                      <option value="disabled">Nonaktif</option>
                     </select>
                   </div>
                 </div>
-                {isEdit && (
-                  <div>
-                    <label htmlFor="status" className="mb-1.5 block text-sm font-medium text-foreground">Status</label>
-                    <div className="relative">
-                      <Activity className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <select id="status" {...register("status")} className={`${inputCls} pr-8`}>
-                        <option value="active">Aktif</option>
-                        <option value="invited">Diundang</option>
-                        <option value="disabled">Nonaktif</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
 
             <div className="border-t border-border pt-6">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

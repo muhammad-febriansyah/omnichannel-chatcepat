@@ -13,7 +13,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const u = await db.query.users.findFirst({
     where: and(eq(users.id, id), eq(users.tenantId, session.tenantId)),
   });
-  if (!u || u.role === "super_admin") notFound();
+  if (!u || u.role === "admin") notFound(); // admin = platform, tak dikelola dari tenant
 
   return (
     <UserForm
@@ -22,7 +22,6 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       initial={{
         name: u.name,
         email: u.email,
-        role: (u.role === "admin" || u.role === "supervisor" ? u.role : "agent") as "admin" | "supervisor" | "agent",
         status: u.status,
       }}
     />
