@@ -8,6 +8,7 @@ import { plans, orders } from "./db/schema";
 import { requireSession } from "./session";
 import { requireAbility } from "./rbac";
 import { createInvoice } from "./duitku";
+import { writeAudit } from "./audit";
 
 export type Tier = "pro" | "business" | "enterprise";
 
@@ -49,6 +50,7 @@ export async function createPlan(input: PlanInput) {
   if (!v.name) throw new Error("Nama paket wajib diisi");
   if (!v.slug) throw new Error("Slug wajib diisi");
   await db.insert(plans).values(v);
+  await writeAudit(session, { action: "plan.create", targetType: "plan", targetLabel: v.name });
   revalidatePath("/admin/plans");
   revalidatePath("/");
   redirect("/admin/plans");
@@ -60,6 +62,7 @@ export async function updatePlan(id: string, input: PlanInput) {
   const v = clean(input);
   if (!v.name) throw new Error("Nama paket wajib diisi");
   await db.update(plans).set({ ...v, updatedAt: new Date().toISOString() }).where(eq(plans.id, id));
+  await writeAudit(session, { action: "plan.update", targetType: "plan", targetId: id, targetLabel: v.name });
   revalidatePath("/admin/plans");
   revalidatePath("/");
   redirect("/admin/plans");
@@ -68,7 +71,9 @@ export async function updatePlan(id: string, input: PlanInput) {
 export async function deletePlan(id: string) {
   const session = await requireSession();
   requireAbility(session, "tenant.manage");
+  const p = await db.query.plans.findFirst({ where: eq(plans.id, id) });
   await db.delete(plans).where(eq(plans.id, id));
+  await writeAudit(session, { action: "plan.delete", targetType: "plan", targetId: id, targetLabel: p?.name });
   revalidatePath("/admin/plans");
   revalidatePath("/");
 }

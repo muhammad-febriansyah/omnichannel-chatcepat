@@ -16,6 +16,7 @@ import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKI
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
+import { writeAudit } from "./audit";
 import {
   FB_OAUTH_COOKIE,
   getInstagramAccount,
@@ -179,6 +180,13 @@ export async function startImpersonation(tenantId: string) {
   };
   store.set(ACTING_TENANT_COOKIE, tenantId, opts);
   store.set(IMPERSONATE_COOKIE, tenantId, opts);
+  await writeAudit(session, {
+    action: "impersonate.start",
+    targetType: "tenant",
+    targetId: tenantId,
+    targetLabel: t.name,
+    tenantId,
+  });
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }
@@ -848,10 +856,18 @@ export async function deleteUser(id: string) {
 export async function setTenantStatus(id: string, status: "active" | "suspended") {
   const session = await requireSession();
   requireAbility(session, "tenant.manage");
+  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, id) });
   await db
     .update(tenants)
     .set({ status, updatedAt: new Date().toISOString() })
     .where(eq(tenants.id, id));
+  await writeAudit(session, {
+    action: status === "suspended" ? "tenant.suspend" : "tenant.activate",
+    targetType: "tenant",
+    targetId: id,
+    targetLabel: t?.name,
+    tenantId: id,
+  });
   revalidatePath("/admin");
   revalidatePath(`/admin/tenants/${id}`);
 }
@@ -998,6 +1014,7 @@ export async function savePlatformWebSettings(input: WebSettings) {
   const web_settings = normalizeWebSettings(input);
   const settings = { ...((t.settings as Record<string, unknown>) ?? {}), web_settings };
   await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, t.id));
+  await writeAudit(session, { action: "platform.settings_update", targetType: "platform" });
   revalidatePath("/admin/settings");
   revalidatePath("/", "layout");
 }

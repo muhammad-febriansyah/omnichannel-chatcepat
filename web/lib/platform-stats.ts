@@ -297,37 +297,41 @@ export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
   }
 }
 
-// --- Aktivitas terkini (derivasi dari data yang ada, BUKAN audit log penuh) ---
-// Gabungan event: tenant baru, user baru, transaksi. Untuk jejak audit lengkap
-// (login admin, suspend, dll) butuh tabel audit khusus (migration engine).
+// --- Audit log (jejak aksi super-admin, dari tabel audit_logs) ---
 
-export interface ActivityItem {
-  kind: "tenant" | "user" | "order";
-  title: string;
-  subtitle: string;
-  at: string;
+export interface AuditRow {
+  id: string;
+  actorEmail: string | null;
+  action: string;
+  targetType: string | null;
+  targetLabel: string | null;
+  tenantName: string | null;
+  ip: string | null;
+  createdAt: string;
 }
 
-export async function getRecentActivity(limit = 40): Promise<ActivityItem[]> {
+export async function listAuditLogs(limit = 100): Promise<AuditRow[]> {
   try {
     const r = await db.execute(
-      sql`(SELECT 'tenant' kind, name title, 'Tenant baru terdaftar' subtitle, created_at at FROM tenants)
-          UNION ALL
-          (SELECT 'user' kind, u.name title, coalesce(t.name,'Platform') || ' · user baru' subtitle, u.created_at at
-             FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id)
-          UNION ALL
-          (SELECT 'order' kind, o.plan_name title,
-                  t.name || ' · transaksi ' || o.status subtitle, o.created_at at
-             FROM orders o JOIN tenants t ON t.id = o.tenant_id)
-          ORDER BY at DESC
+      sql`SELECT a.id, coalesce(u.email, a.diff->>'actorEmail') actor_email,
+                 a.action, a.entity target_type, a.diff->>'targetLabel' target_label,
+                 t.name tenant_name, a.diff->>'ip' ip, a.created_at
+          FROM audit_logs a
+          LEFT JOIN tenants t ON t.id = a.tenant_id
+          LEFT JOIN users u ON u.id = a.actor_id
+          ORDER BY a.created_at DESC
           LIMIT ${limit}`,
     );
     const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
     return rows.map((row) => ({
-      kind: String(row.kind) as ActivityItem["kind"],
-      title: String(row.title),
-      subtitle: String(row.subtitle),
-      at: String(row.at),
+      id: String(row.id),
+      actorEmail: row.actor_email ? String(row.actor_email) : null,
+      action: String(row.action),
+      targetType: row.target_type ? String(row.target_type) : null,
+      targetLabel: row.target_label ? String(row.target_label) : null,
+      tenantName: row.tenant_name ? String(row.tenant_name) : null,
+      ip: row.ip ? String(row.ip) : null,
+      createdAt: String(row.created_at),
     }));
   } catch {
     return [];
