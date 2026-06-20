@@ -1,14 +1,13 @@
 import { sql } from "drizzle-orm";
-import { MessageSquare, Inbox, Clock, CheckCircle2, Info, Plug, Send, Tag, UserPlus, Zap } from "lucide-react";
+import { MessageSquare, Inbox, Clock, CheckCircle2, UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { cleanIDR, initials } from "@/lib/format";
+import { cleanIDR, initials, timeAgo } from "@/lib/format";
 import { ChannelVolumeChart, ChannelDonut, type ChannelKey } from "@/components/app/charts";
 import { DateRangePicker } from "@/components/app/date-range";
 import { PageHeader } from "@/components/app/page-header";
 import { StatCard } from "@/components/app/stat-card";
 import { SectionCard } from "@/components/app/section-card";
-import { SampleBadge } from "@/components/app/status-pill";
 
 async function counts(tenantId: string | null) {
   if (!tenantId) return { conversations: 0, open: 0, contacts: 0, broadcasts: 0 };
@@ -30,29 +29,84 @@ async function counts(tenantId: string | null) {
   }
 }
 
-const CHANNEL_VOLUMES: { ch: ChannelKey; value: number }[] = [
-  { ch: "whatsapp", value: 4280 },
-  { ch: "instagram", value: 1860 },
-  { ch: "messenger", value: 1240 },
-  { ch: "telegram", value: 720 },
-];
+// Petakan channel.type → ChannelKey grafik.
+const CH_KEY: Record<string, ChannelKey> = {
+  wa_official: "whatsapp",
+  wa_unofficial: "whatsapp",
+  facebook: "messenger",
+  instagram: "instagram",
+  telegram: "telegram",
+};
 
-const TEAM = [
-  { rank: 1, name: "Budi Santoso", color: "#3B82F6", convs: 47, response: "1m 12s", csat: 4.9 },
-  { rank: 2, name: "Dewi Rahayu", color: "#EC4899", convs: 41, response: "1m 38s", csat: 4.8 },
-  { rank: 3, name: "Ari Rizki", color: "#10B981", convs: 38, response: "2m 04s", csat: 4.7 },
-  { rank: 4, name: "Sari Indah", color: "#F59E0B", convs: 32, response: "2m 21s", csat: 4.6 },
-  { rank: 5, name: "Maya Putri", color: "#8B5CF6", convs: 28, response: "2m 45s", csat: 4.5 },
-];
+// Volume pesan 7 hari per channel (data asli tenant).
+async function channelVolumes(tenantId: string | null): Promise<{ ch: ChannelKey; value: number }[]> {
+  if (!tenantId) return [];
+  try {
+    const r = await db.execute(
+      sql`SELECT c.type, count(m.id)::int n
+          FROM channels c
+          LEFT JOIN messages m ON m.channel_id = c.id AND m.created_at >= now() - interval '7 days'
+          WHERE c.tenant_id = ${tenantId}
+          GROUP BY c.type`,
+    );
+    const rows = r as unknown as Array<{ type: string; n: number }>;
+    const agg = new Map<ChannelKey, number>();
+    for (const row of rows) {
+      const key = CH_KEY[row.type];
+      if (key) agg.set(key, (agg.get(key) ?? 0) + Number(row.n ?? 0));
+    }
+    return [...agg.entries()].map(([ch, value]) => ({ ch, value })).filter((d) => d.value > 0);
+  } catch {
+    return [];
+  }
+}
 
-const ACTIVITY = [
-  { icon: CheckCircle2, bg: "#DCFCE7", fg: "#10B981", text: "Budi menyelesaikan percakapan dengan Andi P.", time: "2m lalu" },
-  { icon: Plug, bg: "#DBEAFE", fg: "#3B82F6", text: "Channel Instagram terhubung kembali", time: "18m lalu" },
-  { icon: Send, bg: "#EDE9FE", fg: "#8B5CF6", text: "Broadcast 'Promo Akhir Pekan' terkirim ke 234 kontak", time: "1j lalu" },
-  { icon: Tag, bg: "#FEF3C7", fg: "#F59E0B", text: "Tag 'VIP' ditambahkan ke Dewi Lestari", time: "2j lalu" },
-  { icon: UserPlus, bg: "#FCE7F3", fg: "#EC4899", text: "Sari Indah bergabung sebagai agent", time: "Kemarin" },
-  { icon: Zap, bg: "#CFFAFE", fg: "#06B6D4", text: "Otomasi 'Salam Pembuka' dijalankan 47x", time: "Kemarin" },
-];
+// Top agent berdasarkan jumlah percakapan ditangani (data asli).
+async function teamPerf(tenantId: string | null): Promise<{ name: string; convs: number }[]> {
+  if (!tenantId) return [];
+  try {
+    const r = await db.execute(
+      sql`SELECT u.name, count(conv.id)::int convs
+          FROM users u
+          LEFT JOIN conversations conv ON conv.assigned_agent_id = u.id
+          WHERE u.tenant_id = ${tenantId} AND u.role <> 'admin'
+          GROUP BY u.id, u.name
+          ORDER BY convs DESC
+          LIMIT 5`,
+    );
+    const rows = r as unknown as Array<{ name: string; convs: number }>;
+    return rows.map((row) => ({ name: String(row.name), convs: Number(row.convs ?? 0) }));
+  } catch {
+    return [];
+  }
+}
+
+// Aktivitas terbaru: percakapan terakhir diperbarui (data asli).
+async function recentConversations(
+  tenantId: string | null,
+): Promise<{ preview: string; contact: string; at: string | null }[]> {
+  if (!tenantId) return [];
+  try {
+    const r = await db.execute(
+      sql`SELECT coalesce(ct.name, 'Kontak') contact, conv.last_message_preview preview, conv.last_message_at at
+          FROM conversations conv
+          LEFT JOIN contacts ct ON ct.id = conv.contact_id
+          WHERE conv.tenant_id = ${tenantId}
+          ORDER BY conv.last_message_at DESC NULLS LAST
+          LIMIT 6`,
+    );
+    const rows = r as unknown as Array<{ contact: string; preview: string | null; at: string | null }>;
+    return rows.map((row) => ({
+      contact: String(row.contact),
+      preview: row.preview ? String(row.preview) : "(tanpa pratinjau)",
+      at: row.at ? String(row.at) : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+const RANK_COLORS = ["#3B82F6", "#EC4899", "#10B981", "#F59E0B", "#8B5CF6"];
 
 const RANK_BG: Record<number, string> = {
   1: "bg-gradient-to-br from-amber-300 to-amber-500 text-white",
@@ -81,7 +135,14 @@ function kpisFor(c: { conversations: number; open: number; contacts: number; bro
 
 export default async function DashboardPage() {
   const session = await requireSession();
-  const c = await counts(session.tenantId);
+  const [c, volumes, team, activity] = await Promise.all([
+    counts(session.tenantId),
+    channelVolumes(session.tenantId),
+    teamPerf(session.tenantId),
+    recentConversations(session.tenantId),
+  ]);
+  const hasVolume = volumes.length > 0;
+  const activeTeam = team.filter((t) => t.convs > 0);
 
   const now = new Date();
   const wibHour = Number(
@@ -114,76 +175,101 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Catatan jujur: pisahkan data asli vs contoh supaya tidak membingungkan */}
-      <div className="flex items-start gap-2.5 rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-        <Info className="mt-0.5 size-4 shrink-0" />
-        <p>
-          Angka <b>KPI</b> di atas diambil langsung dari workspace kamu. Grafik channel, tabel tim, dan aktivitas di bawah masih{" "}
-          <b>data contoh</b> sampai channel & tim terhubung.
-        </p>
-      </div>
-
-      {/* Charts row */}
+      {/* Charts row — data asli; empty state bila belum ada pesan */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
-        <ChannelVolumeChart data={CHANNEL_VOLUMES} />
-        <ChannelDonut data={CHANNEL_VOLUMES} />
+        {hasVolume ? (
+          <>
+            <ChannelVolumeChart data={volumes} />
+            <ChannelDonut data={volumes} />
+          </>
+        ) : (
+          <div className="lg:col-span-2">
+            <SectionCard title="Volume Pesan per Channel" description="7 hari terakhir" contentClassName="pt-2">
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                <span className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
+                  <MessageSquare className="size-6" />
+                </span>
+                <p className="text-sm font-medium">Belum ada pesan</p>
+                <p className="max-w-sm text-xs text-muted-foreground">
+                  Hubungkan channel (WhatsApp, Instagram, Facebook, Telegram) untuk mulai melihat volume pesan di sini.
+                </p>
+              </div>
+            </SectionCard>
+          </div>
+        )}
       </div>
 
       {/* Panels row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
-        {/* Team table */}
-        <SectionCard title="Top Performer Tim" description="Berdasarkan resolusi minggu ini" action={<SampleBadge />} contentClassName="pt-2">
-          <div className="grid grid-cols-[32px_1.4fr_1fr_1fr_1fr] items-center gap-3 border-b-2 border-border px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>#</span>
-            <span>Agent</span>
-            <span>Percakapan</span>
-            <span>Respon</span>
-            <span>CSAT</span>
-          </div>
-          {TEAM.map((a) => (
-            <div
-              key={a.rank}
-              className="grid grid-cols-[32px_1.4fr_1fr_1fr_1fr] items-center gap-3 border-b border-border px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-muted/50"
-            >
-              <span className={`grid size-[26px] place-items-center rounded-lg text-xs font-bold ${RANK_BG[a.rank] ?? "bg-muted text-muted-foreground"}`}>
-                {a.rank}
+        {/* Team table — data asli */}
+        <SectionCard title="Performa Tim" description="Berdasarkan percakapan ditangani" contentClassName="pt-2">
+          {activeTeam.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
+                <UserPlus className="size-6" />
               </span>
-              <span className="flex min-w-0 items-center gap-2.5">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-white" style={{ background: a.color }}>
-                  {initials(a.name)}
-                </span>
-                <span className="truncate font-semibold">{a.name}</span>
-              </span>
-              <span className="font-semibold text-brand-navy dark:text-foreground">{a.convs}</span>
-              <span className="font-semibold tabular-nums text-brand-navy dark:text-foreground">{a.response}</span>
-              <span className="flex items-center gap-2">
-                <span className="min-w-7 text-[13px] font-bold text-brand-navy dark:text-foreground">{a.csat}</span>
-                <span className="h-1.5 max-w-20 flex-1 overflow-hidden rounded-full bg-muted">
-                  <span className="block h-full rounded-full bg-gradient-to-r from-brand-blue to-brand-light" style={{ width: `${(a.csat / 5) * 100}%` }} />
-                </span>
-              </span>
+              <p className="text-sm font-medium">Belum ada percakapan ditangani</p>
+              <p className="text-xs text-muted-foreground">Statistik tim muncul setelah agent menangani percakapan.</p>
             </div>
-          ))}
+          ) : (
+            <>
+              <div className="grid grid-cols-[32px_1.6fr_1fr] items-center gap-3 border-b-2 border-border px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span>#</span>
+                <span>Agent</span>
+                <span>Percakapan</span>
+              </div>
+              {activeTeam.map((a, i) => (
+                <div
+                  key={a.name}
+                  className="grid grid-cols-[32px_1.6fr_1fr] items-center gap-3 border-b border-border px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-muted/50"
+                >
+                  <span className={`grid size-[26px] place-items-center rounded-lg text-xs font-bold ${RANK_BG[i + 1] ?? "bg-muted text-muted-foreground"}`}>
+                    {i + 1}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className="grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
+                      style={{ background: RANK_COLORS[i % RANK_COLORS.length] }}
+                    >
+                      {initials(a.name)}
+                    </span>
+                    <span className="truncate font-semibold">{a.name}</span>
+                  </span>
+                  <span className="font-semibold text-brand-navy dark:text-foreground">{a.convs}</span>
+                </div>
+              ))}
+            </>
+          )}
         </SectionCard>
 
-        {/* Activity feed */}
-        <SectionCard title="Aktivitas Terbaru" description="Riwayat tindakan terakhir" action={<SampleBadge />} contentClassName="pt-2">
-          <ul className="flex flex-col">
-            {ACTIVITY.map((a, i) => {
-              const Icon = a.icon;
-              return (
+        {/* Activity feed — percakapan terakhir (data asli) */}
+        <SectionCard title="Aktivitas Terbaru" description="Percakapan terakhir" contentClassName="pt-2">
+          {activity.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
+                <Inbox className="size-6" />
+              </span>
+              <p className="text-sm font-medium">Belum ada aktivitas</p>
+              <p className="text-xs text-muted-foreground">Percakapan masuk akan muncul di sini.</p>
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {activity.map((a, i) => (
                 <li key={i} className="grid grid-cols-[32px_1fr] gap-3 border-b border-border py-3 last:border-0">
-                  <span className="grid size-8 place-items-center rounded-[10px]" style={{ background: a.bg, color: a.fg }}>
-                    <Icon className="size-3.5" strokeWidth={2} />
+                  <span className="grid size-8 place-items-center rounded-[10px] bg-blue-50 text-brand-blue dark:bg-blue-500/15">
+                    <MessageSquare className="size-3.5" strokeWidth={2} />
                   </span>
-                  <div>
-                    <p className="text-[13.5px] leading-snug text-foreground">{a.text}</p>
-                    <span className="mt-0.5 inline-block text-[11.5px] text-muted-foreground">{a.time}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13.5px] font-medium leading-snug text-foreground">{a.contact}</p>
+                    <p className="truncate text-[12.5px] text-muted-foreground">{a.preview}</p>
+                    {a.at && (
+                      <span className="mt-0.5 inline-block text-[11.5px] text-muted-foreground">{timeAgo(a.at)}</span>
+                    )}
                   </div>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          )}
         </SectionCard>
       </div>
     </div>

@@ -180,7 +180,7 @@ export async function getRevenueStats(): Promise<RevenueStats> {
             count(*)::int total
           FROM orders`,
     );
-    const row = (r as unknown as { rows: Record<string, unknown>[] }).rows[0] ?? {};
+    const row = (r as unknown as Record<string, unknown>[])[0] ?? {};
     return {
       totalPaidIdr: Number(row.total_paid ?? 0),
       monthPaidIdr: Number(row.month_paid ?? 0),
@@ -201,7 +201,7 @@ export async function listOrders(limit = 100): Promise<OrderRow[]> {
           ORDER BY o.created_at DESC
           LIMIT ${limit}`,
     );
-    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    const rows = (r as unknown as Record<string, unknown>[]);
     return rows.map((row) => ({
       id: String(row.id),
       tenantName: String(row.tenant_name),
@@ -240,7 +240,7 @@ export async function listAllUsers(limit = 200): Promise<PlatformUserRow[]> {
           ORDER BY u.created_at DESC
           LIMIT ${limit}`,
     );
-    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    const rows = (r as unknown as Record<string, unknown>[]);
     return rows.map((row) => ({
       id: String(row.id),
       name: String(row.name),
@@ -284,7 +284,7 @@ export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
           FROM months
           ORDER BY m ASC`,
     );
-    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    const rows = (r as unknown as Record<string, unknown>[]);
     return rows.map((row) => ({
       month: String(row.month),
       label: String(row.label),
@@ -322,7 +322,7 @@ export async function listAuditLogs(limit = 100): Promise<AuditRow[]> {
           ORDER BY a.created_at DESC
           LIMIT ${limit}`,
     );
-    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    const rows = (r as unknown as Record<string, unknown>[]);
     return rows.map((row) => ({
       id: String(row.id),
       actorEmail: row.actor_email ? String(row.actor_email) : null,

@@ -47,13 +47,32 @@ export const DEFAULT_WEB_SETTINGS: WebSettings = {
   },
 };
 
+// Default branding TENANT (bukan platform): pakai nama tenant, sisanya kosong.
+// Tenant tak boleh mewarisi nama/logo/SEO/sosial ChatCepat sebagai miliknya.
+export function tenantWebDefaults(tenantName: string): WebSettings {
+  const name = tenantName.trim() || "Workspace";
+  return {
+    siteName: name,
+    tagline: "",
+    description: "",
+    logoUrl: "",
+    faviconUrl: "",
+    seo: { title: name, description: "", keywords: "", ogImage: "" },
+    social: { instagram: "", facebook: "", twitter: "", tiktok: "", youtube: "", linkedin: "", whatsapp: "" },
+    contact: { email: "", phone: "", address: "" },
+  };
+}
+
 function str(v: unknown, fallback: string): string {
   return typeof v === "string" ? v : fallback;
 }
 
-export function normalizeWebSettings(raw: unknown): WebSettings {
+// base = nilai default saat field kosong. Platform pakai DEFAULT_WEB_SETTINGS
+// (ChatCepat); tenant pakai default tenant-spesifik (lihat tenantWebDefaults)
+// supaya tak mewarisi branding platform.
+export function normalizeWebSettings(raw: unknown, base: WebSettings = DEFAULT_WEB_SETTINGS): WebSettings {
   const r = (raw ?? {}) as Partial<WebSettings>;
-  const d = DEFAULT_WEB_SETTINGS;
+  const d = base;
   const seo = (r.seo ?? {}) as Partial<WebSettings["seo"]>;
   const social = (r.social ?? {}) as Partial<WebSettings["social"]>;
   const contact = (r.contact ?? {}) as Partial<WebSettings["contact"]>;

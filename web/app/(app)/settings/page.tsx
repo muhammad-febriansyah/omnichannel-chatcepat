@@ -3,7 +3,7 @@ import { Settings } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants, users } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { normalizeWebSettings } from "@/lib/web-settings";
+import { normalizeWebSettings, tenantWebDefaults } from "@/lib/web-settings";
 import { normalizeBusinessHours } from "@/lib/business-hours";
 import { PageHeader } from "@/components/app/page-header";
 import { SettingsTabs } from "@/components/app/settings-tabs";
@@ -34,17 +34,20 @@ export default async function SettingsPage() {
 
   let raw: Record<string, unknown> | undefined;
   let teamUsers: UserRow[] = [];
+  let tenantName = session.tenantName ?? "Workspace";
   if (session.tenantId) {
     try {
       const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
       raw = t?.settings as Record<string, unknown> | undefined;
+      if (t?.name) tenantName = t.name;
     } catch {
       /* default */
     }
     teamUsers = await loadUsers(session.tenantId, session.id);
   }
 
-  const webSettings = normalizeWebSettings(raw?.web_settings);
+  // Default branding = nama tenant (bukan ChatCepat). Tenant punya data sendiri.
+  const webSettings = normalizeWebSettings(raw?.web_settings, tenantWebDefaults(tenantName));
   const businessHours = normalizeBusinessHours(raw?.business_hours);
 
   return (

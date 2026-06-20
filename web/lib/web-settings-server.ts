@@ -4,15 +4,18 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { tenants } from "./db/schema";
 import { getSession } from "./session";
-import { DEFAULT_WEB_SETTINGS, normalizeWebSettings, type WebSettings } from "./web-settings";
+import { DEFAULT_WEB_SETTINGS, normalizeWebSettings, tenantWebDefaults, type WebSettings } from "./web-settings";
 
-function pickWebSettings(t?: { settings: unknown }): WebSettings {
-  return normalizeWebSettings((t?.settings as Record<string, unknown> | undefined)?.web_settings);
+// Tenant: default branding = nama tenant (bukan ChatCepat platform).
+function pickWebSettings(t?: { name?: string; settings: unknown }): WebSettings {
+  const base = tenantWebDefaults(t?.name ?? "Workspace");
+  return normalizeWebSettings((t?.settings as Record<string, unknown> | undefined)?.web_settings, base);
 }
 
 async function readTenant(where: ReturnType<typeof eq>): Promise<WebSettings> {
   try {
-    return pickWebSettings(await db.query.tenants.findFirst({ where }));
+    const t = await db.query.tenants.findFirst({ where });
+    return pickWebSettings(t);
   } catch {
     return DEFAULT_WEB_SETTINGS;
   }
@@ -34,7 +37,8 @@ export async function getPublicWebSettings(): Promise<WebSettings> {
     const t = slug
       ? await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
       : await db.query.tenants.findFirst({ orderBy: asc(tenants.createdAt) });
-    return pickWebSettings(t);
+    // Platform: default = ChatCepat (DEFAULT_WEB_SETTINGS), bukan nama tenant.
+    return normalizeWebSettings((t?.settings as Record<string, unknown> | undefined)?.web_settings);
   } catch {
     return DEFAULT_WEB_SETTINGS;
   }
