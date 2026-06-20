@@ -3,13 +3,13 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { authDialogUrl, signState, type MetaPlatform } from "@/lib/facebook";
+import { appUrl, authDialogUrl, signState, type MetaPlatform } from "@/lib/facebook";
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.redirect(new URL("/login", request.url));
+  if (!session) return NextResponse.redirect(appUrl("/login"));
   if (!can(session, "channel.connect") || !session.tenantId) {
-    return NextResponse.redirect(new URL("/channels?error=forbidden", request.url));
+    return NextResponse.redirect(appUrl("/channels?error=forbidden"));
   }
 
   const platform: MetaPlatform =
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     url = authDialogUrl(state, platform);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "config";
-    return NextResponse.redirect(new URL(`/channels/connect?error=${encodeURIComponent(msg)}`, request.url));
+    return NextResponse.redirect(appUrl(`/channels/connect?error=${encodeURIComponent(msg)}`));
   }
   return NextResponse.redirect(url);
 }

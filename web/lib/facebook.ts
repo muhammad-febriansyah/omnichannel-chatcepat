@@ -58,6 +58,13 @@ export function redirectUri(): string {
   return `${baseUrl()}/api/channels/facebook/oauth/callback`;
 }
 
+// URL absolut ke halaman app pakai origin publik canonical (APP_BASE_URL).
+// Di balik proxy, request.url = host internal (localhost:3000) → redirect rusak.
+// Selalu pakai ini buat redirect dari Route Handler OAuth.
+export function appUrl(path: string): string {
+  return new URL(path, baseUrl()).toString();
+}
+
 function stateSecret(): Uint8Array {
   const s = process.env.NEXTAUTH_SECRET;
   if (!s) {
