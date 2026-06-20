@@ -16,7 +16,14 @@ import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, SESSION_COOKIE, signSession } fro
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
 import { deleteUpload } from "./uploads";
-import { FB_OAUTH_COOKIE, getInstagramAccount, listPages, subscribePageToApp, verifyOAuthSession } from "./facebook";
+import {
+  FB_OAUTH_COOKIE,
+  getInstagramAccount,
+  listPages,
+  subscribePageToApp,
+  unsubscribePageFromApp,
+  verifyOAuthSession,
+} from "./facebook";
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -322,6 +329,35 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   store.delete(FB_OAUTH_COOKIE);
   revalidatePath("/channels");
   redirect("/channels?connected=1");
+}
+
+// --- Putuskan (logout) channel: unsubscribe webhook Meta (best-effort) + hapus row. ---
+export async function disconnectChannel(id: string): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+
+  const [ch] = await db
+    .select({ type: channels.type, credentials: channels.credentials })
+    .from(channels)
+    .where(and(eq(channels.id, id), eq(channels.tenantId, session.tenantId)));
+  if (!ch) throw new Error("Channel tidak ditemukan");
+
+  // Meta (FB/IG): lepas subscription webhook Page supaya berhenti kirim event.
+  // Best-effort — kegagalan Graph tak boleh menghalangi penghapusan channel.
+  if (ch.type === "facebook" || ch.type === "instagram") {
+    try {
+      const creds = decryptCreds(ch.credentials as Record<string, unknown>);
+      const pageId = typeof creds.page_id === "string" ? creds.page_id : "";
+      const token = typeof creds.access_token === "string" ? creds.access_token : "";
+      if (pageId && token) await unsubscribePageFromApp(pageId, token);
+    } catch {
+      /* abaikan — tetap hapus channel */
+    }
+  }
+
+  await db.delete(channels).where(and(eq(channels.id, id), eq(channels.tenantId, session.tenantId)));
+  revalidatePath("/channels");
 }
 
 // --- WA unofficial: simpan device JID hasil pairing (dipanggil dari halaman QR). ---

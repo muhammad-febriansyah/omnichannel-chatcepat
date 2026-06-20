@@ -202,3 +202,11 @@ export async function subscribePageToApp(pageId: string, pageToken: string): Pro
   const res = await fetch(url, { method: "POST", cache: "no-store" });
   if (!res.ok) await graphError(res);
 }
+
+// Lepas subscription app dari Page → berhenti terima webhook (saat disconnect channel).
+export async function unsubscribePageFromApp(pageId: string, pageToken: string): Promise<void> {
+  const url = new URL(`${GRAPH}/${pageId}/subscribed_apps`);
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetch(url, { method: "DELETE", cache: "no-store" });
+  if (!res.ok) await graphError(res);
+}

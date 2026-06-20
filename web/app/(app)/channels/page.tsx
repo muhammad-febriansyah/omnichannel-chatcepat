@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/app/empty-state";
 import { ActionLink } from "@/components/app/action-link";
 import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
+import { DeleteButton } from "@/components/app/delete-button";
+import { disconnectChannel } from "@/lib/actions";
 import { Suspense } from "react";
 import { ConnectToast } from "./connect-toast";
 
@@ -98,19 +100,34 @@ export default async function ChannelsPage() {
                     {statusLabel(c.status)}
                   </StatusPill>
                 </div>
-                {c.type === "wa_unofficial" && c.status !== "connected" && (
-                  <div className="flex justify-end">
+                <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
+                  {c.type === "wa_unofficial" && c.status !== "connected" && (
                     <ActionLink
                       href={`/channels/${c.id}/pair`}
                       variant="outline"
-                      size="icon-lg"
+                      size="sm"
                       aria-label="Scan QR untuk pairing"
                       title="Scan QR untuk pairing"
                     >
-                      <QrCode className="size-4" />
+                      <QrCode className="size-4" /> Scan QR
                     </ActionLink>
-                  </div>
-                )}
+                  )}
+                  <DeleteButton
+                    onConfirm={async () => {
+                      "use server";
+                      await disconnectChannel(c.id);
+                    }}
+                    title="Putuskan channel?"
+                    description={
+                      <>
+                        Channel <span className="font-semibold">{c.name}</span> akan diputus. Pesan masuk
+                        berhenti dan kredensial dihapus. Hubungkan ulang untuk mengaktifkan lagi.
+                      </>
+                    }
+                    successMessage="Channel diputus"
+                    triggerLabel="Putuskan"
+                  />
+                </div>
               </div>
             );
           })}
