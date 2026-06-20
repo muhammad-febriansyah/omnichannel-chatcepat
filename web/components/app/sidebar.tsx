@@ -24,6 +24,8 @@ import {
   Lock,
   ShieldCheck,
   Receipt,
+  Users2,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type Ability, type Role } from "@/lib/rbac";
@@ -75,7 +77,9 @@ const PLATFORM_SECTION: { title: string; items: Item[] } = {
   title: "Platform",
   items: [
     { href: "/admin", label: "Ringkasan & Tenant", icon: ShieldCheck },
+    { href: "/admin/analytics", label: "Analitik", icon: TrendingUp },
     { href: "/admin/transactions", label: "Transaksi", icon: Receipt },
+    { href: "/admin/users", label: "Pengguna", icon: Users2 },
     { href: "/admin/plans", label: "Paket", icon: Tag },
   ],
 };

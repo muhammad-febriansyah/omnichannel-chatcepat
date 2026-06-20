@@ -217,3 +217,82 @@ export async function listOrders(limit = 100): Promise<OrderRow[]> {
     return [];
   }
 }
+
+// --- Pengguna lintas tenant ---
+
+export interface PlatformUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  tenantName: string | null;
+  lastActiveAt: string | null;
+  createdAt: string;
+}
+
+export async function listAllUsers(limit = 200): Promise<PlatformUserRow[]> {
+  try {
+    const r = await db.execute(
+      sql`SELECT u.id, u.name, u.email, u.role, u.status, t.name tenant_name,
+                 u.last_active_at, u.created_at
+          FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id
+          ORDER BY u.created_at DESC
+          LIMIT ${limit}`,
+    );
+    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      email: String(row.email),
+      role: String(row.role),
+      status: String(row.status),
+      tenantName: row.tenant_name ? String(row.tenant_name) : null,
+      lastActiveAt: row.last_active_at ? String(row.last_active_at) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// --- Analitik platform: tren 6 bulan terakhir ---
+
+export interface MonthlyPoint {
+  month: string; // "2026-06"
+  label: string; // "Jun"
+  revenue: number;
+  tenants: number;
+  messages: number;
+}
+
+export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
+  try {
+    const r = await db.execute(
+      sql`WITH months AS (
+            SELECT date_trunc('month', now()) - (interval '1 month' * gs) AS m
+            FROM generate_series(0, 5) gs
+          )
+          SELECT to_char(m, 'YYYY-MM') month,
+                 to_char(m, 'Mon') label,
+                 coalesce((SELECT sum(amount_idr) FROM orders o
+                    WHERE o.status='paid' AND date_trunc('month', o.paid_at) = months.m),0)::bigint revenue,
+                 (SELECT count(*) FROM tenants t
+                    WHERE date_trunc('month', t.created_at) = months.m)::int tenants,
+                 (SELECT count(*) FROM messages msg
+                    WHERE date_trunc('month', msg.created_at) = months.m)::int messages
+          FROM months
+          ORDER BY m ASC`,
+    );
+    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    return rows.map((row) => ({
+      month: String(row.month),
+      label: String(row.label),
+      revenue: Number(row.revenue ?? 0),
+      tenants: Number(row.tenants ?? 0),
+      messages: Number(row.messages ?? 0),
+    }));
+  } catch {
+    return [];
+  }
+}
