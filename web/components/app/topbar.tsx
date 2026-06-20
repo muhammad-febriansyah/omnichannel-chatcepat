@@ -27,6 +27,9 @@ export function Topbar({
   const [pendingLogout, startLogout] = useTransition();
   const [pendingSwitch, startSwitch] = useTransition();
   const workspace = session.tenantName ?? "Workspace";
+  // Label workspace di kartu profil: admin platform tanpa impersonasi = "Konsol Platform".
+  const workspaceLabel =
+    session.isPlatformAdmin && !session.impersonating ? "Konsol Platform" : workspace;
 
   function switchTenant(id: string) {
     if (id === session.actingTenantId) return;
@@ -47,8 +50,8 @@ export function Topbar({
       >
         <PanelLeft className="size-[18px]" />
       </button>
-      {session.isPlatformAdmin ? (
-        // Admin platform: pilih tenant yang sedang dikelola (god-mode).
+      {session.isPlatformAdmin && session.impersonating ? (
+        // Admin platform sedang impersonasi: ganti tenant yang sedang dikelola.
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={pendingSwitch}
@@ -76,6 +79,12 @@ export function Topbar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+      ) : session.isPlatformAdmin ? (
+        // Konsol platform (bukan impersonasi): label statik, tanpa pilih tenant.
+        <div className="flex h-10 items-center gap-2 rounded-[10px] border border-border bg-background px-3 text-sm">
+          <Building2 className="size-4 shrink-0 text-brand-blue" />
+          <span className="font-medium text-foreground">Konsol Platform</span>
+        </div>
       ) : (
         <div className="flex h-10 w-full max-w-[420px] items-center gap-2 rounded-[10px] border border-transparent bg-background px-3 text-muted-foreground transition focus-within:border-brand-blue focus-within:bg-card focus-within:shadow-[0_0_0_4px_rgba(59,130,246,0.12)]">
           <Search className="size-4 shrink-0" />
@@ -123,7 +132,7 @@ export function Topbar({
               <span className="text-sm font-semibold text-foreground">{session.name}</span>
               <span className="truncate text-xs text-muted-foreground">{session.email}</span>
               <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-brand-navy">
-                {workspace} · <span>{roleLabel(session.role)}</span>
+                {workspaceLabel} · <span>{roleLabel(session.role)}</span>
               </span>
             </div>
             <DropdownMenuSeparator />
