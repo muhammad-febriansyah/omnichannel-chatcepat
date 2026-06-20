@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Save, Package } from "lucide-react";
@@ -10,6 +10,15 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import { Button } from "@/components/ui/button";
 import { ActionLink } from "@/components/app/action-link";
 import { createPlan, updatePlan, type PlanInput } from "@/lib/billing-actions";
+import { cn } from "@/lib/utils";
+
+// Format angka ke ribuan id-ID ("12.500"); "" kalau kosong/0 opsional.
+function groupID(n: number): string {
+  return n.toLocaleString("id-ID");
+}
+function onlyDigits(s: string): string {
+  return s.replace(/\D/g, "");
+}
 
 const schema = z.object({
   name: z.string().trim().min(1, "Nama paket wajib diisi").max(120, "Nama maksimal 120 karakter"),
@@ -64,6 +73,7 @@ export function PlanForm({
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<Values>({
     resolver: zodResolver(schema),
@@ -171,13 +181,38 @@ export function PlanForm({
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label htmlFor="priceIdr" className="mb-1.5 block text-sm font-medium text-foreground">
-                  Harga (Rupiah)
+                  Harga
                 </label>
-                <input id="priceIdr" type="number" inputMode="numeric" {...register("priceIdr")} className={inputCls} />
+                <Controller
+                  control={control}
+                  name="priceIdr"
+                  render={({ field }) => {
+                    const num = Number(field.value) || 0;
+                    return (
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">
+                          Rp
+                        </span>
+                        <input
+                          id="priceIdr"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={num === 0 ? "" : groupID(num)}
+                          onChange={(e) => {
+                            const d = onlyDigits(e.target.value);
+                            field.onChange(d === "" ? 0 : Number(d));
+                          }}
+                          placeholder="0"
+                          className={cn(inputCls, "pl-9 font-medium tabular-nums")}
+                        />
+                      </div>
+                    );
+                  }}
+                />
                 {errors.priceIdr && (
                   <p className="mt-1.5 text-xs font-medium text-danger">{errors.priceIdr.message}</p>
                 )}
-                <p className="mt-1.5 text-xs text-muted-foreground">0 = harga custom (&ldquo;Hubungi kami&rdquo;).</p>
+                <PricePreview control={control} />
               </div>
               <div>
                 <label htmlFor="period" className="mb-1.5 block text-sm font-medium text-foreground">
@@ -192,7 +227,28 @@ export function PlanForm({
                 <label htmlFor="quota" className="mb-1.5 block text-sm font-medium text-foreground">
                   Kuota Pesan
                 </label>
-                <input id="quota" type="number" inputMode="numeric" {...register("quota")} placeholder="Unlimited" className={inputCls} />
+                <Controller
+                  control={control}
+                  name="quota"
+                  render={({ field }) => {
+                    const raw = field.value;
+                    const num = raw === "" || raw == null ? null : Number(raw);
+                    return (
+                      <input
+                        id="quota"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={num == null ? "" : groupID(num)}
+                        onChange={(e) => {
+                          const d = onlyDigits(e.target.value);
+                          field.onChange(d === "" ? "" : Number(d));
+                        }}
+                        placeholder="Unlimited"
+                        className={cn(inputCls, "tabular-nums")}
+                      />
+                    );
+                  }}
+                />
                 {errors.quota && <p className="mt-1.5 text-xs font-medium text-danger">{errors.quota.message}</p>}
                 <p className="mt-1.5 text-xs text-muted-foreground">Kosongkan = unlimited.</p>
               </div>
@@ -270,5 +326,18 @@ export function PlanForm({
         </CardFooter>
       </Card>
     </form>
+  );
+}
+
+// Preview harga reaktif tanpa watch() (hindari React Compiler skip).
+function PricePreview({ control }: { control: ReturnType<typeof useForm<Values>>["control"] }) {
+  const price = Number(useWatch({ control, name: "priceIdr" })) || 0;
+  const period = useWatch({ control, name: "period" });
+  return (
+    <p className="mt-1.5 text-xs text-muted-foreground">
+      {price > 0
+        ? `Rp ${groupID(price)} / ${period === "year" ? "tahun" : "bulan"}`
+        : "0 = harga custom (“Hubungi kami”)."}
+    </p>
   );
 }
