@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -86,12 +87,12 @@ export default function ConnectChannelPage() {
       type === "wa_official" ? creds.phone_number_id : creds.page_id ?? undefined;
     start(async () => {
       try {
-        await gooeyToast.promise(
-          createChannel({ type, name, credentials: creds, externalId }),
-          { loading: "Menghubungkan channel…", success: "Channel terhubung", error: "Gagal menghubungkan" },
-        );
-      } catch {
-        /* error toast sudah tampil */
+        // createChannel redirect saat sukses (NEXT_REDIRECT) — jangan dibungkus
+        // gooeyToast.promise, redirect-nya akan jadi "error" palsu & ketelan.
+        await createChannel({ type, name, credentials: creds, externalId });
+      } catch (e) {
+        unstable_rethrow(e);
+        gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan channel");
       }
     });
   }

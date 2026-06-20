@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Script from "next/script";
+import { unstable_rethrow } from "next/navigation";
 import { Loader2, ShieldCheck, MessageCircle } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { connectWhatsAppEmbedded } from "@/lib/actions";
@@ -100,6 +101,8 @@ export function WaEmbeddedSignup() {
             gooeyToast.success("WhatsApp terhubung");
             window.location.href = "/channels?connected=1";
           } catch (e) {
+            // redirect() (mis. dari requireSession) melempar NEXT_REDIRECT → biar Next handle.
+            unstable_rethrow(e);
             gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan WhatsApp");
           }
         });

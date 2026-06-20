@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import Image from "next/image";
 import { Check, Loader2, Plug } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
@@ -30,6 +31,8 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
         // connectMetaPage redirect ke /channels saat sukses (tak resolve normal).
         await connectMetaPage(selected);
       } catch (e) {
+        // redirect() melempar NEXT_REDIRECT (bukan error) → biarkan Next yang handle.
+        unstable_rethrow(e);
         gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan Page");
       }
     });
