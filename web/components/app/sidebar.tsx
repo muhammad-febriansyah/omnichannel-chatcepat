@@ -23,6 +23,7 @@ import {
   LogOut,
   Lock,
   ShieldCheck,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type Ability, type Role } from "@/lib/rbac";
@@ -74,6 +75,7 @@ const PLATFORM_SECTION: { title: string; items: Item[] } = {
   title: "Platform",
   items: [
     { href: "/admin", label: "Ringkasan & Tenant", icon: ShieldCheck },
+    { href: "/admin/transactions", label: "Transaksi", icon: Receipt },
     { href: "/admin/plans", label: "Paket", icon: Tag },
   ],
 };

@@ -148,3 +148,72 @@ export async function getTenantDetail(id: string): Promise<TenantDetail | null> 
     return null;
   }
 }
+
+// --- Transaksi (orders) lintas tenant — konsol platform ---
+
+export interface RevenueStats {
+  totalPaidIdr: number;
+  monthPaidIdr: number;
+  pendingCount: number;
+  totalCount: number;
+}
+
+export interface OrderRow {
+  id: string;
+  tenantName: string;
+  planName: string;
+  amountIdr: number;
+  status: string;
+  paymentMethod: string | null;
+  customerName: string | null;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+export async function getRevenueStats(): Promise<RevenueStats> {
+  try {
+    const r = await db.execute(
+      sql`SELECT
+            coalesce(sum(amount_idr) filter (where status='paid'),0)::bigint total_paid,
+            coalesce(sum(amount_idr) filter (where status='paid' and paid_at >= date_trunc('month', now())),0)::bigint month_paid,
+            count(*) filter (where status='pending')::int pending,
+            count(*)::int total
+          FROM orders`,
+    );
+    const row = (r as unknown as { rows: Record<string, unknown>[] }).rows[0] ?? {};
+    return {
+      totalPaidIdr: Number(row.total_paid ?? 0),
+      monthPaidIdr: Number(row.month_paid ?? 0),
+      pendingCount: Number(row.pending ?? 0),
+      totalCount: Number(row.total ?? 0),
+    };
+  } catch {
+    return { totalPaidIdr: 0, monthPaidIdr: 0, pendingCount: 0, totalCount: 0 };
+  }
+}
+
+export async function listOrders(limit = 100): Promise<OrderRow[]> {
+  try {
+    const r = await db.execute(
+      sql`SELECT o.id, t.name tenant_name, o.plan_name, o.amount_idr, o.status,
+                 o.payment_method, o.customer_name, o.created_at, o.paid_at
+          FROM orders o JOIN tenants t ON t.id = o.tenant_id
+          ORDER BY o.created_at DESC
+          LIMIT ${limit}`,
+    );
+    const rows = (r as unknown as { rows: Record<string, unknown>[] }).rows;
+    return rows.map((row) => ({
+      id: String(row.id),
+      tenantName: String(row.tenant_name),
+      planName: String(row.plan_name),
+      amountIdr: Number(row.amount_idr ?? 0),
+      status: String(row.status),
+      paymentMethod: row.payment_method ? String(row.payment_method) : null,
+      customerName: row.customer_name ? String(row.customer_name) : null,
+      createdAt: String(row.created_at),
+      paidAt: row.paid_at ? String(row.paid_at) : null,
+    }));
+  } catch {
+    return [];
+  }
+}
