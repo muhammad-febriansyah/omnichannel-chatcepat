@@ -190,7 +190,14 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
           )}
         </div>
 
-        <Composer conversationId={conversationId} />
+        <Composer
+          conversationId={conversationId}
+          blockedReason={
+            channelType === "wa_official" && sw?.expired
+              ? "WhatsApp resmi: window 24 jam habis, balasan teks bebas akan ditolak."
+              : undefined
+          }
+        />
       </div>
 
       {/* contact panel */}
