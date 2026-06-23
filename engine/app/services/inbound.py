@@ -153,6 +153,12 @@ async def handle(inbound: InboundMessage) -> None:
         tenant_str = str(tenant_id)
         await _publish_message_new(tenant_str, conv.id, inbound_msg, "contact")
 
+        # wa_unofficial (whatsmeow): JANGAN auto-reply. Balasan otomatis dari nomor
+        # pribadi memicu deteksi spam WA → akun dibatasi/banned. Hanya persist +
+        # realtime; agen balas manual. Auto-reply hanya untuk channel resmi.
+        if channel.type == "wa_unofficial":
+            return
+
         # --- DECIDE + REPLY ---
         # decide() bisa menulis (flow state) → txn sendiri, commit sebelum kirim balasan.
         async with session.begin():
