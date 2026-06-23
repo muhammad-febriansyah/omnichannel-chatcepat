@@ -307,12 +307,12 @@ func (w *Whatsmeow) handler(channelID, tenantID string) func(any) {
 			return // hanya teks untuk saat ini (docs/prd/04)
 		}
 
-		sender := msg.Info.Sender.User
+		// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
+		// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,
+		// "privacy token 400") + kontak tak match percakapan keluar (yang simpan phone).
+		sender := senderPhone(msg.Info)
 		pmID := msg.Info.ID
 		name := optName(msg.Info.PushName)
-		// Phone = identitas kontak WA (digit, tanpa '+'). Wajib di-set supaya pesan
-		// masuk ter-match ke kontak yang sama dengan percakapan keluar (yang simpan
-		// phone, external_id NULL) — kalau tidak, balasan bikin kontak/percakapan dobel.
 		phone := sender
 		inb := contracts.InboundMessage{
 			ChannelId:         channelID,
@@ -343,6 +343,19 @@ func (w *Whatsmeow) Close() {
 	for _, s := range w.clients {
 		s.cli.Disconnect()
 	}
+}
+
+// senderPhone mengembalikan nomor telepon (PN) pengirim, bukan LID. Bila Sender
+// sudah PN (@s.whatsapp.net) pakai itu; bila LID, ambil SenderAlt (PN). Fallback
+// ke Sender.User bila PN tak tersedia.
+func senderPhone(info types.MessageInfo) string {
+	if info.Sender.Server == types.DefaultUserServer {
+		return info.Sender.User
+	}
+	if info.SenderAlt.Server == types.DefaultUserServer && info.SenderAlt.User != "" {
+		return info.SenderAlt.User
+	}
+	return info.Sender.User
 }
 
 func extractText(m *waE2E.Message) string {
