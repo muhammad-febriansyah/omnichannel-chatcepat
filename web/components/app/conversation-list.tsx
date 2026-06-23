@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Search, Inbox as InboxIcon, ChevronDown } from "lucide-react";
+import { Search, Inbox as InboxIcon, ChevronDown, PenLine } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, ChannelType, initials, timeAgo } from "@/lib/format";
@@ -78,10 +78,18 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
     <div className="flex h-full w-full flex-col border-r border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-        <h2 className="text-base font-semibold">Inbox</h2>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-          {unreadTotal > 0 ? `${unreadTotal} belum dibaca` : `${items.length} percakapan`}
-        </span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Inbox</h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            {unreadTotal > 0 ? `${unreadTotal} belum dibaca` : `${items.length} percakapan`}
+          </span>
+        </div>
+        <Link
+          href="/inbox/new"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-blue/90"
+        >
+          <PenLine className="size-3.5" /> Pesan Baru
+        </Link>
       </div>
 
       {/* Filter channel */}

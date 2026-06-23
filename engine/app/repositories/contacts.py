@@ -16,10 +16,14 @@ async def get_or_create(
     external_id: str | None,
     phone: str | None,
     name: str | None,
+    opt_in_status: str = "opted_in",
+    opt_in_source: str = "inbound",
 ) -> Contact:
     """Cari kontak per tenant (by external_id lalu phone), atau buat baru.
 
-    Kontak yang chat duluan = inbound → opted_in (consent implisit, docs/prd/07).
+    Default: kontak yang chat duluan = inbound → opted_in (consent implisit, docs/prd/07).
+    Untuk percakapan yang dimulai agen (click_to_chat) consent belum tentu ada →
+    pemanggil set opt_in_status="unknown", opt_in_source="click_to_chat".
     """
     stmt = select(Contact).where(Contact.tenant_id == tenant_id)
     contact: Contact | None = None
@@ -39,9 +43,9 @@ async def get_or_create(
         external_id=external_id,
         phone=phone,
         name=name,
-        opt_in_status="opted_in",
-        opt_in_source="inbound",
-        opt_in_at=datetime.now(timezone.utc),
+        opt_in_status=opt_in_status,
+        opt_in_source=opt_in_source,
+        opt_in_at=datetime.now(timezone.utc) if opt_in_status == "opted_in" else None,
         last_contacted_at=datetime.now(timezone.utc),
     )
     session.add(contact)

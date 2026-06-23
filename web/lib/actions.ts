@@ -571,6 +571,59 @@ export async function sendReply(conversationId: string, body: string) {
   revalidatePath(`/inbox/${conversationId}`);
 }
 
+// Mulai percakapan baru ke 1 nomor (compose). Kirim pesan pertama via engine.
+// Return conversationId — navigasi dilakukan client (hindari NEXT_REDIRECT di toast).
+export async function startConversation(input: {
+  channelId: string;
+  phone: string;
+  name?: string;
+  type?: "text" | "template";
+  body?: string;
+  templateName?: string;
+  templateLang?: string;
+}): Promise<{ conversationId: string }> {
+  const session = await requireSession();
+  requireAbility(session, "conversation.takeover");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+
+  // Channel wajib milik tenant (cegah IDOR lintas-tenant).
+  const ch = await db.query.channels.findFirst({
+    where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
+    columns: { id: true, status: true },
+  });
+  if (!ch) throw new Error("Channel tidak ditemukan");
+  if (ch.status !== "connected") throw new Error("Channel belum terhubung");
+
+  const res = await fetch(`${ENGINE}/conversations/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
+      "X-Actor-Role": session.role,
+      "X-Tenant-Id": session.tenantId,
+    },
+    body: JSON.stringify({
+      channel_id: input.channelId,
+      phone: input.phone,
+      name: input.name || null,
+      type: input.type ?? "text",
+      body: input.body ?? null,
+      template_name: input.templateName ?? null,
+      template_lang: input.templateLang ?? "id",
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`Gagal memulai percakapan${msg ? `: ${msg}` : ""}`);
+  }
+  const json = (await res.json().catch(() => null)) as { data?: { conversation_id?: string } } | null;
+  const convId = json?.data?.conversation_id;
+  if (!convId) throw new Error("Gagal memulai percakapan");
+  revalidatePath("/inbox");
+  return { conversationId: String(convId) };
+}
+
 // --- AI Agent (06) ---
 export async function savePersona(persona: string) {
   const session = await requireSession();
