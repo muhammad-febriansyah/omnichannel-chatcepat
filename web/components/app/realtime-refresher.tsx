@@ -9,7 +9,12 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
   const router = useRouter();
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws";
+    // Prod: WS same-origin (ikut host yang dibuka) → hindari mismatch www/apex +
+    // redirect yang memutus handshake WS. Dev (localhost): gateway beda port → env/8080.
+    const loc = window.location;
+    const isLocal = loc.hostname === "localhost" || loc.hostname === "127.0.0.1";
+    const sameOrigin = `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws`;
+    const base = isLocal ? (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws") : sameOrigin;
     const url = `${base}?tenant=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
     let ws: WebSocket | null = null;
     let stopped = false;
