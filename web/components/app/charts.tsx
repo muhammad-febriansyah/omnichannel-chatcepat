@@ -78,12 +78,10 @@ export function CCLogo({
   variant = "dark",
   size = 32,
   withWordmark = true,
-  wordmark,
 }: {
   variant?: "white" | "dark";
   size?: number;
   withWordmark?: boolean;
-  wordmark?: string; // override teks brand (mis. nama tenant); kosong = "ChatCepat" platform
 }) {
   const moon = variant === "white" ? "#FFFFFF" : "#1E2A78";
   const accent = variant === "white" ? "#60A5FA" : "#3B82F6";
@@ -99,13 +97,7 @@ export function CCLogo({
       </svg>
       {withWordmark && (
         <span className="font-bold tracking-tight" style={{ fontSize: size * 0.5, color: word }}>
-          {wordmark ? (
-            wordmark
-          ) : (
-            <>
-              Chat<span style={{ color: accent }}>Cepat</span>
-            </>
-          )}
+          Chat<span style={{ color: accent }}>Cepat</span>
         </span>
       )}
     </span>

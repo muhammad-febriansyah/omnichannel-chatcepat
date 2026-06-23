@@ -32,7 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { can, type Ability, type Role } from "@/lib/rbac";
 import { planAllows, PLAN_LABEL, type SidebarStats, type TenantPlan } from "@/lib/plan";
-import { CCLogo } from "@/components/app/charts";
+import { BrandLogo } from "@/components/app/brand-logo";
 
 type Item = {
   href: string;
@@ -54,10 +54,10 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { href: "/inbox", label: "Inbox", icon: Inbox, ability: "conversation.view_assigned" },
       { href: "/contacts", label: "Kontak", icon: Users, ability: "contact.view" },
       { href: "/products", label: "Produk", icon: Package, ability: "product.manage" },
-      { href: "/broadcasts", label: "Broadcast", icon: Send, ability: "broadcast.manage", minPlan: "business" },
+      { href: "/broadcasts", label: "Broadcast", icon: Send, ability: "broadcast.manage" },
       { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage" },
-      { href: "/flows", label: "Otomasi", icon: Workflow, ability: "flow.manage", minPlan: "business" },
-      { href: "/ai-agent", label: "AI Agent", icon: Sparkles, ability: "knowledge.manage", minPlan: "enterprise" },
+      { href: "/flows", label: "Otomasi", icon: Workflow, ability: "flow.manage" },
+      { href: "/ai-agent", label: "AI Agent", icon: Sparkles, ability: "knowledge.manage" },
     ],
   },
   {
@@ -161,12 +161,8 @@ export function Sidebar({
     >
       {/* Brand — logo dari web_settings tenant; fallback CCLogo. Collapsed pakai ikon (logo landscape tak muat). */}
       <div className={cn("pt-1", collapsed ? "flex justify-center" : "px-2")}>
-        {logoUrl && !collapsed ? (
-          // eslint-disable-next-line @next/next/no-img-element -- aset brand arbitrer (upload tenant)
-          <img src={logoUrl} alt={siteName ?? "Logo"} className="h-8 w-auto max-w-full object-contain" />
-        ) : (
-          <CCLogo variant="dark" size={30} withWordmark={!collapsed} wordmark={siteName} />
-        )}
+        {/* Sama dgn login: logo upload tenant (web_settings) → img; fallback CCLogo "ChatCepat". */}
+        <BrandLogo logoUrl={logoUrl} siteName={siteName} variant="dark" size={30} withWordmark={!collapsed} />
       </div>
 
       {/* Nav */}

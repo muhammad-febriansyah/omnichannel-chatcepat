@@ -11,6 +11,7 @@ import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
+import { listApiCoAccounts as fetchApiCoAccounts, type ApiCoAccount } from "./apico-server";
 import { getConversation } from "./queries";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
@@ -252,6 +253,22 @@ export async function createChannel(input: {
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.name.trim()) throw new Error("Nama channel wajib");
 
+  // Cegah channel phantom: provider apico HANYA boleh untuk akun yang benar-benar
+  // terhubung di api.co.id. Validasi external_id ke daftar resmi + ambil nilai dari
+  // sumber tepercaya (jangan percaya input mentah). Tanpa ini channel "Terhubung" palsu
+  // → tak ada resource di api.co.id → pesan masuk tak pernah datang.
+  if (input.provider === "apico") {
+    const accounts = await fetchApiCoAccounts(input.type);
+    if (accounts.length === 0) {
+      throw new Error("Belum ada akun untuk tipe ini di api.co.id. Hubungkan dulu di dashboard api.co.id.");
+    }
+    const match = accounts.find((a) => a.externalId === input.externalId);
+    if (!match) {
+      throw new Error("Akun tidak ditemukan di api.co.id. Pilih dari daftar yang tersedia.");
+    }
+    input.externalId = match.externalId;
+  }
+
   // unofficial butuh scan QR (gateway) → pending; lainnya langsung connected kalau creds ada.
   const status = input.type === "wa_unofficial" ? "pending" : "connected";
   const [row] = await db
@@ -295,6 +312,14 @@ export async function createChannel(input: {
   revalidatePath("/channels");
   // wa_unofficial → lanjut ke halaman pairing QR; lainnya langsung selesai.
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
+}
+
+// Daftar akun api.co.id yang ASLI terhubung (utk picker connect channel). Tenant-scoped
+// via session + butuh ability channel.connect. Mengembalikan [] kalau key/akun kosong.
+export async function listApiCoAccounts(type: ChannelType): Promise<ApiCoAccount[]> {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  return fetchApiCoAccounts(type);
 }
 
 // --- Facebook/Instagram OAuth: finalisasi pilih Page → subscribe webhook + simpan channel. ---

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,7 +14,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
-import { createChannel } from "@/lib/actions";
+import { createChannel, listApiCoAccounts } from "@/lib/actions";
+import type { ApiCoAccount } from "@/lib/apico-server";
 import { CHANNEL_META, ChannelType } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,10 @@ export default function ConnectChannelPage() {
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
+  // Akun ASLI di api.co.id (picker) — cegah connect channel phantom.
+  const [accounts, setAccounts] = useState<ApiCoAccount[]>([]);
+  const [loadingAcc, setLoadingAcc] = useState(false);
+  const [picked, setPicked] = useState(""); // externalId terpilih
 
   // WA/IG/FB seluruhnya lewat api.co.id (integrasi Meta langsung dinonaktifkan).
   const isMeta = type === "facebook" || type === "instagram";
@@ -78,20 +83,47 @@ export default function ConnectChannelPage() {
 
   const fields = useApiCo ? APICO_FIELDS[type] ?? [] : FIELDS[type];
 
+  // Saat tipe api.co.id dipilih, tarik daftar akun asli dari api.co.id.
+  useEffect(() => {
+    setPicked("");
+    if (!useApiCo) {
+      setAccounts([]);
+      return;
+    }
+    let alive = true;
+    setLoadingAcc(true);
+    listApiCoAccounts(type)
+      .then((a) => alive && setAccounts(a))
+      .catch(() => alive && setAccounts([]))
+      .finally(() => alive && setLoadingAcc(false));
+    return () => {
+      alive = false;
+    };
+  }, [type, useApiCo]);
+
   function submit() {
     if (!name.trim()) {
       gooeyToast.error("Nama channel wajib diisi");
       return;
     }
-    for (const f of fields) {
-      if (!creds[f.key]?.trim()) {
-        gooeyToast.error(`${f.label} wajib diisi`);
+    let externalId: string | undefined;
+    let credentials: Record<string, string> = creds;
+    if (useApiCo) {
+      if (!picked) {
+        gooeyToast.error("Pilih akun dari daftar api.co.id");
         return;
       }
+      externalId = picked;
+      // WA: credential apico_phone_number_id = id akun (dipakai gateway saat kirim).
+      credentials = type === "wa_official" ? { apico_phone_number_id: picked } : {};
+    } else {
+      for (const f of fields) {
+        if (!creds[f.key]?.trim()) {
+          gooeyToast.error(`${f.label} wajib diisi`);
+          return;
+        }
+      }
     }
-    // WA via api.co.id: external_id = phone_number_id api.co.id (resolve webhook masuk).
-    const externalId =
-      useApiCo && type === "wa_official" ? creds.apico_phone_number_id ?? undefined : undefined;
     start(async () => {
       try {
         // createChannel redirect saat sukses (NEXT_REDIRECT) — jangan dibungkus
@@ -99,7 +131,7 @@ export default function ConnectChannelPage() {
         await createChannel({
           type,
           name,
-          credentials: creds,
+          credentials,
           externalId,
           provider: useApiCo ? "apico" : undefined,
         });
@@ -216,21 +248,62 @@ export default function ConnectChannelPage() {
                 </div>
               </div>
 
-              {fields.map((f) => (
-                <div key={f.key}>
-                  <label className="mb-1.5 block text-sm font-medium">{f.label}</label>
-                  <div className="relative">
-                    <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      value={creds[f.key] ?? ""}
-                      onChange={(e) => setCreds((c) => ({ ...c, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                      className={cn(inputCls, "font-mono")}
-                    />
-                  </div>
-                  {f.hint && <p className="mt-1.5 text-xs text-muted-foreground">{f.hint}</p>}
+              {useApiCo ? (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Akun {selectedType?.label}</label>
+                  {loadingAcc ? (
+                    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" /> Memuat akun dari api.co.id…
+                    </div>
+                  ) : accounts.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10">
+                      Belum ada akun {selectedType?.label} terhubung di api.co.id. Hubungkan dulu di dashboard
+                      api.co.id (Platforms), lalu buka halaman ini lagi.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {accounts.map((a) => (
+                        <button
+                          key={a.externalId}
+                          type="button"
+                          onClick={() => {
+                            setPicked(a.externalId);
+                            if (!name.trim()) setName(a.name);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition",
+                            picked === a.externalId
+                              ? "border-brand-blue bg-blue-50 dark:bg-blue-500/10"
+                              : "border-border hover:border-brand-blue/40",
+                          )}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{a.name}</span>
+                            {a.detail && <span className="block truncate text-xs text-muted-foreground">{a.detail}</span>}
+                          </span>
+                          {picked === a.externalId && <Check className="size-4 shrink-0 text-brand-blue" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
+              ) : (
+                fields.map((f) => (
+                  <div key={f.key}>
+                    <label className="mb-1.5 block text-sm font-medium">{f.label}</label>
+                    <div className="relative">
+                      <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        value={creds[f.key] ?? ""}
+                        onChange={(e) => setCreds((c) => ({ ...c, [f.key]: e.target.value }))}
+                        placeholder={f.placeholder}
+                        className={cn(inputCls, "font-mono")}
+                      />
+                    </div>
+                    {f.hint && <p className="mt-1.5 text-xs text-muted-foreground">{f.hint}</p>}
+                  </div>
+                ))
+              )}
 
               {type === "wa_unofficial" && (
                 <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
@@ -245,7 +318,12 @@ export default function ConnectChannelPage() {
                 </div>
               )}
 
-              <Button onClick={submit} disabled={pending} size="lg" className="w-full">
+              <Button
+                onClick={submit}
+                disabled={pending || (useApiCo && (loadingAcc || accounts.length === 0 || !picked))}
+                size="lg"
+                className="w-full"
+              >
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
                 {pending ? "Menghubungkan…" : "Hubungkan"}
               </Button>

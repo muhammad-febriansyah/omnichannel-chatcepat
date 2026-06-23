@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Search, Inbox as InboxIcon } from "lucide-react";
+import { Search, Inbox as InboxIcon, ChevronDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, ChannelType, initials, timeAgo } from "@/lib/format";
@@ -26,12 +26,30 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   snoozed: { label: "Snooze", cls: "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300" },
 };
 
-type Filter = "all" | "unread" | "active" | "done";
+type Filter = "all" | "unread" | "read" | "active" | "done";
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Semua" },
   { key: "unread", label: "Belum dibaca" },
+  { key: "read", label: "Dibaca" },
   { key: "active", label: "Aktif" },
   { key: "done", label: "Selesai" },
+];
+
+// Filter channel: kelompokkan wa_official + wa_unofficial jadi satu "whatsapp".
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "telegram";
+const CHANNEL_GROUP: Record<string, ChannelFilter> = {
+  wa_official: "whatsapp",
+  wa_unofficial: "whatsapp",
+  instagram: "instagram",
+  facebook: "facebook",
+  telegram: "telegram",
+};
+const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
+  { key: "all", label: "Semua Channel" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "instagram", label: "Instagram" },
+  { key: "facebook", label: "Messenger" },
+  { key: "telegram", label: "Telegram" },
 ];
 
 export function ConversationList({ items }: { items: ConvItem[] }) {
@@ -39,17 +57,20 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
   const active = params?.conversationId;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [channel, setChannel] = useState<ChannelFilter>("all");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((c) => {
+      if (channel !== "all" && CHANNEL_GROUP[c.channelType] !== channel) return false;
       if (filter === "unread" && c.unread <= 0) return false;
+      if (filter === "read" && c.unread > 0) return false;
       if (filter === "active" && !(c.status === "open" || c.status === "pending")) return false;
       if (filter === "done" && c.status !== "resolved") return false;
       if (q && !c.name.toLowerCase().includes(q) && !(c.preview ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [items, query, filter]);
+  }, [items, query, filter, channel]);
 
   const unreadTotal = items.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0);
 
@@ -61,6 +82,25 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
           {unreadTotal > 0 ? `${unreadTotal} belum dibaca` : `${items.length} percakapan`}
         </span>
+      </div>
+
+      {/* Filter channel */}
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as ChannelFilter)}
+            aria-label="Filter channel"
+            className="h-9 w-full appearance-none rounded-lg border border-border bg-background pl-2.5 pr-8 text-sm font-medium text-foreground outline-none transition focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+          >
+            {CHANNEL_FILTERS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
       </div>
 
       {/* Search */}
