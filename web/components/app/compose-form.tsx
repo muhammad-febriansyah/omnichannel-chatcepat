@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Send, ArrowLeft, Phone, User, Radio, Info } from "lucide-react";
@@ -35,14 +35,26 @@ export function ComposeForm({
   const selected = channels.find((c) => c.id === channelId);
   const isWaOfficial = selected?.type === "wa_official";
   const tpl = templates.find((t) => t.name === templateName);
+  const hasTemplates = templates.length > 0;
 
-  // WA official: pesan pertama (di luar window 24 jam) wajib template HSM approved.
-  const showTemplate = useMemo(() => isWaOfficial && templates.length > 0, [isWaOfficial, templates.length]);
+  // WA official: pesan pertama ke nomor baru WAJIB template (api.co.id auto-buat customer).
+  // Teks bebas hanya jalan kalau nomor pernah chat <24 jam (customer sudah ada).
+  const showTemplateToggle = isWaOfficial && hasTemplates;
+  // Tanpa template approved, wa_official tak bisa memulai percakapan baru sama sekali.
+  const blockedNoTemplate = isWaOfficial && !hasTemplates;
+
+  // Saat pindah ke channel wa_official, default ke template (cara aman first-contact).
+  useEffect(() => {
+    if (isWaOfficial && hasTemplates) setMsgType("template");
+    else if (!isWaOfficial) setMsgType("text");
+  }, [isWaOfficial, hasTemplates]);
 
   function submit() {
     const digits = phone.replace(/\D/g, "");
     if (!channelId) return gooeyToast.error("Pilih channel pengirim");
     if (!digits) return gooeyToast.error("Nomor telepon wajib diisi");
+    if (blockedNoTemplate)
+      return gooeyToast.error("WhatsApp resmi butuh template approved untuk pesan pertama");
     if (msgType === "text" && !body.trim()) return gooeyToast.error("Pesan tidak boleh kosong");
     if (msgType === "template" && !templateName) return gooeyToast.error("Pilih template");
 
@@ -145,19 +157,31 @@ export function ComposeForm({
                 </div>
               </div>
 
-              {/* Tipe pesan untuk WA official */}
-              {showTemplate && (
-                <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-brand-navy dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+              {/* WA official tanpa template approved → tak bisa memulai percakapan baru */}
+              {blockedNoTemplate && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                   <Info className="mt-0.5 size-4 shrink-0" />
                   <span>
-                    WhatsApp resmi: pesan pertama ke nomor baru (di luar window 24 jam) wajib pakai{" "}
-                    <b>template (HSM)</b> yang sudah di-approve Meta.
+                    WhatsApp resmi butuh <b>template (HSM) approved</b> untuk pesan pertama ke nomor baru
+                    (api.co.id membuat customer otomatis lewat template). Buat dulu di menu{" "}
+                    <b>Template Pesan</b>, atau pakai channel <b>WhatsApp unofficial</b> untuk teks bebas.
                   </span>
                 </div>
               )}
-              {showTemplate && (
+
+              {/* Tipe pesan untuk WA official (ada template) */}
+              {showTemplateToggle && (
+                <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-brand-navy dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                  <Info className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    WhatsApp resmi: pesan pertama ke nomor baru wajib <b>template (HSM)</b>. Teks bebas hanya
+                    terkirim bila nomor sudah pernah chat dalam 24 jam terakhir.
+                  </span>
+                </div>
+              )}
+              {showTemplateToggle && (
                 <div className="flex gap-2">
-                  {(["text", "template"] as const).map((t) => (
+                  {(["template", "text"] as const).map((t) => (
                     <button
                       key={t}
                       type="button"
@@ -175,7 +199,7 @@ export function ComposeForm({
               )}
 
               {/* Body / template */}
-              {msgType === "template" && showTemplate ? (
+              {blockedNoTemplate ? null : msgType === "template" && showTemplateToggle ? (
                 <div>
                   <label htmlFor="template" className="mb-1.5 block text-sm font-medium text-foreground">
                     Template
@@ -223,7 +247,7 @@ export function ComposeForm({
           >
             Batal
           </Link>
-          <Button onClick={submit} disabled={pending || channels.length === 0}>
+          <Button onClick={submit} disabled={pending || channels.length === 0 || blockedNoTemplate}>
             <Send className="size-4" /> {pending ? "Mengirim…" : "Kirim Pesan"}
           </Button>
         </CardFooter>
