@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, templates } from "@/lib/db/schema";
+import { channels } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
+import { listApiCoTemplates } from "@/lib/apico-server";
 import { ComposeForm, type ComposeChannel, type ComposeTemplate } from "@/components/app/compose-form";
 
 export default async function NewMessagePage() {
@@ -15,16 +16,9 @@ export default async function NewMessagePage() {
         columns: { id: true, name: true, type: true, status: true },
       });
       chans = rows.map((c) => ({ id: c.id, name: c.name, type: c.type, status: c.status }));
-      // Template HSM approved untuk pesan pertama WA official.
-      const t = await db.query.templates.findMany({
-        where: and(
-          eq(templates.tenantId, session.tenantId),
-          eq(templates.kind, "hsm"),
-          eq(templates.status, "approved"),
-        ),
-        columns: { name: true, body: true, language: true },
-      });
-      tmpls = t.map((r) => ({ name: r.name, body: r.body, language: r.language ?? "id" }));
+      // Template HSM APPROVED (live api.co.id) untuk pesan pertama WA official.
+      const wa = await listApiCoTemplates({ status: "APPROVED" });
+      tmpls = wa.map((t) => ({ name: t.name, body: t.body, language: t.language }));
     } catch {
       /* kosong */
     }

@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, tags as tagsTable, templates } from "@/lib/db/schema";
+import { channels, tags as tagsTable } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
+import { listApiCoTemplates } from "@/lib/apico-server";
 import { BroadcastWizard, type TemplateOpt } from "@/components/app/broadcast-wizard";
 
 export default async function NewBroadcastPage() {
@@ -20,16 +21,9 @@ export default async function NewBroadcastPage() {
         columns: { name: true },
       });
       tagNames = t.map((x) => x.name);
-      // Hanya HSM approved yang boleh dipakai broadcast WA official.
-      const rows = await db.query.templates.findMany({
-        where: and(
-          eq(templates.tenantId, session.tenantId),
-          eq(templates.kind, "hsm"),
-          eq(templates.status, "approved"),
-        ),
-        columns: { name: true, body: true, language: true },
-      });
-      tmpls = rows.map((r) => ({ name: r.name, body: r.body, language: r.language ?? "id" }));
+      // Hanya HSM APPROVED (live api.co.id) yang boleh dipakai broadcast WA official.
+      const rows = await listApiCoTemplates({ status: "APPROVED" });
+      tmpls = rows.map((r) => ({ name: r.name, body: r.body, language: r.language }));
     } catch {
       /* kosong */
     }

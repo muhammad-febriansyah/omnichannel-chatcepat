@@ -11,7 +11,13 @@ import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
-import { listApiCoAccounts as fetchApiCoAccounts, type ApiCoAccount } from "./apico-server";
+import {
+  listApiCoAccounts as fetchApiCoAccounts,
+  type ApiCoAccount,
+  createApiCoTemplate,
+  submitApiCoTemplate,
+  type CreateTemplateInput,
+} from "./apico-server";
 import { getConversation } from "./queries";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
@@ -1152,6 +1158,22 @@ export async function updateTemplate(id: string, input: TemplateInput) {
     .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
   revalidatePath("/templates");
   redirect("/templates");
+}
+
+// Buat template WhatsApp (HSM) lewat api.co.id: create draft → submit ke Meta.
+// HSM = sumber kebenaran di api.co.id (status disinkron Meta), bukan tabel lokal.
+export async function createWaTemplate(input: CreateTemplateInput): Promise<{ status: string }> {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!input.templateName.trim()) throw new Error("Nama template wajib diisi");
+  if (!input.body.trim()) throw new Error("Isi template wajib diisi");
+  const created = await createApiCoTemplate(input);
+  if ("error" in created) throw new Error(`Gagal membuat template: ${created.error}`);
+  const submitted = await submitApiCoTemplate(created.id);
+  if ("error" in submitted)
+    throw new Error(`Template dibuat tapi gagal submit ke Meta: ${submitted.error}`);
+  revalidatePath("/templates");
+  return { status: submitted.status };
 }
 
 export async function deleteTemplate(id: string) {
