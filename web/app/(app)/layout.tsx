@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app/app-shell";
 import { requireSession } from "@/lib/session";
 import { getSidebarStats } from "@/lib/sidebar-stats";
-import { getWebSettingsByTenant } from "@/lib/web-settings-server";
+import { getPublicWebSettings, getWebSettingsByTenant } from "@/lib/web-settings-server";
 import { listTenants } from "@/lib/actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -16,6 +16,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     support = { whatsapp: ws.social.whatsapp, phone: ws.contact.phone, email: ws.contact.email };
     logoUrl = ws.logoUrl || undefined;
     siteName = ws.siteName || undefined;
+  }
+  // Tenant belum upload logo sendiri → pakai logo platform (sama seperti halaman login),
+  // bukan placeholder bulan. Tenant bisa override dgn logo sendiri via web_settings.
+  if (!logoUrl) {
+    const pub = await getPublicWebSettings();
+    logoUrl = pub.logoUrl || undefined;
   }
   // admin platform: daftar tenant untuk switcher topbar (god-mode).
   const tenants = session.isPlatformAdmin ? await listTenants() : undefined;
