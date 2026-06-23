@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -185,6 +186,11 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 		return "", fmt.Errorf("whatsmeow: body kosong")
 	}
 
+	// Anti-banned: tampil natural sebelum kirim — online + indikator "ngetik"
+	// selama durasi proporsional panjang teks. Jeda antar-pesan (broadcast)
+	// diatur engine (07); ini menambah realisme per-pesan. Best-effort.
+	simulateTyping(ctx, sess.cli, to, len(body))
+
 	resp, err := sess.cli.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(body)})
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow send: %w", err)
@@ -230,6 +236,49 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	sess := &waSession{cli: cli, channelID: channelID, tenantID: info.TenantID}
 	w.put(channelID, sess)
 	return sess, nil
+}
+
+// simulateTyping meniru perilaku manusia sebelum kirim: set online, kirim
+// indikator "composing" selama durasi proporsional panjang teks (dibatasi),
+// lalu "paused". Best-effort — error presence diabaikan, tak boleh menggagalkan
+// pengiriman. Jika ctx dibatalkan selama jeda, langsung lanjut kirim.
+func simulateTyping(ctx context.Context, cli *whatsmeow.Client, to types.JID, bodyLen int) {
+	// 1) Online dulu, lalu jeda "membaca" singkat sebelum mulai mengetik
+	//    (manusia tidak langsung ngetik begitu chat terbuka).
+	_ = cli.SendPresence(ctx, types.PresenceAvailable)
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(readDelay()):
+	}
+
+	// 2) Indikator "composing" selama durasi proporsional panjang teks.
+	_ = cli.SendChatPresence(ctx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	select {
+	case <-ctx.Done():
+	case <-time.After(typingDelay(bodyLen)):
+	}
+	_ = cli.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+}
+
+// readDelay: jeda acak 0.8–2.5 detik meniru waktu "membaca" sebelum mengetik.
+func readDelay() time.Duration {
+	secs := 0.8 + rand.Float64()*1.7
+	return time.Duration(secs * float64(time.Second))
+}
+
+// typingDelay: kira-kira 3.3 char/detik (≈200 char/menit, kecepatan ketik manusia)
+// + jitter acak 0.5–2.0 detik, dibatasi [1.5s, 8s] agar pesan panjang tak menahan
+// worker terlalu lama.
+func typingDelay(bodyLen int) time.Duration {
+	secs := float64(bodyLen)/3.3 + 0.5 + rand.Float64()*1.5
+	if secs < 1.5 {
+		secs = 1.5
+	}
+	if secs > 8.0 {
+		secs = 8.0
+	}
+	return time.Duration(secs * float64(time.Second))
 }
 
 func (w *Whatsmeow) put(channelID string, s *waSession) {

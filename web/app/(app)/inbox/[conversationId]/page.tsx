@@ -1,7 +1,19 @@
 import { and, eq, ne } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Phone, Tag, ShieldCheck, Clock, AlertTriangle, ArrowLeft, Bot, MessageSquare } from "lucide-react";
+import {
+  Phone,
+  Tag,
+  ShieldCheck,
+  Clock,
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  MessageSquare,
+  Check,
+  CheckCheck,
+  CircleAlert,
+} from "lucide-react";
 import { Composer } from "@/components/app/composer";
 import { ConversationActions } from "@/components/app/conversation-actions";
 import { getConversation, getThread } from "@/lib/queries";
@@ -20,6 +32,20 @@ function serviceWindow(expiresAt: string | null): { expired: boolean; text: stri
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return { expired: false, text: `Window ${h}j ${m}m` };
+}
+
+// Indikator status kirim pesan keluar (queued→sent→delivered→read, atau failed).
+function MessageStatus({ status }: { status: string }) {
+  if (status === "failed")
+    return (
+      <span className="inline-flex items-center gap-0.5 text-danger">
+        <CircleAlert className="size-3" /> Gagal
+      </span>
+    );
+  if (status === "read") return <CheckCheck className="size-3.5 text-sky-300" />;
+  if (status === "delivered") return <CheckCheck className="size-3.5 text-white/70" />;
+  if (status === "sent") return <Check className="size-3.5 text-white/70" />;
+  return <Clock className="size-3 text-white/60" />; // queued
 }
 
 export default async function ThreadPage({ params }: { params: Promise<{ conversationId: string }> }) {
@@ -62,7 +88,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* header */}
+        {/* header: identitas kontak */}
         <div className="flex h-16 items-center gap-3 border-b border-border bg-card px-5">
           <Link
             href="/inbox"
@@ -72,12 +98,12 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
             <ArrowLeft className="size-5" />
           </Link>
           <div
-            className="flex size-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
             style={{ background: meta?.color ?? "#94a3b8" }}
           >
             {initials(name)}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-semibold">{name}</span>
               {sw && (
@@ -98,16 +124,17 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
               {conv.handler === "agent" && " · ditangani agen"}
             </div>
           </div>
+        </div>
 
-          <div className="ml-auto">
-            <ConversationActions
-              conversationId={conversationId}
-              status={conv.status}
-              handler={conv.handler}
-              canAssign={canAssign}
-              agents={agents}
-            />
-          </div>
+        {/* toolbar aksi — baris sendiri biar tak sesak dengan nama/banner */}
+        <div className="flex items-center justify-end gap-2 overflow-x-auto border-b border-border bg-card/60 px-5 py-2">
+          <ConversationActions
+            conversationId={conversationId}
+            status={conv.status}
+            handler={conv.handler}
+            canAssign={canAssign}
+            agents={agents}
+          />
         </div>
 
         {/* messages */}
@@ -143,9 +170,17 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
                               <Bot className="size-3" /> AI Agent
                             </div>
                           )}
-                          <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                          <div className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</div>
+                          {out && (
+                            <div className="mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums text-white/70">
+                              <span>{clock(m.createdAt)}</span>
+                              <MessageStatus status={m.status} />
+                            </div>
+                          )}
                         </div>
-                        <span className="px-1 text-[10px] tabular-nums text-muted-foreground">{clock(m.createdAt)}</span>
+                        {!out && (
+                          <span className="px-1 text-[10px] tabular-nums text-muted-foreground">{clock(m.createdAt)}</span>
+                        )}
                       </div>
                     </div>
                   );

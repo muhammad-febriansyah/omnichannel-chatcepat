@@ -14,9 +14,10 @@ export function Composer({ conversationId }: { conversationId: string }) {
     if (!body) return;
     startTransition(async () => {
       try {
+        // "Dikirim" = masuk antrian; status nyata (terkirim/gagal) muncul di bubble pesan.
         await gooeyToast.promise(sendReply(conversationId, body), {
           loading: "Mengirim…",
-          success: "Terkirim",
+          success: "Pesan dikirim",
           error: (e: unknown) => (e instanceof Error ? e.message : "Gagal mengirim"),
         });
         setText("");
