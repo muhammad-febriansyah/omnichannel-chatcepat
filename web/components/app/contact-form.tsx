@@ -159,7 +159,7 @@ export function ContactForm({
                   </label>
                   <div className="relative">
                     <Tags className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="tags" {...register("tags")} placeholder="vip, jakarta, reseller" className={inputCls} />
+                    <input id="tags" {...register("tags")} placeholder="jakarta, reseller" className={inputCls} />
                   </div>
                   <p className="mt-1.5 text-xs text-muted-foreground">Pisahkan dengan koma.</p>
                 </div>

@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import { MessageSquare, Inbox, Clock, CheckCircle2, UserPlus } from "lucide-react";
+import { MessageSquare, Inbox, Clock, CheckCircle2, Plug } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { cleanIDR, initials, timeAgo } from "@/lib/format";
-import { ChannelVolumeChart, ChannelDonut, type ChannelKey } from "@/components/app/charts";
+import { cleanIDR, timeAgo } from "@/lib/format";
+import { ChannelVolumeChart, ChannelDonut, ChannelLogo, type ChannelKey } from "@/components/app/charts";
 import { DateRangePicker } from "@/components/app/date-range";
 import { PageHeader } from "@/components/app/page-header";
 import { StatCard } from "@/components/app/stat-card";
@@ -61,21 +61,29 @@ async function channelVolumes(tenantId: string | null): Promise<{ ch: ChannelKey
   }
 }
 
-// Top agent berdasarkan jumlah percakapan ditangani (data asli).
-async function teamPerf(tenantId: string | null): Promise<{ name: string; convs: number }[]> {
+// Status channel tenant: tiap channel + jumlah percakapan (data asli).
+// Model 2-role (admin/client) tak punya agent → panel "tim" diganti status channel.
+async function channelStatus(
+  tenantId: string | null,
+): Promise<{ name: string; type: string; status: string; convs: number }[]> {
   if (!tenantId) return [];
   try {
     const r = await db.execute(
-      sql`SELECT u.name, count(conv.id)::int convs
-          FROM users u
-          LEFT JOIN conversations conv ON conv.assigned_agent_id = u.id
-          WHERE u.tenant_id = ${tenantId} AND u.role <> 'admin'
-          GROUP BY u.id, u.name
-          ORDER BY convs DESC
-          LIMIT 5`,
+      sql`SELECT c.name, c.type, c.status, count(conv.id)::int convs
+          FROM channels c
+          LEFT JOIN conversations conv ON conv.channel_id = c.id
+          WHERE c.tenant_id = ${tenantId}
+          GROUP BY c.id, c.name, c.type, c.status
+          ORDER BY convs DESC, c.name ASC
+          LIMIT 6`,
     );
-    const rows = r as unknown as Array<{ name: string; convs: number }>;
-    return rows.map((row) => ({ name: String(row.name), convs: Number(row.convs ?? 0) }));
+    const rows = r as unknown as Array<{ name: string; type: string; status: string; convs: number }>;
+    return rows.map((row) => ({
+      name: String(row.name ?? "Channel"),
+      type: String(row.type ?? ""),
+      status: String(row.status ?? ""),
+      convs: Number(row.convs ?? 0),
+    }));
   } catch {
     return [];
   }
@@ -106,14 +114,6 @@ async function recentConversations(
   }
 }
 
-const RANK_COLORS = ["#3B82F6", "#EC4899", "#10B981", "#F59E0B", "#8B5CF6"];
-
-const RANK_BG: Record<number, string> = {
-  1: "bg-gradient-to-br from-amber-300 to-amber-500 text-white",
-  2: "bg-gradient-to-br from-slate-200 to-slate-400 text-white",
-  3: "bg-gradient-to-br from-orange-300 to-orange-500 text-white",
-};
-
 function greeting(hour: number) {
   if (hour < 11) return "Selamat Pagi";
   if (hour < 15) return "Selamat Siang";
@@ -135,14 +135,13 @@ function kpisFor(c: { conversations: number; open: number; contacts: number; bro
 
 export default async function DashboardPage() {
   const session = await requireSession();
-  const [c, volumes, team, activity] = await Promise.all([
+  const [c, volumes, channels, activity] = await Promise.all([
     counts(session.tenantId),
     channelVolumes(session.tenantId),
-    teamPerf(session.tenantId),
+    channelStatus(session.tenantId),
     recentConversations(session.tenantId),
   ]);
   const hasVolume = volumes.length > 0;
-  const activeTeam = team.filter((t) => t.convs > 0);
 
   const now = new Date();
   const wibHour = Number(
@@ -201,43 +200,49 @@ export default async function DashboardPage() {
 
       {/* Panels row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
-        {/* Team table — data asli */}
-        <SectionCard title="Performa Tim" description="Berdasarkan percakapan ditangani" contentClassName="pt-2">
-          {activeTeam.length === 0 ? (
+        {/* Status channel — data asli tenant */}
+        <SectionCard title="Status Channel" description="Channel terhubung & jumlah percakapan" contentClassName="pt-2">
+          {channels.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <span className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
-                <UserPlus className="size-6" />
+                <Plug className="size-6" />
               </span>
-              <p className="text-sm font-medium">Belum ada percakapan ditangani</p>
-              <p className="text-xs text-muted-foreground">Statistik tim muncul setelah agent menangani percakapan.</p>
+              <p className="text-sm font-medium">Belum ada channel</p>
+              <p className="text-xs text-muted-foreground">Hubungkan WhatsApp, Instagram, Facebook, atau Telegram di menu Channel.</p>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-[32px_1.6fr_1fr] items-center gap-3 border-b-2 border-border px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <span>#</span>
-                <span>Agent</span>
+              <div className="grid grid-cols-[1.6fr_auto_auto] items-center gap-3 border-b-2 border-border px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span>Channel</span>
+                <span>Status</span>
                 <span>Percakapan</span>
               </div>
-              {activeTeam.map((a, i) => (
-                <div
-                  key={a.name}
-                  className="grid grid-cols-[32px_1.6fr_1fr] items-center gap-3 border-b border-border px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-muted/50"
-                >
-                  <span className={`grid size-[26px] place-items-center rounded-lg text-xs font-bold ${RANK_BG[i + 1] ?? "bg-muted text-muted-foreground"}`}>
-                    {i + 1}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className="grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
-                      style={{ background: RANK_COLORS[i % RANK_COLORS.length] }}
-                    >
-                      {initials(a.name)}
+              {channels.map((ch) => {
+                const key = CH_KEY[ch.type];
+                const connected = ch.status === "connected";
+                return (
+                  <div
+                    key={ch.name + ch.type}
+                    className="grid grid-cols-[1.6fr_auto_auto] items-center gap-3 border-b border-border px-1 py-2.5 text-[13.5px] text-foreground transition-colors last:border-0 hover:bg-muted/50"
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      {key ? <ChannelLogo ch={key} size={20} /> : <Plug className="size-5 text-muted-foreground" />}
+                      <span className="truncate font-semibold">{ch.name}</span>
                     </span>
-                    <span className="truncate font-semibold">{a.name}</span>
-                  </span>
-                  <span className="font-semibold text-brand-navy dark:text-foreground">{a.convs}</span>
-                </div>
-              ))}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium ${
+                        connected
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      <span className={`size-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+                      {connected ? "Terhubung" : "Terputus"}
+                    </span>
+                    <span className="text-right font-semibold text-brand-navy dark:text-foreground">{ch.convs}</span>
+                  </div>
+                );
+              })}
             </>
           )}
         </SectionCard>
