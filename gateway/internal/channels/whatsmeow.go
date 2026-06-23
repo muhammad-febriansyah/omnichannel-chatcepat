@@ -11,6 +11,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	wstore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -70,6 +71,10 @@ func NewWhatsmeow(ctx context.Context, dsn string, b InboundPublisher, store Res
 	if dsn == "" {
 		return nil, nil
 	}
+	// Nama yang tampil di WhatsApp → Perangkat Tertaut. Default library = "whatsmeow";
+	// pakai brand "ChatCepat". Hanya berlaku untuk pairing baru (perangkat lama tetap).
+	wstore.DeviceProps.Os = proto.String("ChatCepat")
+
 	logger := waLog.Stdout("whatsmeow", "WARN", true)
 	container, err := sqlstore.New(ctx, "postgres", dsn, logger)
 	if err != nil {
