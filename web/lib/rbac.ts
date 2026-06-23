@@ -2,7 +2,10 @@
 // MIRROR dari engine/app/rbac.py — JAGA SINKRON. Penegakan WAJIB server-side
 // (Server Action / Route Handler); UI hide/disable hanya kosmetik.
 
-export type Role = "super_admin" | "admin" | "supervisor" | "agent";
+// Cuma 2 role:
+//   admin  = operator platform (god-mode, tanpa tenant). Kelola paket + semua tenant.
+//   client = akun tenant pelanggan. Akses penuh ke workspace-nya sendiri.
+export type Role = "admin" | "client";
 
 export type Ability =
   | "tenant.manage"
@@ -11,6 +14,7 @@ export type Ability =
   | "channel.view"
   | "flow.manage"
   | "knowledge.manage"
+  | "product.manage"
   | "user.manage"
   | "billing.tenant"
   | "contact.manage"
@@ -24,7 +28,8 @@ export type Ability =
   | "audit.view";
 
 export const ROLE_ABILITIES: Record<Role, ReadonlySet<Ability>> = {
-  super_admin: new Set<Ability>([
+  // admin = platform: god-mode (can() short-circuit true). Set = ability platform.
+  admin: new Set<Ability>([
     "tenant.manage",
     "platform.monitor",
     "channel.connect",
@@ -32,11 +37,13 @@ export const ROLE_ABILITIES: Record<Role, ReadonlySet<Ability>> = {
     "report.view",
     "audit.view",
   ]),
-  admin: new Set<Ability>([
+  // client = tenant: akses penuh workspace sendiri.
+  client: new Set<Ability>([
     "channel.connect",
     "channel.view",
     "flow.manage",
     "knowledge.manage",
+    "product.manage",
     "user.manage",
     "billing.tenant",
     "contact.manage",
@@ -49,22 +56,6 @@ export const ROLE_ABILITIES: Record<Role, ReadonlySet<Ability>> = {
     "report.view",
     "audit.view",
   ]),
-  supervisor: new Set<Ability>([
-    "channel.view",
-    "contact.manage",
-    "contact.view",
-    "broadcast.manage",
-    "conversation.assign",
-    "conversation.view_all",
-    "conversation.view_assigned",
-    "conversation.takeover",
-    "report.view",
-  ]),
-  agent: new Set<Ability>([
-    "contact.view",
-    "conversation.view_assigned",
-    "conversation.takeover",
-  ]),
 };
 
 export interface SessionUser {
@@ -75,6 +66,7 @@ export interface SessionUser {
 
 export function can(user: Pick<SessionUser, "role"> | null, ability: Ability): boolean {
   if (!user) return false;
+  if (user.role === "admin") return true; // god-mode platform: akses semua fitur
   return ROLE_ABILITIES[user.role]?.has(ability) ?? false;
 }
 
@@ -95,7 +87,7 @@ export function requireAbility(user: SessionUser | null, ability: Ability): void
   }
 }
 
-/** Agent hanya lihat percakapan yang di-assign; role lain lihat semua (dalam tenant). */
+/** client lihat semua percakapan dalam tenant-nya (akses penuh). */
 export function canViewAllConversations(user: Pick<SessionUser, "role"> | null): boolean {
   return can(user, "conversation.view_all");
 }

@@ -1,7 +1,18 @@
 import { and, eq, ne } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Phone, Tag, ShieldCheck, Clock, AlertTriangle, ArrowLeft } from "lucide-react";
+import {
+  Phone,
+  Tag,
+  Clock,
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  MessageSquare,
+  Check,
+  CheckCheck,
+  CircleAlert,
+} from "lucide-react";
 import { Composer } from "@/components/app/composer";
 import { ConversationActions } from "@/components/app/conversation-actions";
 import { getConversation, getThread } from "@/lib/queries";
@@ -9,7 +20,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { CHANNEL_META, ChannelType, initials, statusLabel } from "@/lib/format";
+import { CHANNEL_META, ChannelType, clock, dayKey, dayLabel, initials, statusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Sisa service window (24 jam WA official sejak pesan masuk terakhir).
@@ -20,6 +31,20 @@ function serviceWindow(expiresAt: string | null): { expired: boolean; text: stri
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return { expired: false, text: `Window ${h}j ${m}m` };
+}
+
+// Indikator status kirim pesan keluar (queued→sent→delivered→read, atau failed).
+function MessageStatus({ status }: { status: string }) {
+  if (status === "failed")
+    return (
+      <span className="inline-flex items-center gap-0.5 text-danger">
+        <CircleAlert className="size-3" /> Gagal
+      </span>
+    );
+  if (status === "read") return <CheckCheck className="size-3.5 text-sky-300" />;
+  if (status === "delivered") return <CheckCheck className="size-3.5 text-white/70" />;
+  if (status === "sent") return <Check className="size-3.5 text-white/70" />;
+  return <Clock className="size-3 text-white/60" />; // queued
 }
 
 export default async function ThreadPage({ params }: { params: Promise<{ conversationId: string }> }) {
@@ -37,7 +62,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
   if (canAssign && session.tenantId) {
     try {
       const rows = await db.query.users.findMany({
-        where: and(eq(users.tenantId, session.tenantId), eq(users.status, "active"), ne(users.role, "super_admin")),
+        where: and(eq(users.tenantId, session.tenantId), eq(users.status, "active"), ne(users.role, "admin")),
         columns: { id: true, name: true },
         limit: 100,
       });
@@ -49,25 +74,35 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
 
   const sw = channelType === "wa_official" ? serviceWindow(conv.serviceWindowExpiresAt) : null;
 
+  // Kelompokkan pesan per hari (WIB) untuk pemisah tanggal.
+  type Msg = (typeof thread)[number];
+  const groups: { day: string; label: string; items: Msg[] }[] = [];
+  for (const m of thread) {
+    const k = dayKey(m.createdAt);
+    const last = groups[groups.length - 1];
+    if (last && last.day === k) last.items.push(m);
+    else groups.push({ day: k, label: dayLabel(m.createdAt), items: [m] });
+  }
+
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* header */}
+        {/* header: identitas kontak */}
         <div className="flex h-16 items-center gap-3 border-b border-border bg-card px-5">
           <Link
             href="/inbox"
             aria-label="Kembali ke daftar"
-            className="-ml-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-slate-100 hover:text-foreground lg:hidden"
+            className="-ml-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
           >
             <ArrowLeft className="size-5" />
           </Link>
           <div
-            className="flex size-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
             style={{ background: meta?.color ?? "#94a3b8" }}
           >
             {initials(name)}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-semibold">{name}</span>
               {sw && (
@@ -88,48 +123,80 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
               {conv.handler === "agent" && " · ditangani agen"}
             </div>
           </div>
+        </div>
 
-          <div className="ml-auto">
-            <ConversationActions
-              conversationId={conversationId}
-              status={conv.status}
-              handler={conv.handler}
-              canAssign={canAssign}
-              agents={agents}
-            />
-          </div>
+        {/* toolbar aksi — baris sendiri; sembunyikan di layar kecil (mobile) biar tak overflow */}
+        <div className="hidden items-center justify-end gap-2 overflow-x-auto border-b border-border bg-card/60 px-5 py-2 md:flex">
+          <ConversationActions
+            conversationId={conversationId}
+            status={conv.status}
+            handler={conv.handler}
+            canAssign={canAssign}
+            agents={agents}
+          />
         </div>
 
         {/* messages */}
-        <div className="flex-1 space-y-2 overflow-y-auto bg-background p-5">
-          {thread.length === 0 && (
-            <div className="py-10 text-center text-sm text-muted-foreground">Belum ada pesan</div>
-          )}
-          {thread.map((m) => {
-            const out = m.direction === "outbound";
-            return (
-              <div key={m.id} className={cn("flex", out ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "max-w-[70%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
-                    out
-                      ? "bg-gradient-to-br from-brand-blue to-brand-light text-white"
-                      : "border border-border bg-card",
-                  )}
-                >
-                  {m.sender === "bot" && (
-                    <div className={cn("mb-0.5 text-[10px] font-semibold", out ? "text-white/80" : "text-brand-blue")}>
-                      AI Agent
-                    </div>
-                  )}
-                  <div className="whitespace-pre-wrap break-words">{m.body}</div>
+        <div className="flex-1 space-y-5 overflow-y-auto bg-background px-4 py-5 sm:px-6">
+          {thread.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <MessageSquare className="size-8 text-muted-foreground/30" />
+              Belum ada pesan
+            </div>
+          ) : (
+            groups.map((g) => (
+              <div key={g.day} className="space-y-1.5">
+                <div className="sticky top-0 z-10 flex justify-center pb-1">
+                  <span className="rounded-full bg-card/85 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm ring-1 ring-border backdrop-blur">
+                    {g.label}
+                  </span>
                 </div>
+                {g.items.map((m) => {
+                  const out = m.direction === "outbound";
+                  return (
+                    <div key={m.id} className={cn("flex", out ? "justify-end" : "justify-start")}>
+                      <div className={cn("flex max-w-[80%] flex-col gap-0.5 sm:max-w-[70%] md:max-w-[60%]", out ? "items-end" : "items-start")}>
+                        <div
+                          className={cn(
+                            "px-3.5 py-2 text-sm shadow-sm",
+                            out
+                              ? "rounded-2xl rounded-br-md bg-gradient-to-br from-brand-blue to-brand-light text-white"
+                              : "rounded-2xl rounded-bl-md border border-border bg-card text-foreground",
+                          )}
+                        >
+                          {m.sender === "bot" && (
+                            <div className={cn("mb-0.5 flex items-center gap-1 text-[10px] font-semibold", out ? "text-white/80" : "text-brand-blue")}>
+                              <Bot className="size-3" /> AI Agent
+                            </div>
+                          )}
+                          <div className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</div>
+                          {out && (
+                            <div className="mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums text-white/70">
+                              <span>{clock(m.createdAt)}</span>
+                              <MessageStatus status={m.status} />
+                            </div>
+                          )}
+                        </div>
+                        {!out && (
+                          <span className="px-1 text-[10px] tabular-nums text-muted-foreground">{clock(m.createdAt)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            ))
+          )}
         </div>
 
-        <Composer conversationId={conversationId} />
+        <Composer
+          conversationId={conversationId}
+          blockedReason={
+            channelType === "wa_official" && sw?.expired
+              ? "WhatsApp resmi: window 24 jam habis, balasan teks bebas akan ditolak."
+              : undefined
+          }
+        />
       </div>
 
       {/* contact panel */}
@@ -151,9 +218,6 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
               <Phone className="size-4" /> {conv.contact.phone}
             </div>
           )}
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <ShieldCheck className="size-4" /> Opt-in: {conv.contact?.optInStatus ?? "unknown"}
-          </div>
           {Array.isArray(conv.contact?.tags) && conv.contact.tags.length > 0 && (
             <div className="flex items-start gap-2 text-muted-foreground">
               <Tag className="size-4" />

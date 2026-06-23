@@ -2,12 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { ContactForm } from "@/components/app/contact-form";
 
 export default async function EditContactPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requirePageAbility("contact.manage");
   if (!session.tenantId) notFound();
 
   const c = await db.query.contacts.findFirst({

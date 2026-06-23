@@ -1,7 +1,7 @@
 """Flow executor — state machine deterministik atas flows.definition (docs/prd/06).
 
-Node: trigger, send_text, send_media, wait_reply, condition, set_var, call_tool,
-ai_agent, handoff. Posisi disimpan di conversation_states (05).
+Node: trigger, send_text, send_media, send_catalog, wait_reply, condition, set_var,
+call_tool, ai_agent, handoff. Posisi disimpan di conversation_states (05).
 """
 
 from __future__ import annotations
@@ -16,15 +16,32 @@ from ..ai import agent as ai
 from ..config import DEFAULT_FALLBACK_MESSAGE, FLOW_STATE_TTL_HOURS
 from ..contracts.events import InboundMessage
 from ..models import Channel, Contact, Conversation
-from ..repositories import flows, messages, states
+from ..repositories import flows, messages, products, states
+from .reply import Reply
 
 _VAR = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 _MAX_STEPS = 100
+# Maks produk dikirim satu node send_catalog (hindari spam → rawan banned).
+_CATALOG_MAX = 10
+
+
+def _rupiah(n: int) -> str:
+    return "Rp" + f"{n:,}".replace(",", ".")
+
+
+def product_caption(p) -> str:
+    """Caption foto produk: nama, harga, (stok habis?), deskripsi singkat."""
+    lines = [f"*{p.name}* — {_rupiah(p.price_idr)}"]
+    if p.stock <= 0:
+        lines.append("(stok habis)")
+    if p.description:
+        lines.append(p.description.strip())
+    return "\n".join(lines)
 
 
 @dataclass
 class FlowOutcome:
-    replies: list[str] = field(default_factory=list)
+    replies: list[Reply] = field(default_factory=list)
     handoff: bool = False
 
 
@@ -80,10 +97,18 @@ async def _walk(
         if ntype == "trigger":
             node_id = node.get("next")
         elif ntype == "send_text":
-            outcome.replies.append(render(node.get("text", ""), ctx))
+            outcome.replies.append(Reply(text=render(node.get("text", ""), ctx)))
             node_id = node.get("next")
         elif ntype == "send_media":
-            outcome.replies.append(render(node.get("caption", "[media]"), ctx))
+            url = render(node.get("url") or node.get("media_url") or "", ctx)
+            caption = render(node.get("caption", ""), ctx) or None
+            if url:
+                outcome.replies.append(Reply(text=caption, media_url=url))
+            elif caption:
+                outcome.replies.append(Reply(text=caption))
+            node_id = node.get("next")
+        elif ntype == "send_catalog":
+            await _send_catalog(session, conv, node, ctx, outcome)
             node_id = node.get("next")
         elif ntype == "set_var":
             ctx.update(node.get("set", {}))
@@ -98,10 +123,10 @@ async def _walk(
         elif ntype == "ai_agent":
             res = await ai.try_ai(session, conv, channel, contact, inbound)
             if res is None:
-                outcome.replies.append(DEFAULT_FALLBACK_MESSAGE)
+                outcome.replies.append(Reply(text=DEFAULT_FALLBACK_MESSAGE))
             else:
                 if res.reply:
-                    outcome.replies.append(res.reply)
+                    outcome.replies.append(Reply(text=res.reply))
                 if res.handoff:
                     outcome.handoff = True
                     return None, True
@@ -122,6 +147,38 @@ def _branch(node: dict, ctx: dict) -> str | None:
         if eval_expr(b.get("if", ""), ctx):
             return b.get("next")
     return node.get("else")
+
+
+async def _send_catalog(
+    session: AsyncSession,
+    conv: Conversation,
+    node: dict,
+    ctx: dict,
+    outcome: FlowOutcome,
+) -> None:
+    """Node send_catalog: kirim produk aktif sbg foto+caption. Opsi node: intro (teks
+    pembuka), category (filter), limit (default 10, dibatasi _CATALOG_MAX)."""
+    intro = render(node.get("intro", ""), ctx).strip()
+    if intro:
+        outcome.replies.append(Reply(text=intro))
+
+    category = (node.get("category") or "").strip() or None
+    try:
+        limit = int(node.get("limit", _CATALOG_MAX))
+    except (TypeError, ValueError):
+        limit = _CATALOG_MAX
+    limit = max(1, min(limit, _CATALOG_MAX))
+
+    items = await products.list_active(
+        session, conv.tenant_id, category=category, limit=limit
+    )
+    if not items:
+        outcome.replies.append(Reply(text="Maaf, katalog belum tersedia saat ini."))
+        return
+    for p in items:
+        caption = product_caption(p)
+        photo = p.photos[0] if p.photos else None
+        outcome.replies.append(Reply(text=caption, media_url=photo))
 
 
 async def _persist_or_clear(

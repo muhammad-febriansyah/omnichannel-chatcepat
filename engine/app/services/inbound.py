@@ -13,11 +13,12 @@ from uuid import uuid4
 
 from ..bus import publish_outbound, publish_realtime
 from ..config import OPT_OUT_KEYWORDS, SERVICE_WINDOW_HOURS
-from ..contracts.events import InboundMessage, OutboundCommand, Party
+from ..contracts.events import InboundMessage, Media, OutboundCommand, Party
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..models import Channel, Contact, Conversation, Message
 from ..pipeline.decision import decide
+from ..pipeline.reply import Reply
 from ..repositories import channels, contacts, conversations, messages
 
 log = logging.getLogger("engine.inbound")
@@ -29,6 +30,20 @@ def _now() -> datetime:
 
 def _preview(text: str | None, kind: str) -> str:
     return (text or f"[{kind}]")[:120]
+
+
+_MIME_BY_EXT = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+
+
+def _guess_mime(url: str) -> str:
+    ext = url.rsplit(".", 1)[-1].split("?")[0].lower() if "." in url else ""
+    return _MIME_BY_EXT.get(ext, "image/jpeg")
 
 
 def _is_opt_out(body: str | None) -> bool:
@@ -69,8 +84,9 @@ async def _publish_conv_updated(tenant_id: str, conv: Conversation) -> None:
 
 
 async def _publish_outbound(
-    channel: Channel, contact: Contact, conv: Conversation, body: str, idem: str
+    channel: Channel, contact: Contact, conv: Conversation, reply: Reply, idem: str
 ) -> None:
+    is_media = bool(reply.media_url)
     cmd = OutboundCommand(
         event_id=uuid4().hex,
         idempotency_key=idem,
@@ -79,8 +95,9 @@ async def _publish_outbound(
             external_id=contact.external_id or contact.phone or "",
             phone=contact.phone,
         ),
-        type=OutboundType.text,
-        body=body,
+        type=OutboundType.media if is_media else OutboundType.text,
+        body=reply.text,
+        media=Media(url=reply.media_url, mime=_guess_mime(reply.media_url)) if is_media else None,
         conversation_id=conv.id,
     )
     await publish_outbound(cmd.model_dump_json(by_alias=True))
@@ -136,6 +153,12 @@ async def handle(inbound: InboundMessage) -> None:
         tenant_str = str(tenant_id)
         await _publish_message_new(tenant_str, conv.id, inbound_msg, "contact")
 
+        # wa_unofficial (whatsmeow): JANGAN auto-reply. Balasan otomatis dari nomor
+        # pribadi memicu deteksi spam WA → akun dibatasi/banned. Hanya persist +
+        # realtime; agen balas manual. Auto-reply hanya untuk channel resmi.
+        if channel.type == "wa_unofficial":
+            return
+
         # --- DECIDE + REPLY ---
         # decide() bisa menulis (flow state) → txn sendiri, commit sebelum kirim balasan.
         async with session.begin():
@@ -144,8 +167,9 @@ async def handle(inbound: InboundMessage) -> None:
             return
 
         for i, reply in enumerate(decision.replies):
-            if not reply:
+            if not reply or (not reply.text and not reply.media_url):
                 continue
+            is_media = bool(reply.media_url)
             idem = f"reply:{inbound.dedup_key}:{i}"
             async with session.begin():
                 out_msg = await messages.add_outbound(
@@ -154,11 +178,13 @@ async def handle(inbound: InboundMessage) -> None:
                     conversation_id=conv.id,
                     channel_id=channel.id,
                     sender="bot",
-                    body=reply,
+                    body=reply.text,
                     idempotency_key=idem,
+                    msg_type="image" if is_media else "text",
+                    media={"url": reply.media_url} if is_media else None,
                 )
                 conv.last_message_at = _now()
-                conv.last_message_preview = _preview(reply, "text")
+                conv.last_message_preview = _preview(reply.text, "foto" if is_media else "text")
             await _publish_outbound(channel, contact, conv, reply, idem)
             await _publish_message_new(tenant_str, conv.id, out_msg, "bot")
 

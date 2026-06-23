@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
-import { ArrowLeft, Users, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, Users, AlertTriangle, Check, Send } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
+import { ActionLink } from "@/components/app/action-link";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/app/section-card";
 import { createAndRunBroadcast, previewAudience } from "@/lib/actions";
 import { CHANNEL_META, ChannelType, cleanIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -12,6 +14,11 @@ type Channel = { id: string; name: string; type: string };
 export type TemplateOpt = { name: string; body: string; language: string };
 
 const STEPS = ["Audience", "Pesan", "Konfirmasi"];
+const STEP_DESC = [
+  "Pilih nama, segmen tag, dan channel pengirim.",
+  "Tulis isi pesan atau pilih template HSM.",
+  "Tinjau ringkasan sebelum menjalankan broadcast.",
+];
 
 export function BroadcastWizard({
   channels,
@@ -78,9 +85,9 @@ export function BroadcastWizard({
 
   return (
     <div className="p-6">
-      <Link href="/broadcasts" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+      <ActionLink href="/broadcasts" variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
         <ArrowLeft className="size-4" /> Kembali
-      </Link>
+      </ActionLink>
       <h1 className="text-2xl font-bold tracking-tight">Broadcast Baru</h1>
 
       {/* steps */}
@@ -90,7 +97,7 @@ export function BroadcastWizard({
             <div
               className={cn(
                 "flex size-7 items-center justify-center rounded-full text-xs font-semibold",
-                i <= step ? "bg-brand-blue text-white" : "bg-slate-100 text-muted-foreground",
+                i <= step ? "bg-brand-blue text-white" : "bg-muted text-muted-foreground",
               )}
             >
               {i < step ? <Check className="size-3.5" /> : i + 1}
@@ -101,7 +108,7 @@ export function BroadcastWizard({
         ))}
       </div>
 
-      <div className="mt-5 rounded-xl border border-border bg-card p-5">
+      <SectionCard className="mt-5" title={STEPS[step]} description={STEP_DESC[step]}>
         {step === 0 && (
           <>
             <label className="block text-sm font-medium">Nama Broadcast</label>
@@ -121,7 +128,9 @@ export function BroadcastWizard({
                   onClick={() => toggleTag(t)}
                   className={cn(
                     "rounded-full border px-3 py-1 text-xs",
-                    selTags.includes(t) ? "border-brand-blue bg-blue-50 text-brand-blue" : "border-border",
+                    selTags.includes(t)
+                      ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-brand-blue/15 dark:text-brand-blue"
+                      : "border-border hover:bg-muted/50",
                   )}
                 >
                   {t}
@@ -146,12 +155,12 @@ export function BroadcastWizard({
               ))}
             </select>
 
-            <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 p-3 text-sm text-brand-blue">
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 p-3 text-sm text-brand-blue dark:bg-brand-blue/15 dark:text-brand-blue">
               <Users className="size-4" />
               Estimasi penerima (opted-in): <b>{estimate === null ? "…" : cleanIDR(estimate)}</b>
             </div>
             {isUnofficial && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 Channel unofficial rawan banned. Rate dibatasi ketat oleh engine.
               </div>
@@ -195,7 +204,7 @@ export function BroadcastWizard({
               placeholder="Tulis pesan broadcast… (official di luar window butuh template)"
               className={cn(
                 "mt-1.5 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10",
-                useTemplate && "bg-slate-50 text-muted-foreground",
+                useTemplate && "bg-muted/50 text-muted-foreground",
               )}
             />
             <p className="mt-2 text-xs text-muted-foreground">
@@ -213,39 +222,33 @@ export function BroadcastWizard({
             <Row k="Template HSM" v={useTemplate ? templateName : "—"} />
             <Row k="Filter tag" v={selTags.length ? selTags.join(", ") : "semua opted-in"} />
             <Row k="Estimasi penerima" v={estimate === null ? "…" : `${cleanIDR(estimate)} kontak`} />
-            <div className="rounded-lg bg-slate-50 p-3 text-muted-foreground">{body || "—"}</div>
-            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-emerald-700">
+            <div className="rounded-lg bg-muted/50 p-3 text-muted-foreground">{body || "—"}</div>
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
               <Check className="size-4" /> Hanya kontak opted-in dikirimi. Opted-out otomatis di-skip (guard engine).
             </div>
           </div>
         )}
 
         <div className="mt-5 flex justify-between">
-          <button
+          <Button
+            variant="outline"
+            size="lg"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             disabled={step === 0}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-40"
           >
-            Kembali
-          </button>
+            <ArrowLeft className="size-4" /> Kembali
+          </Button>
           {step < STEPS.length - 1 ? (
-            <button
-              onClick={() => setStep((s) => s + 1)}
-              className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
+            <Button size="lg" onClick={() => setStep((s) => s + 1)}>
               Lanjut
-            </button>
+            </Button>
           ) : (
-            <button
-              onClick={submit}
-              disabled={pending}
-              className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-            >
-              Jalankan Broadcast
-            </button>
+            <Button size="lg" onClick={submit} disabled={pending}>
+              <Send className="size-4" /> Jalankan Broadcast
+            </Button>
           )}
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 }

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	wstore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -69,6 +71,10 @@ func NewWhatsmeow(ctx context.Context, dsn string, b InboundPublisher, store Res
 	if dsn == "" {
 		return nil, nil
 	}
+	// Nama yang tampil di WhatsApp → Perangkat Tertaut. Default library = "whatsmeow";
+	// pakai brand "ChatCepat". Hanya berlaku untuk pairing baru (perangkat lama tetap).
+	wstore.DeviceProps.Os = proto.String("ChatCepat")
+
 	logger := waLog.Stdout("whatsmeow", "WARN", true)
 	container, err := sqlstore.New(ctx, "postgres", dsn, logger)
 	if err != nil {
@@ -185,6 +191,11 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 		return "", fmt.Errorf("whatsmeow: body kosong")
 	}
 
+	// Anti-banned: tampil natural sebelum kirim — online + indikator "ngetik"
+	// selama durasi proporsional panjang teks. Jeda antar-pesan (broadcast)
+	// diatur engine (07); ini menambah realisme per-pesan. Best-effort.
+	simulateTyping(ctx, sess.cli, to, len(body))
+
 	resp, err := sess.cli.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(body)})
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow send: %w", err)
@@ -232,6 +243,49 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	return sess, nil
 }
 
+// simulateTyping meniru perilaku manusia sebelum kirim: set online, kirim
+// indikator "composing" selama durasi proporsional panjang teks (dibatasi),
+// lalu "paused". Best-effort — error presence diabaikan, tak boleh menggagalkan
+// pengiriman. Jika ctx dibatalkan selama jeda, langsung lanjut kirim.
+func simulateTyping(ctx context.Context, cli *whatsmeow.Client, to types.JID, bodyLen int) {
+	// 1) Online dulu, lalu jeda "membaca" singkat sebelum mulai mengetik
+	//    (manusia tidak langsung ngetik begitu chat terbuka).
+	_ = cli.SendPresence(ctx, types.PresenceAvailable)
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(readDelay()):
+	}
+
+	// 2) Indikator "composing" selama durasi proporsional panjang teks.
+	_ = cli.SendChatPresence(ctx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	select {
+	case <-ctx.Done():
+	case <-time.After(typingDelay(bodyLen)):
+	}
+	_ = cli.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+}
+
+// readDelay: jeda acak 0.8–2.5 detik meniru waktu "membaca" sebelum mengetik.
+func readDelay() time.Duration {
+	secs := 0.8 + rand.Float64()*1.7
+	return time.Duration(secs * float64(time.Second))
+}
+
+// typingDelay: kira-kira 3.3 char/detik (≈200 char/menit, kecepatan ketik manusia)
+// + jitter acak 0.5–2.0 detik, dibatasi [1.5s, 8s] agar pesan panjang tak menahan
+// worker terlalu lama.
+func typingDelay(bodyLen int) time.Duration {
+	secs := float64(bodyLen)/3.3 + 0.5 + rand.Float64()*1.5
+	if secs < 1.5 {
+		secs = 1.5
+	}
+	if secs > 8.0 {
+		secs = 8.0
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
 func (w *Whatsmeow) put(channelID string, s *waSession) {
 	w.mu.Lock()
 	if old, ok := w.clients[channelID]; ok && old.cli != s.cli {
@@ -253,16 +307,20 @@ func (w *Whatsmeow) handler(channelID, tenantID string) func(any) {
 			return // hanya teks untuk saat ini (docs/prd/04)
 		}
 
-		sender := msg.Info.Sender.User
+		// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
+		// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,
+		// "privacy token 400") + kontak tak match percakapan keluar (yang simpan phone).
+		sender := senderPhone(msg.Info)
 		pmID := msg.Info.ID
 		name := optName(msg.Info.PushName)
+		phone := sender
 		inb := contracts.InboundMessage{
 			ChannelId:         channelID,
 			ChannelType:       contracts.ChannelTypeWaUnofficial,
 			EventId:           fmt.Sprintf("%d", time.Now().UnixNano()),
 			DedupKey:          channelID + ":" + pmID,
 			ProviderMessageId: pmID,
-			From:              contracts.Party{ExternalId: sender, Name: name},
+			From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: name},
 			Type:              contracts.InboundMessageTypeText,
 			Body:              &body,
 			Timestamp:         msg.Info.Timestamp.UTC(),
@@ -285,6 +343,19 @@ func (w *Whatsmeow) Close() {
 	for _, s := range w.clients {
 		s.cli.Disconnect()
 	}
+}
+
+// senderPhone mengembalikan nomor telepon (PN) pengirim, bukan LID. Bila Sender
+// sudah PN (@s.whatsapp.net) pakai itu; bila LID, ambil SenderAlt (PN). Fallback
+// ke Sender.User bila PN tak tersedia.
+func senderPhone(info types.MessageInfo) string {
+	if info.Sender.Server == types.DefaultUserServer {
+		return info.Sender.User
+	}
+	if info.SenderAlt.Server == types.DefaultUserServer && info.SenderAlt.User != "" {
+		return info.SenderAlt.User
+	}
+	return info.Sender.User
 }
 
 func extractText(m *waE2E.Message) string {

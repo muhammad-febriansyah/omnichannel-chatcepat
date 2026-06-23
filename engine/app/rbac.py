@@ -6,11 +6,11 @@ Penegakan WAJIB server-side; UI hide/disable hanya kosmetik.
 
 from __future__ import annotations
 
-# Role (users.role enum)
-SUPER_ADMIN = "super_admin"
+# Role (users.role enum). Cuma 2:
+#   admin  = operator platform (god-mode, tenant_id NULL). Kelola paket + semua tenant.
+#   client = akun tenant pelanggan. Akses penuh ke workspace-nya sendiri.
 ADMIN = "admin"
-SUPERVISOR = "supervisor"
-AGENT = "agent"
+CLIENT = "client"
 
 # Ability
 ALL_ABILITIES: frozenset[str] = frozenset(
@@ -21,6 +21,7 @@ ALL_ABILITIES: frozenset[str] = frozenset(
         "channel.view",
         "flow.manage",
         "knowledge.manage",
+        "product.manage",
         "user.manage",
         "billing.tenant",
         "contact.manage",
@@ -36,7 +37,8 @@ ALL_ABILITIES: frozenset[str] = frozenset(
 )
 
 ROLE_ABILITIES: dict[str, frozenset[str]] = {
-    SUPER_ADMIN: frozenset(
+    # admin = platform: god-mode (can() short-circuit true). Matriks = ability platform.
+    ADMIN: frozenset(
         {
             "tenant.manage",
             "platform.monitor",
@@ -46,12 +48,14 @@ ROLE_ABILITIES: dict[str, frozenset[str]] = {
             "audit.view",
         }
     ),
-    ADMIN: frozenset(
+    # client = tenant: akses penuh workspace sendiri.
+    CLIENT: frozenset(
         {
             "channel.connect",
             "channel.view",
             "flow.manage",
             "knowledge.manage",
+            "product.manage",
             "user.manage",
             "billing.tenant",
             "contact.manage",
@@ -65,26 +69,6 @@ ROLE_ABILITIES: dict[str, frozenset[str]] = {
             "audit.view",
         }
     ),
-    SUPERVISOR: frozenset(
-        {
-            "channel.view",
-            "contact.manage",
-            "contact.view",
-            "broadcast.manage",
-            "conversation.assign",
-            "conversation.view_all",
-            "conversation.view_assigned",
-            "conversation.takeover",
-            "report.view",
-        }
-    ),
-    AGENT: frozenset(
-        {
-            "contact.view",
-            "conversation.view_assigned",
-            "conversation.takeover",
-        }
-    ),
 }
 
 
@@ -96,6 +80,8 @@ class PermissionDenied(Exception):
 
 
 def can(role: str | None, ability: str) -> bool:
+    if role == ADMIN:
+        return True  # god-mode platform: akses semua ability (impersonasi tenant)
     return ability in ROLE_ABILITIES.get(role or "", frozenset())
 
 
@@ -105,5 +91,5 @@ def require(role: str | None, ability: str) -> None:
 
 
 def can_view_all_conversations(role: str | None) -> bool:
-    """Agent hanya lihat percakapan yang di-assign; role lain lihat semua (dalam tenant)."""
+    """client lihat semua percakapan dalam tenant-nya (akses penuh)."""
     return can(role, "conversation.view_all")

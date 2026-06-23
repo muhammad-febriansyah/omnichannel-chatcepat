@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ActionLink } from "@/components/app/action-link";
 import { WebSettingsForm } from "@/components/app/web-settings-form";
 import { BusinessHoursForm } from "@/components/app/business-hours-form";
 import { UsersTable, type UserRow } from "@/components/app/users-table";
@@ -41,12 +41,9 @@ export function SettingsTabs({
             <h2 className="text-base font-semibold text-foreground">Anggota Tim</h2>
             <p className="text-sm text-muted-foreground">{users.length} anggota · kelola akses & role.</p>
           </div>
-          <Link
-            href="/settings/users/new"
-            className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
+          <ActionLink href="/settings/users/new">
             <UserPlus className="size-4" /> Undang Anggota
-          </Link>
+          </ActionLink>
         </div>
         <UsersTable rows={users} />
       </TabsContent>

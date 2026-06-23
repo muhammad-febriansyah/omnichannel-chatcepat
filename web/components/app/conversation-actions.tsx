@@ -49,7 +49,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
         <button
           disabled={pending}
           onClick={() => run(() => takeoverConversation(conversationId), "Percakapan diambil alih")}
-          className={`${btn} border-brand-blue/40 bg-blue-50 text-brand-blue hover:bg-blue-100`}
+          className={`${btn} border-brand-blue/40 bg-blue-50 text-brand-blue hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/20`}
         >
           <Hand className="size-4" /> Ambil alih
         </button>
@@ -57,7 +57,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
         <button
           disabled={pending}
           onClick={() => run(() => returnToBot(conversationId), "Dikembalikan ke AI agent")}
-          className={`${btn} border-border bg-card text-foreground hover:bg-slate-50`}
+          className={`${btn} border-border bg-card text-foreground hover:bg-muted/50`}
         >
           <Bot className="size-4" /> Kembalikan ke bot
         </button>
@@ -65,7 +65,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
 
       {canAssign && agents.length > 0 && (
         <DropdownMenu>
-          <DropdownMenuTrigger className={`${btn} border-border bg-card text-foreground outline-none hover:bg-slate-50`}>
+          <DropdownMenuTrigger className={`${btn} border-border bg-card text-foreground outline-none hover:bg-muted/50`}>
             <UserPlus className="size-4" /> Assign <ChevronDown className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="max-h-72 w-56 overflow-y-auto">
@@ -85,7 +85,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
         <button
           disabled={pending}
           onClick={() => run(() => reopenConversation(conversationId), "Percakapan dibuka kembali")}
-          className={`${btn} border-border bg-card text-foreground hover:bg-slate-50`}
+          className={`${btn} border-border bg-card text-foreground hover:bg-muted/50`}
         >
           <RotateCcw className="size-4" /> Buka lagi
         </button>
@@ -93,7 +93,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
         <button
           disabled={pending}
           onClick={() => run(() => resolveConversation(conversationId), "Percakapan diselesaikan")}
-          className={`${btn} border-success/40 bg-emerald-50 text-success hover:bg-emerald-100`}
+          className={`${btn} border-success/40 bg-emerald-50 text-success hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20`}
         >
           <CheckCircle2 className="size-4" /> Selesaikan
         </button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
+import { StatusPill } from "@/components/app/status-pill";
 import { cleanIDR } from "@/lib/format";
 
 export interface BroadcastRow {
@@ -14,12 +15,12 @@ export interface BroadcastRow {
   skipped: number;
 }
 
-const STATUS_CLS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  scheduled: "bg-blue-50 text-blue-700",
-  running: "bg-amber-50 text-amber-700",
-  done: "bg-emerald-50 text-emerald-700",
-  failed: "bg-red-50 text-red-700",
+const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "red" | "slate"> = {
+  draft: "slate",
+  scheduled: "blue",
+  running: "amber",
+  done: "emerald",
+  failed: "red",
 };
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draf",
@@ -43,9 +44,9 @@ const columns: ColumnDef<BroadcastRow>[] = [
     accessorKey: "status",
     header: "Status",
     cell: ({ row }) => (
-      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CLS[row.original.status] ?? "bg-slate-100"}`}>
+      <StatusPill tone={STATUS_TONE[row.original.status] ?? "slate"}>
         {STATUS_LABEL[row.original.status] ?? row.original.status}
-      </span>
+      </StatusPill>
     ),
   },
   {

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Plug, Users2, Contact, MessageSquare, Power, PowerOff } from "lucide-react";
+import { ArrowLeft, Plug, Users2, Contact, MessageSquare, Power, PowerOff, LogIn } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { cleanIDR, CHANNEL_META, type ChannelType } from "@/lib/format";
+import { cleanIDR, CHANNEL_META, statusLabel, roleLabel, type ChannelType } from "@/lib/format";
 import { PLAN_LABEL } from "@/lib/plan";
 import { getTenantDetail } from "@/lib/platform-stats";
-import { setTenantStatus } from "@/lib/actions";
+import { setTenantStatus, startImpersonation } from "@/lib/actions";
 
 function fmtDate(iso: string) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -17,13 +17,6 @@ function fmtDate(iso: string) {
   }).format(new Date(iso));
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Super Admin",
-  admin: "Admin",
-  supervisor: "Supervisor",
-  agent: "Agent",
-};
-
 export default async function TenantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requireSession();
@@ -32,6 +25,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
 
   const suspended = t.status === "suspended";
   const toggle = setTenantStatus.bind(null, t.id, suspended ? "active" : "suspended");
+  const impersonate = startImpersonation.bind(null, t.id);
 
   const cards = [
     { label: "Channel", value: t.counts.channels, icon: Plug, tone: "#8b5cf6" },
@@ -72,15 +66,28 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
-        <form action={toggle}>
-          <button
-            type="submit"
-            className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition hover:opacity-90 ${suspended ? "bg-success" : "bg-danger"}`}
-          >
-            {suspended ? <Power className="size-4" /> : <PowerOff className="size-4" />}
-            {suspended ? "Aktifkan" : "Suspend"}
-          </button>
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          {!suspended && (
+            <form action={impersonate}>
+              <button
+                type="submit"
+                className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold transition hover:bg-muted"
+                title="Buka workspace tenant untuk support"
+              >
+                <LogIn className="size-4" /> Masuk sebagai tenant
+              </button>
+            </form>
+          )}
+          <form action={toggle}>
+            <button
+              type="submit"
+              className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition hover:opacity-90 ${suspended ? "bg-success" : "bg-danger"}`}
+            >
+              {suspended ? <Power className="size-4" /> : <PowerOff className="size-4" />}
+              {suspended ? "Aktifkan" : "Suspend"}
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Stats */}
@@ -114,7 +121,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
                     <div className="truncate text-xs text-muted-foreground">{u.email}</div>
                   </div>
                   <span className="ml-2 shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                    {ROLE_LABEL[u.role] ?? u.role}
+                    {roleLabel(u.role)}
                   </span>
                 </li>
               ))}
@@ -141,7 +148,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
                     <span
                       className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${c.status === "connected" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
                     >
-                      {c.status}
+                      {statusLabel(c.status)}
                     </span>
                   </li>
                 );

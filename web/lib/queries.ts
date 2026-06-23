@@ -28,12 +28,17 @@ export async function getConversations(session: Session) {
 
 export async function getConversation(session: Session, conversationId: string) {
   if (!session.tenantId) return null;
+  // Scope agent → hanya percakapan yang di-assign (03). Konsisten dgn getConversations.
+  const filters = [
+    eq(conversations.id, conversationId),
+    eq(conversations.tenantId, session.tenantId),
+  ];
+  if (!canViewAllConversations(session)) {
+    filters.push(eq(conversations.assignedAgentId, session.id));
+  }
   try {
     return await db.query.conversations.findFirst({
-      where: and(
-        eq(conversations.id, conversationId),
-        eq(conversations.tenantId, session.tenantId),
-      ),
+      where: and(...filters),
       with: {
         contact: true,
         channel: { columns: { id: true, type: true, name: true } },
@@ -46,6 +51,9 @@ export async function getConversation(session: Session, conversationId: string) 
 
 export async function getThread(session: Session, conversationId: string) {
   if (!session.tenantId) return [];
+  // Pastikan percakapan boleh diakses (tenant + assignment utk agent) sebelum baca pesan.
+  const conv = await getConversation(session, conversationId);
+  if (!conv) return [];
   try {
     return await db.query.messages.findMany({
       where: and(

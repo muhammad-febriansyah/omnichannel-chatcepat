@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteButton } from "@/components/app/delete-button";
+import { EditButton } from "@/components/app/action-button";
+import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { deleteUser } from "@/lib/actions";
 import { initials } from "@/lib/format";
 
@@ -17,11 +17,9 @@ export interface UserRow {
   isSelf: boolean;
 }
 
-const ROLE: Record<string, { label: string; cls: string }> = {
-  super_admin: { label: "Super Admin", cls: "bg-violet-50 text-violet-700" },
-  admin: { label: "Admin", cls: "bg-blue-50 text-blue-700" },
-  supervisor: { label: "Supervisor", cls: "bg-amber-50 text-amber-700" },
-  agent: { label: "Agent", cls: "bg-slate-100 text-slate-600" },
+const ROLE: Record<string, { label: string; tone: PillTone }> = {
+  admin: { label: "Admin", tone: "blue" },
+  client: { label: "Client", tone: "slate" },
 };
 const STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: "Aktif", cls: "text-success" },
@@ -54,8 +52,8 @@ const columns: ColumnDef<UserRow>[] = [
     accessorKey: "role",
     header: "Role",
     cell: ({ row }) => {
-      const r = ROLE[row.original.role] ?? ROLE.agent;
-      return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.cls}`}>{r.label}</span>;
+      const r = ROLE[row.original.role] ?? ROLE.client;
+      return <StatusPill tone={r.tone}>{r.label}</StatusPill>;
     },
   },
   {
@@ -76,15 +74,8 @@ const columns: ColumnDef<UserRow>[] = [
     header: () => <span className="sr-only">Aksi</span>,
     enableSorting: false,
     cell: ({ row }) => (
-      <div className="flex items-center justify-end gap-1">
-        <Link
-          href={`/settings/users/${row.original.id}/edit`}
-          aria-label="Edit user"
-          title="Edit"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-brand-blue"
-        >
-          <Pencil className="size-4" />
-        </Link>
+      <div className="flex items-center justify-end gap-1.5">
+        <EditButton href={`/settings/users/${row.original.id}/edit`} />
         {!row.original.isSelf && (
           <DeleteButton
             onConfirm={() => deleteUser(row.original.id)}

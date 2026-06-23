@@ -1,22 +1,42 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Send } from "lucide-react";
+import Link from "next/link";
+import { Send, AlertTriangle } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { sendReply } from "@/lib/actions";
 
-export function Composer({ conversationId }: { conversationId: string }) {
+export function Composer({ conversationId, blockedReason }: { conversationId: string; blockedReason?: string }) {
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
+
+  // wa_official di luar window 24 jam → teks bebas ditolak Meta; blokir + arahkan ke template.
+  if (blockedReason) {
+    return (
+      <div className="border-t border-border bg-card p-3">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {blockedReason}{" "}
+            <Link href="/inbox/new" className="font-semibold underline underline-offset-2">
+              Kirim template lewat Pesan Baru
+            </Link>
+            .
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   function submit() {
     const body = text.trim();
     if (!body) return;
     startTransition(async () => {
       try {
+        // "Dikirim" = masuk antrian; status nyata (terkirim/gagal) muncul di bubble pesan.
         await gooeyToast.promise(sendReply(conversationId, body), {
           loading: "Mengirim…",
-          success: "Terkirim",
+          success: "Pesan dikirim",
           error: (e: unknown) => (e instanceof Error ? e.message : "Gagal mengirim"),
         });
         setText("");

@@ -45,6 +45,28 @@ func (s *MapChannelStore) LookupByExternal(_ context.Context, t contracts.Channe
 	return cid, s.m[cid], nil
 }
 
+// LookupByProvider: cari channel tunggal (provider, type). Error bila kosong/ambigu.
+func (s *MapChannelStore) LookupByProvider(_ context.Context, provider string, t contracts.ChannelType) (string, ChannelInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var cid string
+	n := 0
+	for id, info := range s.m {
+		if info.Provider == provider && info.Type == t {
+			cid = id
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return "", ChannelInfo{}, fmt.Errorf("channel %s/%s tidak ditemukan", provider, t)
+	case 1:
+		return cid, s.m[cid], nil
+	default:
+		return "", ChannelInfo{}, fmt.Errorf("channel %s/%s ambigu: >1 cocok", provider, t)
+	}
+}
+
 func (s *MapChannelStore) Lookup(_ context.Context, channelID string) (ChannelInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -29,10 +29,26 @@ const STATUS_LABEL: Record<string, string> = {
   connected: "Terhubung",
   disconnected: "Terputus",
   banned: "Diblokir",
+  active: "Aktif",
+  suspended: "Ditangguhkan",
+  // Status dokumen knowledge base (AI Agent)
+  ready: "Siap",
+  processing: "Diproses",
+  failed: "Gagal",
 };
 
 export function statusLabel(s: string): string {
-  return STATUS_LABEL[s] ?? s;
+  return STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+}
+
+// Label peran (role) berbahasa Indonesia yang familiar untuk user.
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin",
+  client: "Client",
+};
+
+export function roleLabel(r: string): string {
+  return ROLE_LABEL[r] ?? r.replace(/_/g, " ");
 }
 
 export function initials(name: string | null | undefined): string {
@@ -53,4 +69,42 @@ export function timeAgo(date: Date | string | null): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}j`;
   return `${Math.floor(s / 86400)}h`;
+}
+
+// Jam pesan (HH:MM, WIB) untuk bubble chat.
+export function clock(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
+// Kunci hari (YYYY-MM-DD) di zona WIB — untuk mengelompokkan pesan per tanggal.
+export function dayKey(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
+// Label pemisah tanggal di thread: "Hari ini" / "Kemarin" / "12 Juni 2026".
+export function dayLabel(date: Date | string | null): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const key = dayKey(d);
+  if (key === dayKey(new Date())) return "Hari ini";
+  if (key === dayKey(new Date(Date.now() - 86_400_000))) return "Kemarin";
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
 }

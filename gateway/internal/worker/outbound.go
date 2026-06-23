@@ -47,7 +47,7 @@ func (w *Outbound) process(ctx context.Context, m bus.OutMsg) {
 		w.fail(ctx, st, err)
 		return
 	}
-	adapter, err := w.Registry.Get(info.Type)
+	adapter, err := w.Registry.GetFor(info.Provider, info.Type)
 	if err != nil {
 		w.fail(ctx, st, err)
 		return

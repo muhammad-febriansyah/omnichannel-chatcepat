@@ -58,33 +58,39 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-3">
-      <div className="relative max-w-xs">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder={searchPlaceholder}
-          className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+          />
+        </div>
+        <span className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
+          {total} baris
+        </span>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id} className="hover:bg-transparent">
+              <TableRow key={hg.id} className="border-b border-border bg-muted/40 hover:bg-muted/40">
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort();
+                  const sorted = header.column.getIsSorted();
                   return (
                     <TableHead key={header.id} className="text-xs uppercase tracking-wider text-muted-foreground">
                       {header.isPlaceholder ? null : canSort ? (
                         <button
                           type="button"
                           onClick={header.column.getToggleSortingHandler()}
-                          className="inline-flex items-center gap-1.5 hover:text-foreground"
+                          className={`inline-flex items-center gap-1.5 transition-colors hover:text-foreground ${sorted ? "text-foreground" : ""}`}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
-                          <ArrowUpDown className="size-3" />
+                          <ArrowUpDown className={`size-3 ${sorted ? "text-brand-blue" : ""}`} />
                         </button>
                       ) : (
                         flexRender(header.column.columnDef.header, header.getContext())
@@ -98,15 +104,15 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {pageRows.length ? (
               pageRows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-slate-50">
+                <TableRow key={row.id} className="odd:bg-muted/20 hover:bg-brand-blue/5">
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={columns.length} className="h-28 text-center text-sm text-muted-foreground">
                   {emptyMessage}
                 </TableCell>
               </TableRow>

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Save, Tag as TagIcon, Check } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ActionLink } from "@/components/app/action-link";
 import { cn } from "@/lib/utils";
 import { createTag, updateTag } from "@/lib/actions";
 
@@ -112,16 +114,12 @@ export function TagForm({
           </CardContent>
 
           <CardFooter className="justify-end gap-2 border-t border-border">
-            <Link href="/tags" className="flex h-11 items-center rounded-lg border border-border bg-card px-5 text-sm font-medium hover:bg-slate-50">
+            <ActionLink href="/tags" variant="outline" className="px-5">
               Batal
-            </Link>
-            <button
-              type="submit"
-              disabled={pending}
-              className="flex h-11 items-center gap-2 rounded-lg bg-brand-blue px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-            >
+            </ActionLink>
+            <Button type="submit" size="lg" disabled={pending} className="px-5">
               <Save className="size-4" /> {pending ? "Menyimpan…" : "Simpan Tag"}
-            </button>
+            </Button>
           </CardFooter>
         </Card>
       </form>
