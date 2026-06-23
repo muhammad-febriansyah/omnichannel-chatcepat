@@ -20,6 +20,7 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
     let stopped = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
     let attempt = 0;
 
     // Coalesce burst event → satu refresh (hindari refresh storm).
@@ -31,19 +32,35 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
       }, 400);
     };
 
+    // Fallback polling: bila WS tak tersambung (mis. proxy belum aktif), tetap
+    // refresh tiap 10 dtk supaya status/pesan tak harus di-refresh manual.
+    const startPoll = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(() => router.refresh(), 10_000);
+    };
+    const stopPoll = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    startPoll();
+
     const connect = () => {
       if (stopped) return;
       try {
         ws = new WebSocket(url);
       } catch {
-        return; // WS belum tersedia — UI tetap jalan
+        return; // WS belum tersedia — polling fallback tetap jalan
       }
       ws.onopen = () => {
         attempt = 0;
+        stopPoll(); // WS hidup → matikan polling, andalkan event realtime
       };
       ws.onmessage = scheduleRefresh;
       ws.onclose = () => {
         if (stopped) return;
+        startPoll(); // WS putus → nyalakan lagi polling fallback
         // Reconnect dgn backoff bertingkat (maks 30 dtk) — tahan restart gateway.
         attempt += 1;
         const delay = Math.min(1000 * 2 ** attempt, 30_000);
@@ -56,6 +73,7 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
       stopped = true;
       if (refreshTimer) clearTimeout(refreshTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      stopPoll();
       if (ws) {
         ws.onclose = null; // cegah reconnect saat unmount
         ws.close();

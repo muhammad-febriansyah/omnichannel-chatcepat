@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import {
   Phone,
   Tag,
-  ShieldCheck,
   Clock,
   AlertTriangle,
   ArrowLeft,
@@ -219,9 +218,6 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
               <Phone className="size-4" /> {conv.contact.phone}
             </div>
           )}
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <ShieldCheck className="size-4" /> Opt-in: {conv.contact?.optInStatus ?? "unknown"}
-          </div>
           {Array.isArray(conv.contact?.tags) && conv.contact.tags.length > 0 && (
             <div className="flex items-start gap-2 text-muted-foreground">
               <Tag className="size-4" />
