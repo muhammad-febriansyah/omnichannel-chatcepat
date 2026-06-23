@@ -83,8 +83,18 @@ async def send_agent_reply(
 
 
 def _normalize_phone(raw: str) -> str:
-    """Hanya digit (buang +, spasi, tanda hubung). Cocok dgn format inbound E.164."""
-    return "".join(ch for ch in raw if ch.isdigit())
+    """MSISDN E.164 tanpa '+' (cocok format inbound + dibutuhkan WA/JID).
+
+    Normalisasi nomor Indonesia: '0812…'→'62812…', '812…'→'62812…'.
+    Nomor yang sudah diawali kode negara (62, 1, …) dibiarkan.
+    """
+    d = "".join(ch for ch in raw if ch.isdigit())
+    if d.startswith("0"):
+        d = "62" + d[1:]
+    elif d.startswith("8"):
+        # Nomor HP Indonesia tanpa kode negara (mulai '8') → tambah '62'.
+        d = "62" + d
+    return d
 
 
 async def start_conversation(
