@@ -310,13 +310,17 @@ func (w *Whatsmeow) handler(channelID, tenantID string) func(any) {
 		sender := msg.Info.Sender.User
 		pmID := msg.Info.ID
 		name := optName(msg.Info.PushName)
+		// Phone = identitas kontak WA (digit, tanpa '+'). Wajib di-set supaya pesan
+		// masuk ter-match ke kontak yang sama dengan percakapan keluar (yang simpan
+		// phone, external_id NULL) — kalau tidak, balasan bikin kontak/percakapan dobel.
+		phone := sender
 		inb := contracts.InboundMessage{
 			ChannelId:         channelID,
 			ChannelType:       contracts.ChannelTypeWaUnofficial,
 			EventId:           fmt.Sprintf("%d", time.Now().UnixNano()),
 			DedupKey:          channelID + ":" + pmID,
 			ProviderMessageId: pmID,
-			From:              contracts.Party{ExternalId: sender, Name: name},
+			From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: name},
 			Type:              contracts.InboundMessageTypeText,
 			Body:              &body,
 			Timestamp:         msg.Info.Timestamp.UTC(),
