@@ -108,10 +108,12 @@ func (e apiCoEvent) businessID() string {
 // channel_id & dedup_key dilengkapi server setelah resolve channel. ok=false bila event
 // ini bukan pesan masuk (mis. status receipt atau echo outbound).
 func ParseApiCoInbound(e apiCoEvent) (ParsedInbound, bool) {
-	if e.Event != "message.received" || e.Data.Direction == "outbound" {
+	// Webhook api.co.id pakai lowercase ("inbound"/"text"); REST list pakai UPPERCASE.
+	// Normalisasi agar echo outbound tetap ter-skip apa pun casing-nya (cegah loop).
+	if e.Event != "message.received" || strings.EqualFold(e.Data.Direction, "outbound") {
 		return ParsedInbound{}, false
 	}
-	ct := apiCoChannelType(e.Data.Channel)
+	ct := apiCoChannelType(strings.ToLower(e.Data.Channel))
 	from := contracts.Party{ExternalId: e.Data.CustomerPhone}
 	if e.Data.CustomerPhone == "" {
 		from.ExternalId = e.Data.CustomerID
@@ -123,7 +125,7 @@ func ParseApiCoInbound(e apiCoEvent) (ParsedInbound, bool) {
 
 	msgType := contracts.InboundMessageTypeText
 	var media *contracts.Media
-	switch e.Data.MessageType {
+	switch strings.ToLower(e.Data.MessageType) {
 	case "image", "file", "video", "audio", "document":
 		msgType = contracts.InboundMessageTypeImage
 		if e.Data.MediaURL != "" {
@@ -242,21 +244,30 @@ func (a *ApiCoSender) Send(ctx context.Context, cmd contracts.OutboundCommand, c
 		if cmd.Template.Lang != nil && *cmd.Template.Lang != "" {
 			lang = *cmd.Template.Lang
 		}
+		// api.co.id Send Template: objek `template` bersarang (bukan field flat).
 		payload["message_type"] = "template"
-		payload["template_name"] = *cmd.Template.Name
-		payload["language"] = lang
+		tmpl := map[string]any{
+			"name":     *cmd.Template.Name,
+			"language": map[string]any{"code": lang},
+		}
 		if len(cmd.Template.Components) > 0 {
-			payload["components"] = cmd.Template.Components
+			tmpl["components"] = cmd.Template.Components
 		}
+		payload["template"] = tmpl
 	case contracts.OutboundCommandTypeMedia:
-		payload["message_type"] = "image"
-		if cmd.Body != nil && *cmd.Body != "" {
-			payload["content"] = *cmd.Body
-		}
+		// api.co.id Send Media: message_type per jenis + field `caption` (bukan `content`).
+		mtype := "image"
 		if m, ok := cmd.Media.(map[string]any); ok {
+			if t, _ := m["type"].(string); t != "" {
+				mtype = strings.ToLower(t)
+			}
 			if url, _ := m["url"].(string); url != "" {
 				payload["media_url"] = url
 			}
+		}
+		payload["message_type"] = mtype
+		if cmd.Body != nil && *cmd.Body != "" {
+			payload["caption"] = *cmd.Body
 		}
 	default:
 		body := ""
