@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Clock,
   Sparkles,
+  ShoppingBag,
   UserPlus,
   ChevronDown,
   Flag,
@@ -27,12 +28,14 @@ import { Button } from "@/components/ui/button";
 
 type Step =
   | { type: "send_text"; text: string }
+  | { type: "send_catalog"; category: string; intro: string }
   | { type: "wait_reply"; saveAs: string }
   | { type: "ai_agent" }
   | { type: "handoff" };
 
 const STEP_LABEL: Record<Step["type"], string> = {
   send_text: "Kirim Teks",
+  send_catalog: "Kirim Katalog",
   wait_reply: "Tunggu Balasan",
   ai_agent: "AI Agent",
   handoff: "Alihkan ke Agen",
@@ -40,6 +43,7 @@ const STEP_LABEL: Record<Step["type"], string> = {
 
 const STEP_META: Record<Step["type"], { icon: React.ElementType; color: string; desc: string }> = {
   send_text: { icon: MessageSquare, color: "#3b82f6", desc: "Kirim pesan teks ke pelanggan" },
+  send_catalog: { icon: ShoppingBag, color: "#0ea5e9", desc: "Kirim foto + harga produk aktif (katalog)" },
   wait_reply: { icon: Clock, color: "#f59e0b", desc: "Tunggu balasan, simpan ke variabel" },
   ai_agent: { icon: Sparkles, color: "#8b5cf6", desc: "Serahkan ke AI (jawab dari knowledge base)" },
   handoff: { icon: UserPlus, color: "#10b981", desc: "Alihkan ke agen manusia — flow selesai" },
@@ -52,6 +56,7 @@ function parse(nodes: any[]): { keywords: string[]; steps: Step[] } {
   const steps: Step[] = [];
   for (const n of nodes.filter((x) => x?.type !== "trigger")) {
     if (n.type === "send_text") steps.push({ type: "send_text", text: n.text ?? "" });
+    else if (n.type === "send_catalog") steps.push({ type: "send_catalog", category: n.category ?? "", intro: n.intro ?? "" });
     else if (n.type === "wait_reply") steps.push({ type: "wait_reply", saveAs: n.save_as ?? "" });
     else if (n.type === "ai_agent") steps.push({ type: "ai_agent" });
     else if (n.type === "handoff") steps.push({ type: "handoff" });
@@ -72,6 +77,7 @@ function compile(keywords: string[], steps: Step[]) {
     const id = `s${i}`;
     const next = i < steps.length - 1 ? `s${i + 1}` : null;
     if (s.type === "send_text") nodes.push({ id, type: "send_text", text: s.text, next });
+    else if (s.type === "send_catalog") nodes.push({ id, type: "send_catalog", category: s.category || undefined, intro: s.intro || undefined, next });
     else if (s.type === "wait_reply") nodes.push({ id, type: "wait_reply", save_as: s.saveAs || `var${i}`, next });
     else if (s.type === "ai_agent") nodes.push({ id, type: "ai_agent", next });
     else if (s.type === "handoff") nodes.push({ id, type: "handoff", to: "agent" });
@@ -126,11 +132,13 @@ function FlowCanvas({ keywords, steps }: { keywords: string[]; steps: Step[] }) 
             const summary =
               s.type === "send_text"
                 ? s.text || "(teks kosong)"
-                : s.type === "wait_reply"
-                  ? `simpan → ${s.saveAs || "var"}`
-                  : s.type === "ai_agent"
-                    ? "serahkan ke AI"
-                    : "alihkan ke agen (selesai)";
+                : s.type === "send_catalog"
+                  ? `kirim produk${s.category ? ` · ${s.category}` : " (semua)"}`
+                  : s.type === "wait_reply"
+                    ? `simpan → ${s.saveAs || "var"}`
+                    : s.type === "ai_agent"
+                      ? "serahkan ke AI"
+                      : "alihkan ke agen (selesai)";
             return (
               <div key={i} className="flex w-full flex-col items-center">
                 <Connector />
@@ -207,11 +215,13 @@ function FlowTestPanel({ keywords, steps, onClose }: { keywords: string[]; steps
               );
             }
             const marker =
-              s.type === "wait_reply"
-                ? `⏸ Menunggu balasan user → simpan ke "${s.saveAs || "var"}"`
-                : s.type === "ai_agent"
-                  ? "🤖 Diserahkan ke AI agent (jawab dari knowledge base)"
-                  : "👤 Dialihkan ke agen manusia — flow selesai";
+              s.type === "send_catalog"
+                ? `🛍 Kirim katalog produk${s.category ? ` (${s.category})` : ""} — foto + harga`
+                : s.type === "wait_reply"
+                  ? `⏸ Menunggu balasan user → simpan ke "${s.saveAs || "var"}"`
+                  : s.type === "ai_agent"
+                    ? "🤖 Diserahkan ke AI agent (jawab dari knowledge base)"
+                    : "👤 Dialihkan ke agen manusia — flow selesai";
             return (
               <div key={i} className="flex justify-center">
                 <span className="rounded-full bg-muted px-3 py-1 text-center text-[11px] font-medium text-muted-foreground">
@@ -255,7 +265,13 @@ export function FlowEditor({
   }
   function addStep(type: Step["type"]) {
     const s: Step =
-      type === "send_text" ? { type, text: "" } : type === "wait_reply" ? { type, saveAs: "" } : { type };
+      type === "send_text"
+        ? { type, text: "" }
+        : type === "send_catalog"
+          ? { type, category: "", intro: "" }
+          : type === "wait_reply"
+            ? { type, saveAs: "" }
+            : { type };
     setSteps((x) => [...x, s]);
   }
   function move(i: number, d: number) {
@@ -401,6 +417,22 @@ export function FlowEditor({
                       className="w-full resize-none rounded-lg border border-border bg-background p-2 text-sm outline-none focus:border-brand-blue"
                     />
                   )}
+                  {s.type === "send_catalog" && (
+                    <div className="space-y-2">
+                      <input
+                        value={s.intro}
+                        onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, intro: e.target.value } : y)))}
+                        placeholder="Teks pembuka (opsional, mis. Ini katalog kami 👇)"
+                        className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-brand-blue"
+                      />
+                      <input
+                        value={s.category}
+                        onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, category: e.target.value } : y)))}
+                        placeholder="Filter kategori (opsional, kosong = semua produk aktif)"
+                        className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-brand-blue"
+                      />
+                    </div>
+                  )}
                   {s.type === "wait_reply" && (
                     <input
                       value={s.saveAs}
@@ -419,7 +451,7 @@ export function FlowEditor({
 
           <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">Tambah langkah</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {(["send_text", "wait_reply", "ai_agent", "handoff"] as Step["type"][]).map((t) => {
+            {(["send_text", "send_catalog", "wait_reply", "ai_agent", "handoff"] as Step["type"][]).map((t) => {
               const meta = STEP_META[t];
               const Icon = meta.icon;
               return (

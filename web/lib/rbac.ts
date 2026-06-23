@@ -14,6 +14,7 @@ export type Ability =
   | "channel.view"
   | "flow.manage"
   | "knowledge.manage"
+  | "product.manage"
   | "user.manage"
   | "billing.tenant"
   | "contact.manage"
@@ -42,6 +43,7 @@ export const ROLE_ABILITIES: Record<Role, ReadonlySet<Ability>> = {
     "channel.view",
     "flow.manage",
     "knowledge.manage",
+    "product.manage",
     "user.manage",
     "billing.tenant",
     "contact.manage",

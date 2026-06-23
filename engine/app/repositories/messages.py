@@ -149,6 +149,7 @@ async def add_outbound(
     idempotency_key: str,
     agent_id: uuid.UUID | None = None,
     msg_type: str = "text",
+    media: dict | None = None,
 ) -> Message:
     msg = Message(
         tenant_id=tenant_id,
@@ -159,6 +160,7 @@ async def add_outbound(
         agent_id=agent_id,
         type=msg_type,
         body=body,
+        media=media,
         idempotency_key=idempotency_key,
         status="queued",
     )

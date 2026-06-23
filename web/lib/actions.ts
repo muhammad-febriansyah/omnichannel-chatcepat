@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { and, eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, tags, templates, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook } from "./telegram";
@@ -244,6 +244,8 @@ export async function createChannel(input: {
   name: string;
   credentials: Record<string, string>;
   externalId?: string;
+  // Transport provider: undefined = integrasi langsung (Meta/Telegram), "apico" = via api.co.id.
+  provider?: "apico";
 }) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
@@ -261,6 +263,8 @@ export async function createChannel(input: {
       status,
       credentials: encryptCreds(input.credentials), // AES-256-GCM at-rest
       externalId: input.externalId || null,
+      // meta.provider dibaca gateway untuk pilih adapter transport (apico vs Meta langsung).
+      meta: input.provider ? { provider: input.provider } : {},
     })
     .returning({ id: channels.id });
 
@@ -1080,4 +1084,79 @@ export async function deleteTemplate(id: string) {
     .delete(templates)
     .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
   revalidatePath("/templates");
+}
+
+// --- Produk (katalog) — RBAC product.manage. Foto = URL hasil upload (/api/products/upload).
+export type ProductInput = {
+  name: string;
+  description?: string | null;
+  priceIdr: number;
+  sku?: string | null;
+  stock: number;
+  category?: string | null;
+  photos: string[];
+  active: boolean;
+};
+
+function normalizeProduct(input: ProductInput) {
+  const name = input.name.trim();
+  if (!name) throw new Error("Nama produk wajib");
+  const priceIdr = Math.max(0, Math.round(Number(input.priceIdr) || 0));
+  const stock = Math.max(0, Math.round(Number(input.stock) || 0));
+  const photos = (input.photos ?? []).filter((p) => typeof p === "string" && p.trim()).slice(0, 10);
+  return {
+    name,
+    description: input.description?.trim() || null,
+    priceIdr,
+    sku: input.sku?.trim() || null,
+    stock,
+    category: input.category?.trim() || null,
+    photos,
+    active: Boolean(input.active),
+  };
+}
+
+export async function createProduct(input: ProductInput) {
+  const session = await requireSession();
+  requireAbility(session, "product.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await db.insert(products).values({ tenantId: session.tenantId, ...normalizeProduct(input) });
+  revalidatePath("/products");
+  redirect("/products");
+}
+
+export async function updateProduct(id: string, input: ProductInput) {
+  const session = await requireSession();
+  requireAbility(session, "product.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const data = normalizeProduct(input);
+
+  // Hapus file foto lama yang dibuang user (hemat storage; abaikan kalau gagal).
+  const [current] = await db
+    .select({ photos: products.photos })
+    .from(products)
+    .where(and(eq(products.id, id), eq(products.tenantId, session.tenantId)));
+  if (current) {
+    const removed = (current.photos ?? []).filter((p) => !data.photos.includes(p));
+    await Promise.all(removed.map((url) => deleteUpload(url)));
+  }
+
+  await db
+    .update(products)
+    .set({ ...data, updatedAt: new Date().toISOString() })
+    .where(and(eq(products.id, id), eq(products.tenantId, session.tenantId)));
+  revalidatePath("/products");
+  redirect("/products");
+}
+
+export async function deleteProduct(id: string) {
+  const session = await requireSession();
+  requireAbility(session, "product.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const [row] = await db
+    .delete(products)
+    .where(and(eq(products.id, id), eq(products.tenantId, session.tenantId)))
+    .returning({ photos: products.photos });
+  if (row) await Promise.all((row.photos ?? []).map((url) => deleteUpload(url)));
+  revalidatePath("/products");
 }

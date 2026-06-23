@@ -21,6 +21,7 @@ from .template import Template
 from .audit import AuditLog
 from .plan import Plan
 from .order import Order
+from .product import Product
 
 __all__ = [
     "Base",
@@ -41,4 +42,5 @@ __all__ = [
     "AuditLog",
     "Plan",
     "Order",
+    "Product",
 ]

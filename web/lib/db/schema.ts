@@ -454,3 +454,27 @@ export const orders = pgTable("orders", {
 		name: "orders_plan_id_fkey"
 	}).onDelete("set null"),
 ]);
+
+// Katalog produk tenant (DDL milik engine: migration 0007_products). Sumber balasan
+// otomatis: node flow send_catalog + konteks AI. Uang = BIGINT rupiah penuh.
+export const products = pgTable("products", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	description: text(),
+	priceIdr: bigint("price_idr", { mode: 'number' }).default(0).notNull(),
+	sku: text(),
+	stock: integer().default(0).notNull(),
+	category: text(),
+	photos: text().array().default([]).notNull(),
+	active: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_product_lookup").on(table.tenantId, table.active, table.category),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "products_tenant_id_fkey"
+	}).onDelete("cascade"),
+]);

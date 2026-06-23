@@ -17,11 +17,14 @@ from ..config import DEFAULT_FALLBACK_MESSAGE
 from ..contracts.events import InboundMessage
 from ..models import Channel, Contact, Conversation
 from . import flow_engine
+from .reply import Reply, text_reply
+
+__all__ = ["Decision", "Reply", "text_reply", "decide"]
 
 
 @dataclass
 class Decision:
-    replies: list[str] = field(default_factory=list)
+    replies: list[Reply] = field(default_factory=list)
     handoff: bool = False  # eskalasi ke agen (set handler=agent)
     stop: bool = False  # agen sudah pegang → bot diam
 
@@ -45,8 +48,8 @@ async def decide(
     # 2. AI agent (bisa eskalasi ke agen kalau low-confidence).
     res = await ai.try_ai(session, conv, channel, contact, inbound)
     if res is not None:
-        replies = [res.reply] if res.reply else []
+        replies = [text_reply(res.reply)] if res.reply else []
         return Decision(replies=replies, handoff=res.handoff)
 
     # 3. Fallback default.
-    return Decision(replies=[DEFAULT_FALLBACK_MESSAGE])
+    return Decision(replies=[text_reply(DEFAULT_FALLBACK_MESSAGE)])
