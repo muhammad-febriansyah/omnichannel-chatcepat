@@ -126,8 +126,8 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
           </div>
         </div>
 
-        {/* toolbar aksi — baris sendiri biar tak sesak dengan nama/banner */}
-        <div className="flex items-center justify-end gap-2 overflow-x-auto border-b border-border bg-card/60 px-5 py-2">
+        {/* toolbar aksi — baris sendiri; sembunyikan di layar kecil (mobile) biar tak overflow */}
+        <div className="hidden items-center justify-end gap-2 overflow-x-auto border-b border-border bg-card/60 px-5 py-2 md:flex">
           <ConversationActions
             conversationId={conversationId}
             status={conv.status}
