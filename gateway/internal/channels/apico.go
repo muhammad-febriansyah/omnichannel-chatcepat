@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -293,24 +294,64 @@ func (a *ApiCoSender) Send(ctx context.Context, cmd contracts.OutboundCommand, c
 	}
 	defer resp.Body.Close()
 
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	// `error` api.co.id bisa string ATAU object ({message,code}) → RawMessage, parse fleksibel.
 	var out struct {
 		Success bool `json:"success"`
 		Data    struct {
 			MessageID string `json:"message_id"`
 			Status    string `json:"status"`
 		} `json:"data"`
-		Message string `json:"message"`
-		Error   string `json:"error"`
+		Message string          `json:"message"`
+		Error   json.RawMessage `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("apico: decode resp (status %d): %w", resp.StatusCode, err)
-	}
+	_ = json.Unmarshal(respBody, &out) // best-effort: jangan gagal hanya karena bentuk error tak terduga
 	if resp.StatusCode >= 300 || !out.Success || out.Data.MessageID == "" {
-		msg := out.Error
-		if msg == "" {
-			msg = out.Message
+		detail := strings.TrimSpace(out.Message)
+		if errText := apiCoErrText(out.Error); errText != "" {
+			detail = strings.TrimSpace(detail + " " + errText)
 		}
-		return "", fmt.Errorf("apico send gagal (status %d): %s", resp.StatusCode, msg)
+		if detail == "" {
+			detail = truncate(string(respBody), 400)
+		}
+		return "", fmt.Errorf("apico send gagal (status %d): %s", resp.StatusCode, detail)
 	}
 	return out.Data.MessageID, nil
+}
+
+// apiCoErrText mengekstrak pesan error dari field `error` yang bisa string atau object.
+func apiCoErrText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var o struct {
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+		Code    any    `json:"code"`
+	}
+	if json.Unmarshal(raw, &o) == nil {
+		msg := o.Message
+		if msg == "" {
+			msg = o.Detail
+		}
+		if msg != "" {
+			if o.Code != nil {
+				return fmt.Sprintf("%s (code %v)", msg, o.Code)
+			}
+			return msg
+		}
+	}
+	return string(raw) // fallback: JSON mentah
+}
+
+func truncate(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
 }
