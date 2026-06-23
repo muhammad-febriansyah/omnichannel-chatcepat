@@ -43,6 +43,7 @@ type Item = {
   ability?: Ability; // undefined = selalu tampil
   minPlan?: TenantPlan; // paket minimal; di bawahnya item dikunci (bukan disembunyikan)
   tenantOnly?: boolean; // hanya client; admin platform disembunyikan (mis. langganan/billing)
+  hideForClient?: boolean; // sembunyikan dari client; admin (impersonasi) tetap lihat utk support
 };
 
 const SECTIONS: { title: string; items: Item[] }[] = [
@@ -61,16 +62,16 @@ const SECTIONS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Analitik",
-    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view" }],
+    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view", hideForClient: true }],
   },
   {
     title: "Pengaturan",
     items: [
       { href: "/channels", label: "Channel", icon: Plug, dot: true, ability: "channel.view" },
-      { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage" },
-      { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage" },
+      { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage", hideForClient: true },
+      { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage", hideForClient: true },
       { href: "/billing", label: "Tagihan & Paket", icon: CreditCard, ability: "billing.tenant", tenantOnly: true },
-      { href: "/settings", label: "Pengaturan", icon: Settings },
+      { href: "/settings", label: "Pengaturan", icon: Settings, hideForClient: true },
     ],
   },
 ];
@@ -126,6 +127,7 @@ export function Sidebar({
       items: sec.items
         .filter((it) => !it.ability || can({ role }, it.ability))
         .filter((it) => !(isPlatformAdmin && it.tenantOnly)) // admin: sembunyikan menu langganan
+        .filter((it) => !(it.hideForClient && !isPlatformAdmin)) // client: sembunyikan; admin impersonasi tetap lihat
         .map((it) => ({ ...it, locked: !isPlatformAdmin && it.minPlan ? !planAllows(stats.plan, it.minPlan) : false })),
     }))
     .filter((sec) => sec.items.length > 0);
@@ -163,7 +165,7 @@ export function Sidebar({
           // eslint-disable-next-line @next/next/no-img-element -- aset brand arbitrer (upload tenant)
           <img src={logoUrl} alt={siteName ?? "Logo"} className="h-8 w-auto max-w-full object-contain" />
         ) : (
-          <CCLogo variant="dark" size={30} withWordmark={!collapsed} />
+          <CCLogo variant="dark" size={30} withWordmark={!collapsed} wordmark={siteName} />
         )}
       </div>
 
