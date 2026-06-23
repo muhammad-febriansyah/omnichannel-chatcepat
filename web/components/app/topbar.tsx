@@ -139,9 +139,11 @@ export function Topbar({
             <DropdownMenuItem onClick={() => router.push("/profile")}>
               <User className="size-4" /> Profil
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/settings")}>
-              <Settings className="size-4" /> Pengaturan
-            </DropdownMenuItem>
+            {session.role !== "client" && (
+              <DropdownMenuItem onClick={() => router.push("/settings")}>
+                <Settings className="size-4" /> Pengaturan
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"

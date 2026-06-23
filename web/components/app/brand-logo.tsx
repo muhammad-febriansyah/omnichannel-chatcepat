@@ -28,5 +28,6 @@ export function BrandLogo({
       />
     );
   }
-  return <CCLogo variant={variant} size={size} withWordmark={withWordmark} />;
+  // Fallback tanpa logo upload: bulan + nama tenant (siteName). Anon/platform → "ChatCepat".
+  return <CCLogo variant={variant} size={size} withWordmark={withWordmark} wordmark={siteName || undefined} />;
 }
