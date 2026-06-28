@@ -9,7 +9,7 @@ import { db } from "./db";
 import { broadcasts, channels, contacts, flows, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import { requireSession, type Session } from "./session";
-import { registerTelegramWebhook } from "./telegram";
+import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
 import {
   listApiCoAccounts as fetchApiCoAccounts,
@@ -292,26 +292,36 @@ export async function createChannel(input: {
     .returning({ id: channels.id });
 
   // Telegram: daftarkan webhook ke Bot API supaya pesan masuk diterima gateway.
-  // Butuh TELEGRAM_WEBHOOK_BASE (URL publik gateway). Tanpa env ini, dilewati (dev).
+  // Butuh TELEGRAM_WEBHOOK_BASE (URL publik gateway).
   if (input.type === "telegram") {
     const base = process.env.TELEGRAM_WEBHOOK_BASE;
-    if (base) {
-      try {
-        const { secret } = await registerTelegramWebhook(input.credentials.bot_token, base, row.id);
-        await db
-          .update(channels)
-          .set({ credentials: encryptCreds({ ...input.credentials, tg_secret: secret }) })
-          .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
-      } catch (e) {
-        await db
-          .update(channels)
-          .set({ status: "pending" })
-          .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
-        const msg = e instanceof Error ? e.message : "tidak diketahui";
-        throw new Error(
-          `Channel dibuat, tapi webhook Telegram gagal didaftarkan: ${msg}. Cek TELEGRAM_WEBHOOK_BASE & bot token.`,
-        );
-      }
+    if (!base) {
+      // Tanpa webhook, Telegram tak tahu ke mana kirim update → inbound tak pernah
+      // datang. Jangan tandai "connected" palsu (mirip phantom apico); set pending.
+      await db
+        .update(channels)
+        .set({ status: "pending" })
+        .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
+      revalidatePath("/channels");
+      throw new Error(
+        "Channel dibuat (pending), tapi webhook Telegram belum didaftarkan: TELEGRAM_WEBHOOK_BASE belum diset.",
+      );
+    }
+    try {
+      const { secret } = await registerTelegramWebhook(input.credentials.bot_token, base, row.id);
+      await db
+        .update(channels)
+        .set({ credentials: encryptCreds({ ...input.credentials, tg_secret: secret }) })
+        .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
+    } catch (e) {
+      await db
+        .update(channels)
+        .set({ status: "pending" })
+        .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
+      const msg = e instanceof Error ? e.message : "tidak diketahui";
+      throw new Error(
+        `Channel dibuat, tapi webhook Telegram gagal didaftarkan: ${msg}. Cek TELEGRAM_WEBHOOK_BASE & bot token.`,
+      );
     }
   }
 
@@ -454,6 +464,18 @@ export async function disconnectChannel(id: string): Promise<void> {
       const pageId = typeof creds.page_id === "string" ? creds.page_id : "";
       const token = typeof creds.access_token === "string" ? creds.access_token : "";
       if (pageId && token) await unsubscribePageFromApp(pageId, token);
+    } catch {
+      /* abaikan — tetap hapus channel */
+    }
+  }
+
+  // Telegram: lepas webhook di Bot API supaya Telegram berhenti push ke gateway
+  // untuk channel yang dihapus. Best-effort — kegagalan tak boleh blokir penghapusan.
+  if (ch.type === "telegram") {
+    try {
+      const creds = decryptCreds(ch.credentials as Record<string, unknown>);
+      const token = typeof creds.bot_token === "string" ? creds.bot_token : "";
+      if (token) await deleteTelegramWebhook(token);
     } catch {
       /* abaikan — tetap hapus channel */
     }
