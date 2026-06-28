@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import AI_ESCALATION_MESSAGE, AI_HISTORY_LIMIT, RAG_TOP_K
 from ..contracts.events import InboundMessage
-from ..models import Channel, Contact, Conversation
+from ..models import Channel, Contact, Conversation, Tenant
 from ..repositories import messages as messages_repo
 from ..repositories import products as products_repo
 from . import rag
@@ -24,6 +25,31 @@ _CATALOG_LIMIT = 30
 
 def _rupiah(n: int) -> str:
     return "Rp" + f"{n:,}".replace(",", ".")
+
+
+def _safe_name(raw: str | None) -> str:
+    """Sanitasi nama display pelanggan sebelum disisipkan ke system prompt.
+
+    Nama berasal dari pushName WA/Telegram = dikontrol pelanggan → vektor prompt
+    injection. Ratakan SEMUA whitespace (termasuk newline) jadi satu spasi supaya
+    tak bisa menyuntik baris/instruksi baru, lalu batasi panjang.
+    """
+    if not raw:
+        return ""
+    return " ".join(str(raw).split())[:60].strip()
+
+
+async def _tenant_persona(session: AsyncSession, tenant_id) -> str | None:
+    """Persona AI kustom tenant dari tenants.settings.ai_persona (ditulis web).
+    None bila kosong/tak ada → pemanggil fallback ke DEFAULT_PERSONA."""
+    if session is None:
+        return None
+    settings = await session.scalar(select(Tenant.settings).where(Tenant.id == tenant_id))
+    if isinstance(settings, dict):
+        p = settings.get("ai_persona")
+        if isinstance(p, str) and p.strip():
+            return p.strip()
+    return None
 
 
 async def _catalog_context(session: AsyncSession, tenant_id) -> str:
@@ -159,11 +185,16 @@ async def try_ai(
     except NotImplementedError:
         pass  # provider tanpa embedding → jawab tanpa RAG
 
-    persona = (channel.meta or {}).get("ai_persona") or DEFAULT_PERSONA
-    # Persona (boleh di-custom tenant) + gaya bicara + cara kerja → fondasi perilaku.
+    # Persona kustom tenant ditulis web ke tenants.settings.ai_persona. Fallback ke
+    # channel.meta.ai_persona (legacy) lalu DEFAULT. + gaya bicara + cara kerja.
+    persona = (
+        await _tenant_persona(session, conv.tenant_id)
+        or (channel.meta or {}).get("ai_persona")
+        or DEFAULT_PERSONA
+    )
     system = persona + _STYLE_GUIDE + _BEHAVIOR
 
-    contact_name = getattr(contact, "name", None)
+    contact_name = _safe_name(getattr(contact, "name", None))
     if contact_name:
         system += f"\n\nNama pelanggan: {contact_name}."
 
