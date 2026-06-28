@@ -290,7 +290,8 @@ func (a *ApiCoSender) Send(ctx context.Context, cmd contracts.OutboundCommand, c
 
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return "", err
+		// Gangguan jaringan/timeout: request kemungkinan tak sampai → aman di-retry.
+		return "", Transient(fmt.Errorf("apico send: %w", err))
 	}
 	defer resp.Body.Close()
 
@@ -314,7 +315,13 @@ func (a *ApiCoSender) Send(ctx context.Context, cmd contracts.OutboundCommand, c
 		if detail == "" {
 			detail = truncate(string(respBody), 400)
 		}
-		return "", fmt.Errorf("apico send gagal (status %d): %s", resp.StatusCode, detail)
+		sendErr := fmt.Errorf("apico send gagal (status %d): %s", resp.StatusCode, detail)
+		// 429 (rate limit) / 5xx (server) = transient → retry. 4xx lain (payload/
+		// template invalid) permanen → percuma di-retry, langsung gagal.
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return "", Transient(sendErr)
+		}
+		return "", sendErr
 	}
 	return out.Data.MessageID, nil
 }

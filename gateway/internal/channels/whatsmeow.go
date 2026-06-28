@@ -113,7 +113,7 @@ func (w *Whatsmeow) Restore(ctx context.Context) {
 			continue
 		}
 		cli := whatsmeow.NewClient(d, w.log)
-		cli.AddEventHandler(w.handler(cid, info.TenantID))
+		cli.AddEventHandler(w.handler(cli, cid, info.TenantID))
 		if err := cli.Connect(); err != nil {
 			log.Printf("whatsmeow restore connect %s: %v", jid, err)
 			continue
@@ -131,7 +131,7 @@ func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, er
 	}
 	device := w.container.NewDevice()
 	cli := whatsmeow.NewClient(device, w.log)
-	cli.AddEventHandler(w.handler(channelID, tenantID))
+	cli.AddEventHandler(w.handler(cli, channelID, tenantID))
 
 	// QR loop hidup di luar request (background), jadi pakai context sendiri.
 	qrChan, err := cli.GetQRChannel(context.Background())
@@ -200,6 +200,11 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow send: %w", err)
 	}
+
+	// Anti-banned: setelah kirim, "tutup app" — kembali offline setelah jeda acak,
+	// bukan online 24/7 (bot tell). Async best-effort; pakai ctx sendiri karena
+	// ctx pemanggil selesai begitu Send return.
+	go goOfflineLater(sess.cli)
 	return string(resp.ID), nil
 }
 
@@ -234,7 +239,7 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	}
 
 	cli := whatsmeow.NewClient(device, w.log)
-	cli.AddEventHandler(w.handler(channelID, info.TenantID))
+	cli.AddEventHandler(w.handler(cli, channelID, info.TenantID))
 	if err := cli.Connect(); err != nil {
 		return nil, fmt.Errorf("whatsmeow connect: %w", err)
 	}
@@ -243,27 +248,71 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	return sess, nil
 }
 
-// simulateTyping meniru perilaku manusia sebelum kirim: set online, kirim
-// indikator "composing" selama durasi proporsional panjang teks (dibatasi),
-// lalu "paused". Best-effort — error presence diabaikan, tak boleh menggagalkan
-// pengiriman. Jika ctx dibatalkan selama jeda, langsung lanjut kirim.
+// simulateTyping meniru perilaku manusia sebelum kirim. Bukan satu blok "composing"
+// lurus (ciri bot), tapi ketik–jeda-mikir–ketik dalam beberapa burst: indikator
+// "typing…" berkedip seperti orang asli yang mengetik, berhenti memikirkan kalimat,
+// lalu lanjut. Jumlah burst proporsional panjang teks. Best-effort — error presence
+// diabaikan, tak boleh menggagalkan pengiriman. ctx dibatalkan → langsung lanjut kirim.
 func simulateTyping(ctx context.Context, cli *whatsmeow.Client, to types.JID, bodyLen int) {
 	// 1) Online dulu, lalu jeda "membaca" singkat sebelum mulai mengetik
 	//    (manusia tidak langsung ngetik begitu chat terbuka).
 	_ = cli.SendPresence(ctx, types.PresenceAvailable)
-	select {
-	case <-ctx.Done():
+	if !sleepCtx(ctx, readDelay()) {
 		return
-	case <-time.After(readDelay()):
 	}
 
-	// 2) Indikator "composing" selama durasi proporsional panjang teks.
-	_ = cli.SendChatPresence(ctx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
-	select {
-	case <-ctx.Done():
-	case <-time.After(typingDelay(bodyLen)):
+	// 2) Total waktu mengetik aktif, dibagi rata ke beberapa burst. Antar-burst ada
+	//    jeda "berpikir": indikator paused sejenak (typing… hilang), lalu composing lagi.
+	bursts := typingBursts(bodyLen)
+	perBurst := typingDelay(bodyLen) / time.Duration(bursts)
+	for i := 0; i < bursts; i++ {
+		_ = cli.SendChatPresence(ctx, to, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+		if !sleepCtx(ctx, jitterAround(perBurst)) {
+			_ = cli.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+			return
+		}
+		if i < bursts-1 {
+			// Jeda berpikir/re-read di tengah: berhenti ngetik sebentar (typing… hilang).
+			_ = cli.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+			if !sleepCtx(ctx, thinkPause()) {
+				return
+			}
+		}
 	}
 	_ = cli.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText)
+}
+
+// sleepCtx tidur selama d, atau berhenti lebih awal bila ctx dibatalkan. Return
+// false bila ctx batal (pemanggil sebaiknya langsung lanjut kirim).
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// typingBursts: 1 burst untuk pesan pendek, naik ~1 tiap 45 char, dibatasi 4. Pesan
+// panjang → lebih banyak jeda mikir di tengah (lebih manusiawi).
+func typingBursts(bodyLen int) int {
+	n := 1 + bodyLen/45
+	if n > 4 {
+		n = 4
+	}
+	return n
+}
+
+// thinkPause: jeda berpikir antar-burst, acak 0.4–1.6 detik.
+func thinkPause() time.Duration {
+	secs := 0.4 + rand.Float64()*1.2
+	return time.Duration(secs * float64(time.Second))
+}
+
+// jitterAround memberi variasi ±25% pada durasi d (kecepatan ketik tak pernah konstan).
+func jitterAround(d time.Duration) time.Duration {
+	factor := 0.75 + rand.Float64()*0.5 // 0.75–1.25
+	return time.Duration(float64(d) * factor)
 }
 
 // readDelay: jeda acak 0.8–2.5 detik meniru waktu "membaca" sebelum mengetik.
@@ -286,6 +335,28 @@ func typingDelay(bodyLen int) time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
+// markReadHumanlike menandai pesan masuk "dibaca" (centang biru) setelah jeda acak
+// 2–15 detik — meniru manusia yang melihat notif lalu membuka chat, bukan bot yang
+// membaca instan atau tak pernah. Best-effort: error presence/receipt diabaikan.
+func markReadHumanlike(cli *whatsmeow.Client, info types.MessageInfo) {
+	secs := 2.0 + rand.Float64()*13.0
+	time.Sleep(time.Duration(secs * float64(time.Second)))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = cli.MarkRead(ctx, []types.MessageID{info.ID}, time.Now(), info.Chat, info.Sender)
+}
+
+// goOfflineLater mengembalikan presence ke unavailable setelah jeda acak 4–12 detik
+// pasca-kirim — meniru manusia yang menutup aplikasi, bukan online terus-menerus.
+// Best-effort; dijalankan di goroutine sendiri dengan context lepas dari pemanggil.
+func goOfflineLater(cli *whatsmeow.Client) {
+	secs := 4.0 + rand.Float64()*8.0
+	time.Sleep(time.Duration(secs * float64(time.Second)))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = cli.SendPresence(ctx, types.PresenceUnavailable)
+}
+
 func (w *Whatsmeow) put(channelID string, s *waSession) {
 	w.mu.Lock()
 	if old, ok := w.clients[channelID]; ok && old.cli != s.cli {
@@ -296,7 +367,7 @@ func (w *Whatsmeow) put(channelID string, s *waSession) {
 }
 
 // handler mengubah pesan masuk WA → contracts.InboundMessage → bus (idempoten via DedupKey).
-func (w *Whatsmeow) handler(channelID, tenantID string) func(any) {
+func (w *Whatsmeow) handler(cli *whatsmeow.Client, channelID, tenantID string) func(any) {
 	return func(evt any) {
 		msg, ok := evt.(*events.Message)
 		if !ok || msg.Info.IsFromMe {
@@ -306,6 +377,11 @@ func (w *Whatsmeow) handler(channelID, tenantID string) func(any) {
 		if body == "" {
 			return // hanya teks untuk saat ini (docs/prd/04)
 		}
+
+		// Anti-banned: tampil manusiawi — tandai pesan "dibaca" (centang biru)
+		// setelah jeda acak, bukan instan (bot tell) dan bukan tak pernah. Async,
+		// best-effort, tak boleh menahan handler atau menggagalkan inbound.
+		go markReadHumanlike(cli, msg.Info)
 
 		// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
 		// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,

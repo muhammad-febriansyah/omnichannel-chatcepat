@@ -18,6 +18,15 @@ type Outbound struct {
 	Consumer string
 }
 
+const (
+	// Retry hanya untuk error transient (jaringan/timeout/5xx/429) — lihat
+	// channels.IsTransient. Dibatasi agar worker tak tertahan lama; total tunggu
+	// worst-case ≈ 0.5+1+2 = 3.5s sebelum menyerah → status failed.
+	maxSendAttempts = 4
+	baseSendBackoff = 500 * time.Millisecond
+	maxSendBackoff  = 4 * time.Second
+)
+
 // RunOnce memproses satu batch outbound. Return jumlah pesan yang diproses.
 func (w *Outbound) RunOnce(ctx context.Context, blockMs int) (int, error) {
 	msgs, err := w.Bus.ConsumeOutbound(ctx, w.Consumer, 10, blockMs)
@@ -53,7 +62,7 @@ func (w *Outbound) process(ctx context.Context, m bus.OutMsg) {
 		return
 	}
 
-	providerID, err := adapter.Send(ctx, cmd, info.Credentials)
+	providerID, err := w.sendWithRetry(ctx, adapter, cmd, info.Credentials)
 	if err != nil {
 		w.fail(ctx, st, err)
 		return
@@ -63,6 +72,33 @@ func (w *Outbound) process(ctx context.Context, m bus.OutMsg) {
 	st.Status = contracts.MessageStatusStatusSent
 	if _, e := w.Bus.PublishStatus(ctx, &st); e != nil {
 		log.Printf("publish status sent gagal: %v", e)
+	}
+}
+
+// sendWithRetry memanggil adapter.Send dengan retry+backoff eksponensial, tapi
+// HANYA untuk error transient (channels.IsTransient: jaringan/timeout/5xx/429).
+// Error permanen (4xx/payload invalid) atau adapter yang tak menandai transient
+// (mis. whatsmeow, rawan dobel-kirim) langsung dikembalikan tanpa retry.
+func (w *Outbound) sendWithRetry(ctx context.Context, adapter channels.Adapter, cmd contracts.OutboundCommand, creds channels.Credentials) (string, error) {
+	backoff := baseSendBackoff
+	for attempt := 1; ; attempt++ {
+		providerID, err := adapter.Send(ctx, cmd, creds)
+		if err == nil {
+			return providerID, nil
+		}
+		if attempt >= maxSendAttempts || !channels.IsTransient(err) || ctx.Err() != nil {
+			return "", err
+		}
+		log.Printf("outbound transient (idem=%s, attempt=%d/%d): %v; retry dalam %s",
+			cmd.IdempotencyKey, attempt, maxSendAttempts, err, backoff)
+		select {
+		case <-ctx.Done():
+			return "", err
+		case <-time.After(backoff):
+		}
+		if backoff *= 2; backoff > maxSendBackoff {
+			backoff = maxSendBackoff
+		}
 	}
 }
 
