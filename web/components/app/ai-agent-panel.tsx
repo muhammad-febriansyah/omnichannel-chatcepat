@@ -6,6 +6,7 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { addKnowledge, previewAi, savePersona } from "@/lib/actions";
 import { PageHeader } from "@/components/app/page-header";
 import { SectionCard } from "@/components/app/section-card";
+import { KbMarkdownEditor } from "@/components/app/kb-markdown-editor";
 import { StatusPill } from "@/components/app/status-pill";
 import { statusLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -143,12 +144,11 @@ export function AiAgentPanel({ persona, docs }: { persona: string; docs: Doc[] }
             placeholder="Judul dokumen (mis. Katalog Produk)"
             className="mb-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
           />
-          <textarea
+          <KbMarkdownEditor
             value={kbText}
-            onChange={(e) => setKbText(e.target.value)}
+            onChange={setKbText}
             rows={4}
-            placeholder="Paste teks pengetahuan (produk, FAQ, SOP)…"
-            className="w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+            placeholder="Tulis pengetahuan (produk, FAQ, SOP)… mendukung Markdown"
           />
           <Button onClick={doAddKb} disabled={addingKb} size="lg" className="mt-3">
             <Plus className="size-4" /> Tambah & Embed
