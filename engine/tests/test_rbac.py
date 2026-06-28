@@ -1,52 +1,51 @@
-"""Test matriks RBAC (docs/prd/03). Authoritative — web/lib/rbac.ts harus sama."""
+"""Test matriks RBAC (docs/prd/03). Authoritative — web/lib/rbac.ts harus sama.
+
+Model flat 2 role (migration 0006_roles_2):
+  admin  = operator platform, god-mode → can() True untuk ability apa pun.
+  client = akun tenant, akses penuh workspace sendiri (set ability eksplisit).
+"""
 
 import pytest
 
 from app.rbac import (
     ADMIN,
-    AGENT,
-    SUPER_ADMIN,
-    SUPERVISOR,
+    CLIENT,
     PermissionDenied,
     can,
     can_view_all_conversations,
     require,
 )
 
-# (ability, role, expected) — sel kunci dari tabel PRD 03.
+# (ability, role, expected) — sel kunci dari matriks rbac.py.
 CASES = [
-    ("tenant.manage", SUPER_ADMIN, True),
-    ("tenant.manage", ADMIN, False),
-    ("platform.monitor", SUPER_ADMIN, True),
+    # admin = platform god-mode: True untuk SEMUA ability (short-circuit can()),
+    # termasuk ability operasional tenant (impersonasi).
+    ("tenant.manage", ADMIN, True),
+    ("platform.monitor", ADMIN, True),
     ("channel.connect", ADMIN, True),
-    ("channel.connect", SUPERVISOR, False),
-    ("channel.view", SUPERVISOR, True),
-    ("channel.view", AGENT, False),
+    ("broadcast.manage", ADMIN, True),
+    ("contact.view", ADMIN, True),
     ("flow.manage", ADMIN, True),
-    ("flow.manage", SUPERVISOR, False),
-    ("knowledge.manage", ADMIN, True),
-    ("user.manage", ADMIN, True),
-    ("user.manage", SUPERVISOR, False),
-    ("billing.tenant", ADMIN, True),
-    ("contact.manage", SUPERVISOR, True),
-    ("contact.manage", AGENT, False),
-    ("contact.view", AGENT, True),
-    ("broadcast.manage", SUPERVISOR, True),
-    ("broadcast.manage", AGENT, False),
-    ("conversation.assign", SUPERVISOR, True),
-    ("conversation.assign", AGENT, False),
-    ("conversation.view_all", SUPERVISOR, True),
-    ("conversation.view_all", AGENT, False),
-    ("conversation.view_assigned", AGENT, True),
-    ("conversation.takeover", AGENT, True),
-    ("report.view", SUPER_ADMIN, True),
-    ("report.view", AGENT, False),
-    ("audit.view", ADMIN, True),
-    ("audit.view", SUPERVISOR, False),
-    # super_admin = platform; TIDAK punya ability operasional tenant
-    ("broadcast.manage", SUPER_ADMIN, False),
-    ("contact.view", SUPER_ADMIN, False),
-    ("flow.manage", SUPER_ADMIN, False),
+    # client = tenant: akses penuh workspace sendiri.
+    ("channel.connect", CLIENT, True),
+    ("channel.view", CLIENT, True),
+    ("flow.manage", CLIENT, True),
+    ("knowledge.manage", CLIENT, True),
+    ("product.manage", CLIENT, True),
+    ("user.manage", CLIENT, True),
+    ("billing.tenant", CLIENT, True),
+    ("contact.manage", CLIENT, True),
+    ("contact.view", CLIENT, True),
+    ("broadcast.manage", CLIENT, True),
+    ("conversation.assign", CLIENT, True),
+    ("conversation.view_all", CLIENT, True),
+    ("conversation.view_assigned", CLIENT, True),
+    ("conversation.takeover", CLIENT, True),
+    ("report.view", CLIENT, True),
+    ("audit.view", CLIENT, True),
+    # client TIDAK punya ability khusus platform.
+    ("tenant.manage", CLIENT, False),
+    ("platform.monitor", CLIENT, False),
 ]
 
 
@@ -56,18 +55,24 @@ def test_matrix(ability, role, expected):
 
 
 def test_require_raises():
-    require(ADMIN, "broadcast.manage")  # tidak raise
+    require(ADMIN, "broadcast.manage")  # god-mode, tidak raise
+    require(CLIENT, "broadcast.manage")  # client punya, tidak raise
     with pytest.raises(PermissionDenied):
-        require(AGENT, "broadcast.manage")
+        require(CLIENT, "tenant.manage")  # client tak punya ability platform
 
 
 def test_unknown_role_and_ability():
     assert can(None, "contact.view") is False
     assert can("ghost", "contact.view") is False
-    assert can(ADMIN, "does.not.exist") is False
+    # client (bukan god-mode) → ability tak dikenal = False.
+    assert can(CLIENT, "does.not.exist") is False
+    # admin = god-mode → True bahkan untuk ability tak dikenal.
+    assert can(ADMIN, "does.not.exist") is True
 
 
 def test_conversation_visibility():
+    # Keduanya lihat semua percakapan dalam scope-nya: admin god-mode, client
+    # punya conversation.view_all. Hanya role tak dikenal yang False.
     assert can_view_all_conversations(ADMIN) is True
-    assert can_view_all_conversations(SUPERVISOR) is True
-    assert can_view_all_conversations(AGENT) is False
+    assert can_view_all_conversations(CLIENT) is True
+    assert can_view_all_conversations(None) is False
