@@ -11,6 +11,8 @@ from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
 from ..services.broadcast import dispatch, run_broadcast
 from ..services.conversation import (
+    DailyCapReached,
+    ServiceWindowClosed,
     assign_conversation,
     send_agent_reply,
     set_handler,
@@ -79,9 +81,16 @@ async def conversation_reply(
     _require(x_actor_role, "conversation.takeover")
     if not payload.body.strip():
         raise HTTPException(status_code=422, detail="pesan kosong")
-    result = await send_agent_reply(
-        conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
-    )
+    try:
+        result = await send_agent_reply(
+            conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
+        )
+    except ServiceWindowClosed as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"data": result}
 
 
@@ -122,6 +131,8 @@ async def conversation_start(
             template_lang=payload.template_lang,
             agent_id=payload.agent_id,
         )
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"data": result}

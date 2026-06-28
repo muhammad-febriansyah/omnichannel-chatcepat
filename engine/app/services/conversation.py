@@ -12,6 +12,16 @@ from ..contracts.events import OutboundCommand, Party, Template
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..repositories import contacts, conversations, messages
+from . import warmup
+from .warmup import DailyCapReached  # noqa: F401  (re-export untuk route)
+
+
+class ServiceWindowClosed(Exception):
+    """WA official: window layanan 24 jam tutup → teks free-form ditolak Meta.
+
+    Di luar window, percakapan hanya bisa dibuka ulang lewat template (HSM).
+    Route map ke HTTP 409 supaya agen tahu harus pilih template, bukan 500.
+    """
 
 
 async def send_agent_reply(
@@ -29,6 +39,19 @@ async def send_agent_reply(
                 raise ValueError(f"percakapan {conversation_id} tidak ada")
             channel = conv.channel
             contact = conv.contact
+            # WA official: teks free-form hanya boleh dalam service window 24 jam.
+            # Di luar window Meta tolak teks biasa (butuh template/HSM) → balasan
+            # gagal diam-diam. Blok di sini sebelum persist+kirim. Channel lain
+            # (unofficial/telegram/ig/fb) tak punya window → lewat.
+            if channel.type == "wa_official":
+                expires = conv.service_window_expires_at
+                if expires is None or expires <= datetime.now(timezone.utc):
+                    raise ServiceWindowClosed(
+                        "Window layanan WhatsApp 24 jam sudah tutup. Kontak harus "
+                        "membalas dulu, atau buka percakapan lewat template (HSM)."
+                    )
+            # Warm-up cap (unofficial): blok bila volume rolling-24h sudah lewat batas.
+            await warmup.enforce_unofficial(session, channel)
             idem = f"agent:{conversation_id}:{uuid.uuid4().hex}"
             msg = await messages.add_outbound(
                 session,
@@ -131,6 +154,9 @@ async def start_conversation(
                 raise ValueError(f"channel {channel_id} tidak ada")
             if channel.status != "connected":
                 raise ValueError("channel belum terhubung")
+            # Warm-up cap (unofficial): first-contact/compose paling rawan banned —
+            # blok bila volume rolling-24h sudah lewat batas umur channel.
+            await warmup.enforce_unofficial(session, channel)
 
             contact = await contacts.get_or_create(
                 session,

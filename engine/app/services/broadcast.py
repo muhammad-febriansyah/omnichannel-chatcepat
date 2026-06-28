@@ -31,6 +31,7 @@ from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..models import Broadcast, BroadcastRecipient, Channel, Contact
 from ..repositories import broadcasts, channels, conversations, messages
+from . import warmup
 
 log = logging.getLogger("engine.broadcast")
 
@@ -74,15 +75,9 @@ def _throttle_seconds(channel: Channel | None) -> float:
 
 
 def _daily_cap(channel: Channel, now: datetime) -> int:
-    """Cap outbound/rolling-24h sesuai umur channel (warmup). 0 = nonaktif."""
-    if not WARMUP_DAILY_CAPS:
-        return 0
-    created = channel.created_at
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    age_days = max(0, (now - created).days)
-    idx = min(age_days, len(WARMUP_DAILY_CAPS) - 1)
-    return WARMUP_DAILY_CAPS[idx]
+    """Cap outbound/rolling-24h sesuai umur channel (warmup). 0 = nonaktif.
+    Sumber tunggal di services.warmup (dipakai broadcast + kirim 1:1)."""
+    return warmup.daily_cap(channel, now)
 
 
 def _build_command(
