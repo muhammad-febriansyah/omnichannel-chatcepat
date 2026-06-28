@@ -25,6 +25,7 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { saveFlow } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { WaMessageEditor } from "@/components/app/wa-message-editor";
 
 type Step =
   | { type: "send_text"; text: string }
@@ -409,12 +410,12 @@ export function FlowEditor({
                     </div>
                   </div>
                   {s.type === "send_text" && (
-                    <textarea
+                    <WaMessageEditor
                       value={s.text}
-                      onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, text: e.target.value } : y)))}
+                      onChange={(v) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, text: v } : y)))}
                       rows={2}
+                      variables={[{ label: "{{nama}}", token: "{{nama}}" }]}
                       placeholder="Tulis pesan… boleh pakai {{nama}} untuk personalisasi"
-                      className="w-full resize-none rounded-lg border border-border bg-background p-2 text-sm outline-none focus:border-brand-blue"
                     />
                   )}
                   {s.type === "send_catalog" && (
