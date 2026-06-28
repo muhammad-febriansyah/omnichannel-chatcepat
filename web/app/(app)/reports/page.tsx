@@ -1,8 +1,9 @@
-import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send } from "lucide-react";
-import { requireSession } from "@/lib/session";
+import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send, BarChart3 } from "lucide-react";
+import { requirePageAbility } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 import { getReportStats } from "@/lib/report-stats";
 import { PageHeader } from "@/components/app/page-header";
+import { SectionCard } from "@/components/app/section-card";
 
 const CONV_STATUS: Record<string, { label: string; color: string }> = {
   open: { label: "Terbuka", color: "#3b82f6" },
@@ -22,8 +23,7 @@ function dayLabel(iso: string) {
 
 function Breakdown({ title, rows, map, total }: { title: string; rows: { status: string; n: number }[]; map: Record<string, { label: string; color: string }>; total: number }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-4 text-base font-semibold">{title}</h2>
+    <SectionCard title={title}>
       {total === 0 ? (
         <p className="text-sm text-muted-foreground">Belum ada data.</p>
       ) : (
@@ -34,7 +34,7 @@ function Breakdown({ title, rows, map, total }: { title: string; rows: { status:
             return (
               <div key={r.status} className="flex items-center gap-3">
                 <span className="w-20 text-sm text-muted-foreground">{m.label}</span>
-                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: m.color }} />
                 </div>
                 <span className="w-16 text-right text-sm font-semibold tabular-nums">
@@ -45,12 +45,12 @@ function Breakdown({ title, rows, map, total }: { title: string; rows: { status:
           })}
         </div>
       )}
-    </div>
+    </SectionCard>
   );
 }
 
 export default async function ReportsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("report.view");
   const s = await getReportStats(session.tenantId);
   const resRate = s.conversations ? Math.round((s.resolved / s.conversations) * 100) : 0;
   const maxDay = Math.max(1, ...s.msgPerDay.map((d) => d.n));
@@ -65,17 +65,17 @@ export default async function ReportsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Laporan" description="Ringkasan metrik & performa workspace." />
+      <PageHeader icon={BarChart3} title="Laporan" description="Ringkasan metrik & performa workspace." />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.label} className="rounded-xl border border-border bg-card p-4">
+            <div key={c.label} className="rounded-2xl border border-border bg-card p-4">
               <span className="flex size-9 items-center justify-center rounded-lg" style={{ background: `${c.tone}1a`, color: c.tone }}>
                 <Icon className="size-[18px]" />
               </span>
-              <div className="mt-3 text-2xl font-bold tracking-tight">{typeof c.value === "number" ? cleanIDR(c.value) : c.value}</div>
+              <div className="mt-3 text-2xl font-bold tracking-tight dark:text-foreground">{typeof c.value === "number" ? cleanIDR(c.value) : c.value}</div>
               <div className="mt-0.5 text-xs text-muted-foreground">{c.label}</div>
             </div>
           );
@@ -83,8 +83,7 @@ export default async function ReportsPage() {
       </div>
 
       {/* Pesan per hari */}
-      <div className="mt-6 rounded-xl border border-border bg-card p-5">
-        <h2 className="mb-4 text-base font-semibold">Volume Pesan · 7 Hari Terakhir</h2>
+      <SectionCard title="Volume Pesan · 7 Hari Terakhir" className="mt-6">
         <div className="flex h-44 items-end justify-between gap-2">
           {s.msgPerDay.map((d) => (
             <div key={d.day} className="flex flex-1 flex-col items-center gap-1.5">
@@ -100,7 +99,7 @@ export default async function ReportsPage() {
             </div>
           ))}
         </div>
-      </div>
+      </SectionCard>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Breakdown title="Status Percakapan" rows={s.convByStatus} map={CONV_STATUS} total={s.conversations} />

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Search, Inbox as InboxIcon } from "lucide-react";
+import { Search, Inbox as InboxIcon, ChevronDown, PenLine } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, ChannelType, initials, timeAgo } from "@/lib/format";
@@ -20,18 +20,36 @@ export type ConvItem = {
 
 // Label + warna status percakapan supaya agen langsung paham keadaannya.
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  open: { label: "Aktif", cls: "bg-blue-50 text-brand-blue" },
-  pending: { label: "Menunggu", cls: "bg-amber-50 text-amber-700" },
-  resolved: { label: "Selesai", cls: "bg-emerald-50 text-emerald-700" },
-  snoozed: { label: "Snooze", cls: "bg-slate-100 text-slate-600" },
+  open: { label: "Aktif", cls: "bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300" },
+  pending: { label: "Menunggu", cls: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" },
+  resolved: { label: "Selesai", cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" },
+  snoozed: { label: "Snooze", cls: "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300" },
 };
 
-type Filter = "all" | "unread" | "active" | "done";
+type Filter = "all" | "unread" | "read" | "active" | "done";
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Semua" },
   { key: "unread", label: "Belum dibaca" },
+  { key: "read", label: "Dibaca" },
   { key: "active", label: "Aktif" },
   { key: "done", label: "Selesai" },
+];
+
+// Filter channel: kelompokkan wa_official + wa_unofficial jadi satu "whatsapp".
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "telegram";
+const CHANNEL_GROUP: Record<string, ChannelFilter> = {
+  wa_official: "whatsapp",
+  wa_unofficial: "whatsapp",
+  instagram: "instagram",
+  facebook: "facebook",
+  telegram: "telegram",
+};
+const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
+  { key: "all", label: "Semua Channel" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "instagram", label: "Instagram" },
+  { key: "facebook", label: "Messenger" },
+  { key: "telegram", label: "Telegram" },
 ];
 
 export function ConversationList({ items }: { items: ConvItem[] }) {
@@ -39,33 +57,63 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
   const active = params?.conversationId;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [channel, setChannel] = useState<ChannelFilter>("all");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((c) => {
+      if (channel !== "all" && CHANNEL_GROUP[c.channelType] !== channel) return false;
       if (filter === "unread" && c.unread <= 0) return false;
+      if (filter === "read" && c.unread > 0) return false;
       if (filter === "active" && !(c.status === "open" || c.status === "pending")) return false;
       if (filter === "done" && c.status !== "resolved") return false;
       if (q && !c.name.toLowerCase().includes(q) && !(c.preview ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [items, query, filter]);
+  }, [items, query, filter, channel]);
 
   const unreadTotal = items.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0);
 
   return (
-    <div className="flex h-full w-full shrink-0 flex-col border-r border-border bg-card lg:w-80">
+    <div className="flex h-full w-full flex-col border-r border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-        <h2 className="text-base font-semibold">Inbox</h2>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-          {unreadTotal > 0 ? `${unreadTotal} belum dibaca` : `${items.length} percakapan`}
-        </span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Inbox</h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            {unreadTotal > 0 ? `${unreadTotal} belum dibaca` : `${items.length} percakapan`}
+          </span>
+        </div>
+        <Link
+          href="/inbox/new"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-blue/90"
+        >
+          <PenLine className="size-3.5" /> Pesan Baru
+        </Link>
+      </div>
+
+      {/* Filter channel */}
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as ChannelFilter)}
+            aria-label="Filter channel"
+            className="h-9 w-full appearance-none rounded-lg border border-border bg-background pl-2.5 pr-8 text-sm font-medium text-foreground outline-none transition focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+          >
+            {CHANNEL_FILTERS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
       </div>
 
       {/* Search */}
       <div className="px-3 pb-2">
-        <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-muted-foreground focus-within:border-brand-blue">
+        <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-muted-foreground transition focus-within:border-brand-blue focus-within:ring-4 focus-within:ring-brand-blue/10">
           <Search className="size-4 shrink-0" />
           <input
             value={query}
@@ -83,9 +131,10 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
+            aria-pressed={filter === f.key}
             className={cn(
               "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              filter === f.key ? "bg-brand-blue text-white" : "bg-slate-100 text-muted-foreground hover:bg-slate-200",
+              filter === f.key ? "bg-brand-blue text-white" : "bg-muted text-muted-foreground hover:bg-muted/70",
             )}
           >
             {f.label}
@@ -110,8 +159,10 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
                 key={c.id}
                 href={`/inbox/${c.id}`}
                 className={cn(
-                  "flex gap-3 border-b border-border px-4 py-3 transition-colors",
-                  isActive ? "bg-blue-50" : "hover:bg-slate-50",
+                  "relative flex gap-3 border-b border-border px-4 py-3 transition-colors",
+                  isActive
+                    ? "bg-blue-50 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-brand-blue dark:bg-blue-500/10"
+                    : "hover:bg-muted/50",
                 )}
               >
                 <div className="relative">

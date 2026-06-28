@@ -1,0 +1,102 @@
+# Production compose — pakai: docker compose -f docker-compose.prod.yml up -d --build
+# Beda dari docker-compose.yml (dev):
+#   - web/engine jalan build produksi (bukan npm run dev / uvicorn --reload)
+#   - tanpa source bind-mount (pakai artefak build di image)
+#   - postgres/redis/engine TIDAK diexpose publik (bind 127.0.0.1 saja)
+#   - gateway & web bind 127.0.0.1 → diakses lewat nginx reverse proxy
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chatcepat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatcepat}
+      POSTGRES_DB: ${POSTGRES_DB:-chatcepat}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chatcepat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  engine:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["127.0.0.1:8000:8000"]
+    restart: unless-stopped
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  engine-consumer:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: "python -m app.consumers.inbound_consumer"
+
+  engine-broadcast:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: "python -m app.consumers.broadcast_worker"
+
+  engine-status:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: "python -m app.consumers.status_consumer"
+
+  gateway:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["127.0.0.1:8080:8080"]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      # NEXT_PUBLIC_* di-inline ke bundle saat build → ambil dari .env root via
+      # interpolasi compose. env_file (runtime) saja tak cukup buat var ini.
+      args:
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+        NEXT_PUBLIC_FB_APP_ID: ${NEXT_PUBLIC_FB_APP_ID}
+        NEXT_PUBLIC_WA_CONFIG_ID: ${NEXT_PUBLIC_WA_CONFIG_ID}
+    env_file: .env
+    depends_on: [engine]
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: ["uploads:/data/uploads"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

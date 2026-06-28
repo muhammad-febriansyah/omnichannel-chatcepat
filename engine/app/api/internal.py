@@ -11,10 +11,13 @@ from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
 from ..services.broadcast import dispatch, run_broadcast
 from ..services.conversation import (
+    DailyCapReached,
+    ServiceWindowClosed,
     assign_conversation,
     send_agent_reply,
     set_handler,
     set_status,
+    start_conversation,
 )
 
 router = APIRouter(prefix="/internal/v1")
@@ -78,9 +81,60 @@ async def conversation_reply(
     _require(x_actor_role, "conversation.takeover")
     if not payload.body.strip():
         raise HTTPException(status_code=422, detail="pesan kosong")
-    result = await send_agent_reply(
-        conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
-    )
+    try:
+        result = await send_agent_reply(
+            conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
+        )
+    except ServiceWindowClosed as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"data": result}
+
+
+class StartConversationIn(BaseModel):
+    channel_id: uuid.UUID
+    phone: str
+    name: str | None = None
+    type: str = "text"  # "text" | "template"
+    body: str | None = None
+    template_name: str | None = None
+    template_lang: str = "id"
+    agent_id: uuid.UUID | None = None
+
+
+@router.post("/conversations/start")
+async def conversation_start(
+    payload: StartConversationIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
+) -> dict:
+    """Mulai percakapan baru ke 1 nomor (kirim pesan pertama). Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    if payload.type == "text" and not (payload.body and payload.body.strip()):
+        raise HTTPException(status_code=422, detail="pesan kosong")
+    if payload.type == "template" and not payload.template_name:
+        raise HTTPException(status_code=422, detail="template wajib dipilih")
+    try:
+        result = await start_conversation(
+            _tenant(x_tenant_id),
+            payload.channel_id,
+            payload.phone,
+            name=payload.name,
+            msg_type=payload.type,
+            body=payload.body.strip() if payload.body else None,
+            template_name=payload.template_name,
+            template_lang=payload.template_lang,
+            agent_id=payload.agent_id,
+        )
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"data": result}
 
 
