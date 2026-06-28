@@ -6,6 +6,7 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { ActionLink } from "@/components/app/action-link";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/app/section-card";
+import { WaMessageEditor } from "@/components/app/wa-message-editor";
 import { createAndRunBroadcast, previewAudience } from "@/lib/actions";
 import { CHANNEL_META, ChannelType, cleanIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -196,16 +197,13 @@ export function BroadcastWizard({
             <label className="block text-sm font-medium">
               {useTemplate ? "Isi Template (preview)" : "Isi Pesan"}
             </label>
-            <textarea
+            <WaMessageEditor
               value={body}
-              onChange={(e) => setBody(e.target.value)}
-              readOnly={useTemplate}
+              onChange={setBody}
+              disabled={useTemplate}
               rows={6}
               placeholder="Tulis pesan broadcast… (official di luar window butuh template)"
-              className={cn(
-                "mt-1.5 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10",
-                useTemplate && "bg-muted/50 text-muted-foreground",
-              )}
+              className="mt-1.5"
             />
             <p className="mt-2 text-xs text-muted-foreground">
               {useTemplate

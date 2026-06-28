@@ -7,6 +7,7 @@ import { Send, ArrowLeft, Phone, User, Radio, Info } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { WaMessageEditor } from "@/components/app/wa-message-editor";
 import { CHANNEL_META, type ChannelType } from "@/lib/format";
 import { startConversation } from "@/lib/actions";
 
@@ -227,13 +228,12 @@ export function ComposeForm({
                   <label htmlFor="body" className="mb-1.5 block text-sm font-medium text-foreground">
                     Pesan
                   </label>
-                  <textarea
+                  <WaMessageEditor
                     id="body"
                     value={body}
-                    onChange={(e) => setBody(e.target.value)}
+                    onChange={setBody}
                     rows={4}
                     placeholder="Tulis pesan pertama…"
-                    className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
                   />
                 </div>
               )}
