@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -24,9 +25,11 @@ import (
 	"github.com/chatcepat/gateway/internal/contracts"
 )
 
-// InboundPublisher = bagian Bus yang dipakai untuk push pesan masuk WA unofficial.
-type InboundPublisher interface {
+// EventBus = bagian Bus yang dipakai adapter WA unofficial: push pesan masuk +
+// event realtime ke dashboard (mis. channel.status saat nomor banned/logout).
+type EventBus interface {
 	PublishInbound(ctx context.Context, msg *contracts.InboundMessage) (string, error)
+	PublishRealtime(ctx context.Context, tenantID string, payload []byte) error
 }
 
 // Whatsmeow adapter WA unofficial (docs/prd/04). Sesi device disimpan di sqlstore
@@ -43,12 +46,22 @@ type InboundPublisher interface {
 // anti-banned untuk broadcast ada di engine (07); balasan 1:1 organik tak di-throttle.
 type Whatsmeow struct {
 	container *sqlstore.Container
-	bus       InboundPublisher
+	bus       EventBus
 	store     Resolver
 	log       waLog.Logger
+	sink      ChannelStatusSink // opsional: persist channels.status durable (via web)
 
-	mu      sync.Mutex
-	clients map[string]*waSession // channelID → sesi aktif
+	mu          sync.Mutex
+	clients     map[string]*waSession // channelID → sesi aktif
+	quarantined map[string]time.Time  // channelID → tolak reconnect s/d (anti reconnect-storm ke nomor banned)
+}
+
+// SetStatusSink memasang sink persist status durable (nil = hanya realtime).
+func (w *Whatsmeow) SetStatusSink(s ChannelStatusSink) {
+	if w == nil {
+		return
+	}
+	w.sink = s
 }
 
 type waSession struct {
@@ -67,7 +80,7 @@ type PairEvent struct {
 
 // NewWhatsmeow membuka sqlstore Postgres. dsn kosong → return (nil, nil): fitur
 // WA unofficial nonaktif, Send/Pair akan menolak dengan rapi.
-func NewWhatsmeow(ctx context.Context, dsn string, b InboundPublisher, store Resolver) (*Whatsmeow, error) {
+func NewWhatsmeow(ctx context.Context, dsn string, b EventBus, store Resolver) (*Whatsmeow, error) {
 	if dsn == "" {
 		return nil, nil
 	}
@@ -81,11 +94,12 @@ func NewWhatsmeow(ctx context.Context, dsn string, b InboundPublisher, store Res
 		return nil, fmt.Errorf("whatsmeow sqlstore: %w", err)
 	}
 	return &Whatsmeow{
-		container: container,
-		bus:       b,
-		store:     store,
-		log:       logger,
-		clients:   make(map[string]*waSession),
+		container:   container,
+		bus:         b,
+		store:       store,
+		log:         logger,
+		clients:     make(map[string]*waSession),
+		quarantined: make(map[string]time.Time),
 	}, nil
 }
 
@@ -214,6 +228,16 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	if s, ok := w.clients[channelID]; ok && s.cli.IsConnected() {
 		w.mu.Unlock()
 		return s, nil
+	}
+	// Anti-banned: dalam window karantina, tolak reconnect (jangan hantam nomor
+	// yang sedang di-ban ulang-ulang). Window lewat → hapus, boleh coba lagi.
+	if until, ok := w.quarantined[channelID]; ok {
+		if time.Now().Before(until) {
+			w.mu.Unlock()
+			return nil, fmt.Errorf("whatsmeow: channel %s dikarantina (banned/logout) s/d %s",
+				channelID, until.Format(time.RFC3339))
+		}
+		delete(w.quarantined, channelID)
 	}
 	w.mu.Unlock()
 
@@ -363,49 +387,158 @@ func (w *Whatsmeow) put(channelID string, s *waSession) {
 		old.cli.Disconnect()
 	}
 	w.clients[channelID] = s
+	delete(w.quarantined, channelID) // (re)pair/connect sukses → keluar karantina
 	w.mu.Unlock()
 }
 
-// handler mengubah pesan masuk WA → contracts.InboundMessage → bus (idempoten via DedupKey).
+// handler mem-fan-out event whatsmeow: pesan masuk → bus, dan event putus permanen
+// (banned/logout/outdated/replaced) → karantina anti-banned. whatsmeow menangani
+// reconnect transient sendiri; yang ditangani di sini hanya yang TIDAK auto-reconnect.
 func (w *Whatsmeow) handler(cli *whatsmeow.Client, channelID, tenantID string) func(any) {
 	return func(evt any) {
-		msg, ok := evt.(*events.Message)
-		if !ok || msg.Info.IsFromMe {
+		switch e := evt.(type) {
+		case *events.Message:
+			w.handleMessage(cli, channelID, e)
+			return
+		case *events.Connected:
+			// (re)connect sukses — nomor sehat kembali.
+			log.Printf("whatsmeow: channel %s tersambung", channelID)
 			return
 		}
-		body := extractText(msg.Message)
-		if body == "" {
-			return // hanya teks untuk saat ini (docs/prd/04)
+		// events.PermanentDisconnect = kelas event saat whatsmeow TIDAK akan
+		// auto-reconnect (LoggedOut, TemporaryBan, ConnectFailure, ClientOutdated,
+		// StreamReplaced). Nomor efektif mati/dibatasi → karantina.
+		if pd, ok := evt.(events.PermanentDisconnect); ok {
+			w.quarantine(channelID, tenantID, evt, pd.PermanentDisconnectDescription())
 		}
+	}
+}
 
-		// Anti-banned: tampil manusiawi — tandai pesan "dibaca" (centang biru)
-		// setelah jeda acak, bukan instan (bot tell) dan bukan tak pernah. Async,
-		// best-effort, tak boleh menahan handler atau menggagalkan inbound.
-		go markReadHumanlike(cli, msg.Info)
+// quarantine menangani putus permanen (anti-banned): lepas sesi basi supaya worker
+// berhenti kirim ke nomor banned/dibatasi (untuk TemporaryBan, client bisa masih
+// "connected" tapi WA menolak — kalau tak dilepas, tiap kirim menambah sinyal spam),
+// lalu kabari dashboard via realtime channel.status. Best-effort.
+func (w *Whatsmeow) quarantine(channelID, tenantID string, evt any, desc string) {
+	status := banStatus(evt)
+	log.Printf("whatsmeow: channel %s %s — %s (karantina, hentikan kirim)", channelID, status, desc)
+	w.mu.Lock()
+	w.quarantined[channelID] = time.Now().Add(quarantineCooldown(evt))
+	w.mu.Unlock()
+	w.drop(channelID)
+	w.publishChannelStatus(tenantID, channelID, status, desc)
+	w.persistChannelStatus(channelID, status, desc)
+}
 
-		// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
-		// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,
-		// "privacy token 400") + kontak tak match percakapan keluar (yang simpan phone).
-		sender := senderPhone(msg.Info)
-		pmID := msg.Info.ID
-		name := optName(msg.Info.PushName)
-		phone := sender
-		inb := contracts.InboundMessage{
-			ChannelId:         channelID,
-			ChannelType:       contracts.ChannelTypeWaUnofficial,
-			EventId:           fmt.Sprintf("%d", time.Now().UnixNano()),
-			DedupKey:          channelID + ":" + pmID,
-			ProviderMessageId: pmID,
-			From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: name},
-			Type:              contracts.InboundMessageTypeText,
-			Body:              &body,
-			Timestamp:         msg.Info.Timestamp.UTC(),
-		}
+// quarantineCooldown = berapa lama menolak reconnect setelah putus permanen. Untuk
+// TemporaryBan pakai durasi ban dari WA (+buffer); sisanya (logout/outdated) butuh
+// re-pair manual → cooldown default panjang (dibersihkan saat re-pair via put).
+func quarantineCooldown(evt any) time.Duration {
+	if tb, ok := evt.(*events.TemporaryBan); ok && tb.Expire > 0 {
+		return tb.Expire + time.Minute
+	}
+	return 30 * time.Minute
+}
+
+// persistChannelStatus set channels.status durable via web (best-effort, async).
+// Tanpa ini, realtime cuma memicu refresh yang membaca DB lama → badge tak berubah.
+func (w *Whatsmeow) persistChannelStatus(channelID, status, reason string) {
+	if w.sink == nil {
+		return
+	}
+	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, err := w.bus.PublishInbound(ctx, &inb); err != nil {
-			log.Printf("whatsmeow publish inbound gagal: %v", err)
+		if err := w.sink.SetChannelStatus(ctx, channelID, status, reason); err != nil {
+			log.Printf("whatsmeow: persist channel.status gagal: %v", err)
 		}
+	}()
+}
+
+// banStatus memetakan event putus permanen ke enum channel_status DB. TemporaryBan =
+// "banned" (dibatasi sementara); sisanya (unpair/logout/outdated/replaced) =
+// "disconnected". Pure — reason detail dibawa terpisah di payload.
+func banStatus(evt any) string {
+	if _, ok := evt.(*events.TemporaryBan); ok {
+		return "banned"
+	}
+	return "disconnected"
+}
+
+// drop melepas sesi channel dari map dan memutus koneksinya. Setelah ini ensure()
+// tak akan mengembalikan client basi; kirim berikutnya gagal rapi (status failed)
+// alih-alih menghantam nomor yang sudah banned.
+func (w *Whatsmeow) drop(channelID string) {
+	w.mu.Lock()
+	s, ok := w.clients[channelID]
+	if ok {
+		delete(w.clients, channelID)
+	}
+	w.mu.Unlock()
+	if ok {
+		s.cli.Disconnect()
+	}
+}
+
+// publishChannelStatus mengirim event realtime channel.status ke dashboard tenant
+// (09). Payload dipakai web untuk refresh + tampilkan status nomor. Best-effort.
+func (w *Whatsmeow) publishChannelStatus(tenantID, channelID, status, reason string) {
+	evt := contracts.RealtimeEvent{
+		Type: contracts.RealtimeEventTypeChannelStatus,
+		Payload: contracts.RealtimeEventPayload{
+			"channel_id": channelID,
+			"status":     status,
+			"reason":     reason,
+		},
+	}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.bus.PublishRealtime(ctx, tenantID, data); err != nil {
+		log.Printf("whatsmeow: publish channel.status gagal: %v", err)
+	}
+}
+
+// handleMessage menormalisasi pesan masuk WA → contracts.InboundMessage → bus
+// (idempoten via DedupKey).
+func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *events.Message) {
+	if msg.Info.IsFromMe {
+		return
+	}
+	body := extractText(msg.Message)
+	if body == "" {
+		return // hanya teks untuk saat ini (docs/prd/04)
+	}
+
+	// Anti-banned: tampil manusiawi — tandai pesan "dibaca" (centang biru)
+	// setelah jeda acak, bukan instan (bot tell) dan bukan tak pernah. Async,
+	// best-effort, tak boleh menahan handler atau menggagalkan inbound.
+	go markReadHumanlike(cli, msg.Info)
+
+	// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
+	// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,
+	// "privacy token 400") + kontak tak match percakapan keluar (yang simpan phone).
+	sender := senderPhone(msg.Info)
+	pmID := msg.Info.ID
+	name := optName(msg.Info.PushName)
+	phone := sender
+	inb := contracts.InboundMessage{
+		ChannelId:         channelID,
+		ChannelType:       contracts.ChannelTypeWaUnofficial,
+		EventId:           fmt.Sprintf("%d", time.Now().UnixNano()),
+		DedupKey:          channelID + ":" + pmID,
+		ProviderMessageId: pmID,
+		From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: name},
+		Type:              contracts.InboundMessageTypeText,
+		Body:              &body,
+		Timestamp:         msg.Info.Timestamp.UTC(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := w.bus.PublishInbound(ctx, &inb); err != nil {
+		log.Printf("whatsmeow publish inbound gagal: %v", err)
 	}
 }
 
@@ -465,5 +598,5 @@ func optName(s string) *string {
 	return &s
 }
 
-// memastikan Bus memenuhi InboundPublisher (compile-time).
-var _ InboundPublisher = (*bus.Bus)(nil)
+// memastikan Bus memenuhi EventBus (compile-time).
+var _ EventBus = (*bus.Bus)(nil)

@@ -64,6 +64,12 @@ func main() {
 		wa = nil
 	}
 	if wa != nil {
+		// Persist status ban/logout durable ke channels.status (tabel milik web) —
+		// via endpoint internal web, auth SERVICE_TOKEN yang sama dengan web↔engine.
+		// Kosong → deteksi ban tetap jalan (lepas sesi + realtime), cuma tak persist.
+		if sink := channels.NewWebStatusSink(env("WEB_INTERNAL_URL", ""), env("SERVICE_TOKEN", "")); sink != nil {
+			wa.SetStatusSink(sink)
+		}
 		defer wa.Close()
 		go wa.Restore(ctx) // sambung ulang device tersimpan (non-blocking).
 	}
