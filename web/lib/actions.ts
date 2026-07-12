@@ -13,7 +13,7 @@ import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
 import {
   listApiCoAccounts as fetchApiCoAccounts,
-  type ApiCoAccount,
+  type ApiCoAccountsResult,
   createApiCoTemplate,
   submitApiCoTemplate,
   type CreateTemplateInput,
@@ -264,7 +264,12 @@ export async function createChannel(input: {
   // sumber tepercaya (jangan percaya input mentah). Tanpa ini channel "Terhubung" palsu
   // → tak ada resource di api.co.id → pesan masuk tak pernah datang.
   if (input.provider === "apico") {
-    const accounts = await fetchApiCoAccounts(input.type);
+    const { accounts, error } = await fetchApiCoAccounts(input.type);
+    // Bedakan gagal-menghubungi dari kosong-beneran: dulu keduanya jadi "Belum ada
+    // akun" yang menyesatkan saat penyebab asli key salah/endpoint/network.
+    if (error) {
+      throw new Error(`Gagal menghubungi api.co.id: ${error}`);
+    }
     if (accounts.length === 0) {
       throw new Error("Belum ada akun untuk tipe ini di api.co.id. Hubungkan dulu di dashboard api.co.id.");
     }
@@ -332,7 +337,7 @@ export async function createChannel(input: {
 
 // Daftar akun api.co.id yang ASLI terhubung (utk picker connect channel). Tenant-scoped
 // via session + butuh ability channel.connect. Mengembalikan [] kalau key/akun kosong.
-export async function listApiCoAccounts(type: ChannelType): Promise<ApiCoAccount[]> {
+export async function listApiCoAccounts(type: ChannelType): Promise<ApiCoAccountsResult> {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
   return fetchApiCoAccounts(type);

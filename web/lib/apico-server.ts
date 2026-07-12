@@ -14,29 +14,57 @@ export type ApiCoAccount = {
   detail?: string;
 };
 
+// Hasil ambil akun: pisahkan "kosong beneran" (key OK, akun nol) dari "gagal
+// menghubungi" (key salah/endpoint/network). Dulu semua error ditelan jadi [] →
+// UI connect kosong tanpa alasan + createChannel lempar pesan menyesatkan.
+export type ApiCoAccountsResult = { accounts: ApiCoAccount[]; error?: string };
+
 const ENDPOINT: Record<string, string | undefined> = {
   wa_official: "/phone-numbers",
   facebook: "/facebook-pages",
   instagram: "/instagram-accounts",
 };
 
-export async function listApiCoAccounts(type: string): Promise<ApiCoAccount[]> {
+export async function listApiCoAccounts(type: string): Promise<ApiCoAccountsResult> {
   const path = ENDPOINT[type];
-  if (!path || !KEY) return [];
+  if (!path) return { accounts: [], error: `Tipe channel "${type}" tidak didukung api.co.id` };
+  if (!KEY) return { accounts: [], error: "APICO_API_KEY belum diset di server" };
   try {
     const res = await fetch(BASE + path, {
       headers: { Authorization: `Bearer ${KEY}` },
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const detail = extractErr(safeJson(body)) || truncate(body, 300);
+      const error = `api.co.id ${path}: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`;
+      console.error("[apico] listAccounts gagal:", error);
+      return { accounts: [], error };
+    }
     const json = (await res.json()) as { data?: unknown };
     const data = Array.isArray(json.data) ? json.data : [];
-    return data
+    const accounts = data
       .map((d) => normalize(type, d as Record<string, unknown>))
       .filter((a): a is ApiCoAccount => !!a.externalId);
-  } catch {
-    return [];
+    return { accounts };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "gagal menghubungi api.co.id";
+    console.error("[apico] listAccounts error:", error);
+    return { accounts: [], error };
   }
+}
+
+function safeJson(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function truncate(s: string, n: number): string {
+  const t = s.trim();
+  return t.length > n ? t.slice(0, n) + "…" : t;
 }
 
 function str(v: unknown): string {
