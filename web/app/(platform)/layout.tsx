@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app/app-shell";
 import { requireSession } from "@/lib/session";
 import { getSidebarStats } from "@/lib/sidebar-stats";
-import { getWebSettingsByTenant } from "@/lib/web-settings-server";
+import { getPublicWebSettings, getWebSettingsByTenant } from "@/lib/web-settings-server";
 import { listTenants } from "@/lib/actions";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
@@ -20,6 +20,12 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     support = { whatsapp: ws.social.whatsapp, phone: ws.contact.phone, email: ws.contact.email };
     logoUrl = ws.logoUrl || undefined;
     siteName = ws.siteName || undefined;
+  }
+  // Konsol platform: acting tenant sering tak punya logo → pakai branding platform
+  // (public web settings, di-set di /admin/settings), bukan placeholder bulan.
+  if (!logoUrl) {
+    const pub = await getPublicWebSettings();
+    logoUrl = pub.logoUrl || undefined;
   }
   const tenants = await listTenants();
 
