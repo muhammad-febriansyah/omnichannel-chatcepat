@@ -39,16 +39,22 @@ async def send_agent_reply(
                 raise ValueError(f"percakapan {conversation_id} tidak ada")
             channel = conv.channel
             contact = conv.contact
-            # WA official: teks free-form hanya boleh dalam service window 24 jam.
-            # Di luar window Meta tolak teks biasa (butuh template/HSM) → balasan
+            # Platform Meta (WA official + Messenger + Instagram): teks free-form hanya
+            # boleh dalam window layanan 24 jam. Di luar window Meta tolak → balasan
             # gagal diam-diam. Blok di sini sebelum persist+kirim. Channel lain
-            # (unofficial/telegram/ig/fb) tak punya window → lewat.
-            if channel.type == "wa_official":
+            # (wa_unofficial/telegram) tak punya window → lewat.
+            if channel.type in ("wa_official", "instagram", "facebook"):
                 expires = conv.service_window_expires_at
                 if expires is None or expires <= datetime.now(timezone.utc):
+                    if channel.type == "wa_official":
+                        raise ServiceWindowClosed(
+                            "Window layanan WhatsApp 24 jam sudah tutup. Kontak harus "
+                            "membalas dulu, atau buka percakapan lewat template (HSM)."
+                        )
+                    label = "Instagram" if channel.type == "instagram" else "Messenger"
                     raise ServiceWindowClosed(
-                        "Window layanan WhatsApp 24 jam sudah tutup. Kontak harus "
-                        "membalas dulu, atau buka percakapan lewat template (HSM)."
+                        f"Window pesan {label} 24 jam sudah tutup. Kontak harus "
+                        "mengirim pesan lagi sebelum kamu bisa membalas."
                     )
             # Warm-up cap (unofficial): blok bila volume rolling-24h sudah lewat batas.
             await warmup.enforce_unofficial(session, channel)

@@ -143,7 +143,10 @@ async def handle(inbound: InboundMessage) -> None:
             conv.last_message_at = now
             conv.last_message_preview = _preview(inbound.body, inbound.type.value)
             conv.unread_count = conv.unread_count + 1
-            if channel.type == "wa_official":
+            # Window layanan 24 jam berlaku untuk semua platform Meta: WA official +
+            # Messenger + Instagram. Di luar window, free-form ditolak Meta → balasan
+            # agen/lanjutan harus dalam window ini (di-enforce di send_agent_reply).
+            if channel.type in ("wa_official", "instagram", "facebook"):
                 conv.service_window_expires_at = now + timedelta(hours=SERVICE_WINDOW_HOURS)
 
             # Opt-out otomatis (07): kontak balas STOP/BERHENTI → opted_out.
