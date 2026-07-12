@@ -47,8 +47,20 @@ export async function POST(req: Request) {
           updatedAt: new Date().toISOString(),
         })
         .where(eq(orders.id, order.id));
-      // Auto-aktivasi: naikkan paket tenant sesuai tier yang dibeli.
-      await db.update(tenants).set({ plan: order.tier, updatedAt: new Date().toISOString() }).where(eq(tenants.id, order.tenantId));
+      // Auto-aktivasi: naikkan paket + perpanjang masa aktif 30 hari. Bila masih
+      // aktif, extend dari tanggal habis lama (bukan reset ke hari ini).
+      const t = await db.query.tenants.findFirst({
+        where: eq(tenants.id, order.tenantId),
+        columns: { planExpiresAt: true },
+      });
+      const now = Date.now();
+      const cur = t?.planExpiresAt ? new Date(t.planExpiresAt).getTime() : 0;
+      const base = cur > now ? cur : now;
+      const newExpiry = new Date(base + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await db
+        .update(tenants)
+        .set({ plan: order.tier, planExpiresAt: newExpiry, updatedAt: new Date().toISOString() })
+        .where(eq(tenants.id, order.tenantId));
     }
   } else if (order.status === "pending") {
     await db.update(orders).set({ status: "failed", raw, updatedAt: new Date().toISOString() }).where(eq(orders.id, order.id));
