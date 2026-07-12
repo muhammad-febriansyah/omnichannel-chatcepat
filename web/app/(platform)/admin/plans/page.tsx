@@ -14,11 +14,13 @@ import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { DeleteButton } from "@/components/app/delete-button";
 
 const TIER_LABEL: Record<string, string> = {
+  basic: "Basic",
   pro: "Pro",
   business: "Business",
   enterprise: "Enterprise",
 };
 const TIER_TONE: Record<string, PillTone> = {
+  basic: "slate",
   pro: "blue",
   business: "amber",
   enterprise: "emerald",

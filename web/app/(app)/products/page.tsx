@@ -3,7 +3,9 @@ import { Plus, Package, PackageOpen, ImageOff } from "lucide-react";
 import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
+import { hasFeature } from "@/lib/entitlements";
 import { deleteProduct } from "@/lib/actions";
+import { PlanLock } from "@/components/app/plan-lock";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { DeleteButton } from "@/components/app/delete-button";
@@ -30,6 +32,16 @@ async function load(tenantId: string | null) {
 
 export default async function ProductsPage() {
   const session = await requirePageAbility("product.manage");
+  if (!hasFeature(session, "catalog")) {
+    return (
+      <PlanLock
+        title="Produk"
+        feature="Katalog Produk"
+        requiredPlan="Pro"
+        description="Kelola katalog produk untuk dipakai AI & broadcast."
+      />
+    );
+  }
   const rows = await load(session.tenantId);
 
   return (

@@ -46,7 +46,7 @@ def pg_enum(*values: str, name: str) -> ENUM:
 
 
 # --- ENUM domain (lihat docs/prd/02, 03, 05) ---
-tenant_plan = pg_enum("pro", "business", "enterprise", name="tenant_plan")
+tenant_plan = pg_enum("basic", "pro", "business", "enterprise", name="tenant_plan")
 tenant_status = pg_enum("active", "suspended", name="tenant_status")
 user_role = pg_enum("admin", "client", name="user_role")
 user_status = pg_enum("active", "invited", "disabled", name="user_status")

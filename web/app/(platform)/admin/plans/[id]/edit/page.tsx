@@ -28,7 +28,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
         mode="edit"
         planId={plan.id}
         initial={{
-          tier: plan.tier as "pro" | "business" | "enterprise",
+          tier: plan.tier as "basic" | "pro" | "business" | "enterprise",
           name: plan.name,
           slug: plan.slug,
           priceIdr: plan.priceIdr,

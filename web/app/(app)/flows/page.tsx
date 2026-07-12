@@ -4,7 +4,9 @@ import { Plus, Workflow, Zap, ArrowRight, ListChecks } from "lucide-react";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
+import { hasFeature } from "@/lib/entitlements";
 import { createFlow } from "@/lib/actions";
+import { PlanLock } from "@/components/app/plan-lock";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,16 @@ async function load(tenantId: string | null) {
 
 export default async function FlowsPage() {
   const session = await requirePageAbility("flow.manage");
+  if (!hasFeature(session, "automation")) {
+    return (
+      <PlanLock
+        title="Otomasi"
+        feature="Otomasi (Flow Builder)"
+        requiredPlan="Pro"
+        description="Bangun chatbot alur otomatis untuk membalas pelanggan."
+      />
+    );
+  }
   const rows = await load(session.tenantId);
 
   const active = rows.filter((f) => f.status === "active").length;

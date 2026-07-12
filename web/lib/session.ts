@@ -6,12 +6,14 @@ import { db } from "./db";
 import { tenants } from "./db/schema";
 import { ACTING_TENANT_COOKIE, IMPERSONATE_COOKIE, SESSION_COOKIE, verifySession } from "./auth";
 import { can, type Ability, type Role, type SessionUser } from "./rbac";
+import { type TenantPlan } from "./plan";
 
 export interface Session extends SessionUser {
   name: string;
   email: string;
   avatarUrl: string | null;
   tenantName: string | null;
+  plan: TenantPlan | null; // paket tenant aktif (lock fitur; null utk admin tanpa tenant)
   isPlatformAdmin: boolean;
   // admin platform god-mode: tenant yang sedang dilihat (impersonasi). null untuk client.
   actingTenantId: string | null;
@@ -43,10 +45,12 @@ export const getSession = cache(async (): Promise<Session | null> => {
   }
 
   let tenantName: string | null = null;
+  let plan: TenantPlan | null = null;
   try {
     if (tenantId) {
       const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
       tenantName = t?.name ?? null;
+      plan = (t?.plan as TenantPlan) ?? null;
     }
   } catch {
     /* abaikan */
@@ -59,6 +63,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     email: payload.email,
     avatarUrl: payload.avatarUrl ?? null,
     tenantName,
+    plan,
     isPlatformAdmin,
     actingTenantId,
     // Impersonasi aktif hanya bila admin DAN cookie ada DAN tenant target resolve.

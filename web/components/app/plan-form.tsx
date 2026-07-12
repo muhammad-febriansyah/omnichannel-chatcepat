@@ -28,7 +28,7 @@ const schema = z.object({
     .min(1, "Slug wajib diisi")
     .max(80, "Slug maksimal 80 karakter")
     .regex(/^[a-z0-9-]+$/i, "Slug hanya boleh huruf, angka, dan tanda hubung"),
-  tier: z.enum(["pro", "business", "enterprise"]),
+  tier: z.enum(["basic", "pro", "business", "enterprise"]),
   priceIdr: z.coerce.number().int("Harga harus bilangan bulat").min(0, "Harga tidak boleh negatif"),
   period: z.enum(["month", "year"]),
   quota: z
@@ -44,7 +44,7 @@ const schema = z.object({
 type Values = z.input<typeof schema>;
 
 export interface PlanInitial {
-  tier: "pro" | "business" | "enterprise";
+  tier: "basic" | "pro" | "business" | "enterprise";
   name: string;
   slug: string;
   priceIdr: number;
@@ -158,6 +158,7 @@ export function PlanForm({
                   Tier
                 </label>
                 <select id="tier" {...register("tier")} className={inputCls}>
+                  <option value="basic">Basic</option>
                   <option value="pro">Pro</option>
                   <option value="business">Business</option>
                   <option value="enterprise">Enterprise</option>

@@ -8,6 +8,13 @@ import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { broadcasts, channels, contacts, flows, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
+import {
+  assertBroadcastQuota,
+  assertCanAddAgent,
+  assertCanAddChannel,
+  assertCanAddKb,
+  requireFeature,
+} from "./entitlements";
 import { requireSession, type Session } from "./session";
 import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
@@ -258,6 +265,7 @@ export async function createChannel(input: {
   requireAbility(session, "channel.connect");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.name.trim()) throw new Error("Nama channel wajib");
+  await assertCanAddChannel(session); // lock: batas channel per paket (admin bypass)
 
   // Cegah channel phantom: provider apico HANYA boleh untuk akun yang benar-benar
   // terhubung di api.co.id. Validasi external_id ke daftar resmi + ambil nilai dari
@@ -561,6 +569,7 @@ export async function createAndRunBroadcast(input: {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await assertBroadcastQuota(session); // lock: kuota broadcast bulanan per paket (admin bypass)
 
   // Channel WAJIB milik tenant ini — cegah broadcast lewat channel tenant lain.
   const channel = await db.query.channels.findFirst({
@@ -688,6 +697,7 @@ export async function addKnowledge(title: string, text: string) {
   const session = await requireSession();
   requireAbility(session, "knowledge.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await assertCanAddKb(session); // lock: batas dokumen knowledge base per paket (admin bypass)
   const res = await fetch(`${ENGINE}/knowledge`, {
     method: "POST",
     headers: {
@@ -769,6 +779,7 @@ export async function createFlow() {
   const session = await requireSession();
   requireAbility(session, "flow.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  requireFeature(session, "automation", "Otomasi"); // lock: fitur otomasi/flow per paket (admin bypass)
   const [row] = await db
     .insert(flows)
     .values({
@@ -938,6 +949,7 @@ export async function createUser(input: {
   if (!name) throw new Error("Nama wajib diisi");
   if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
   if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
+  await assertCanAddAgent(session); // lock: batas anggota tim per paket (admin bypass)
   const passwordHash = await bcrypt.hash(input.password, 10);
   try {
     await db.insert(users).values({
@@ -1300,6 +1312,7 @@ export async function createProduct(input: ProductInput) {
   const session = await requireSession();
   requireAbility(session, "product.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  requireFeature(session, "catalog", "Katalog Produk"); // lock: fitur katalog per paket (admin bypass)
   await db.insert(products).values({ tenantId: session.tenantId, ...normalizeProduct(input) });
   revalidatePath("/products");
   redirect("/products");

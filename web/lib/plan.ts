@@ -1,7 +1,11 @@
 // Konstanta + tipe paket (client-safe, tanpa server-only / db).
-export type TenantPlan = "pro" | "business" | "enterprise";
+// Tier aktif ditawarkan: basic (249k) < pro (449k) < enterprise (749k).
+// 'business' = nilai enum lama (tak ditawarkan lagi) — dipertahankan agar data
+// existing tak pecah. Batas fitur di-enforce server: lib/entitlements.ts.
+export type TenantPlan = "basic" | "pro" | "business" | "enterprise";
 
 export const PLAN_LABEL: Record<TenantPlan, string> = {
+  basic: "Basic",
   pro: "Pro",
   business: "Business",
   enterprise: "Enterprise",
@@ -9,9 +13,10 @@ export const PLAN_LABEL: Record<TenantPlan, string> = {
 
 // Tingkat paket (rendah → tinggi). Dipakai untuk gating fitur per-paket.
 export const PLAN_RANK: Record<TenantPlan, number> = {
-  pro: 0,
-  business: 1,
-  enterprise: 2,
+  basic: 0,
+  pro: 1,
+  business: 2,
+  enterprise: 3,
 };
 
 // True bila paket `current` memenuhi minimal `required`.
@@ -19,11 +24,12 @@ export function planAllows(current: TenantPlan, required: TenantPlan): boolean {
   return PLAN_RANK[current] >= PLAN_RANK[required];
 }
 
-// Kuota pesan outbound/bulan per paket (config produk; null = unlimited).
+// Kuota broadcast/bulan per paket (selaras entitlements; null = unlimited).
 export const PLAN_QUOTA: Record<TenantPlan, number | null> = {
-  pro: 5000,
+  basic: 2000,
+  pro: 10000,
   business: 25000,
-  enterprise: null,
+  enterprise: 50000,
 };
 
 export interface SidebarStats {
