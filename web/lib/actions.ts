@@ -293,6 +293,9 @@ export async function createChannel(input: {
       externalId: input.externalId || null,
       // meta.provider dibaca gateway untuk pilih adapter transport (apico vs Meta langsung).
       meta: input.provider ? { provider: input.provider } : {},
+      // Balas otomatis: unofficial default OFF (nomor pribadi rawan banned bila
+      // auto-reply) — harus di-ON-kan sadar risiko. Channel resmi default ON.
+      autoReplyEnabled: input.type !== "wa_unofficial",
     })
     .returning({ id: channels.id });
 
@@ -341,6 +344,19 @@ export async function listApiCoAccounts(type: ChannelType): Promise<ApiCoAccount
   const session = await requireSession();
   requireAbility(session, "channel.connect");
   return fetchApiCoAccounts(type);
+}
+
+// --- Toggle balas otomatis (flow + AI) per-channel. Engine baca kolom ini di
+// pipeline inbound (OFF → skip decide). Web pemilik tabel channels. ---
+export async function setChannelAutoReply(channelId: string, enabled: boolean) {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  await db
+    .update(channels)
+    .set({ autoReplyEnabled: enabled, updatedAt: sql`now()` })
+    .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
+  revalidatePath("/channels");
 }
 
 // --- Facebook/Instagram OAuth: finalisasi pilih Page → subscribe webhook + simpan channel. ---

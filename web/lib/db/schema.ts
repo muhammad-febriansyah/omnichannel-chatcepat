@@ -73,6 +73,7 @@ export const channels = pgTable("channels", {
 	credentials: jsonb().default({}).notNull(),
 	externalId: text("external_id"),
 	meta: jsonb().default({}).notNull(),
+	autoReplyEnabled: boolean("auto_reply_enabled").default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [

@@ -28,3 +28,8 @@ class Channel(UUIDPkMixin, TimestampMixin, Base):
     meta: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
     )
+    # Balas otomatis (flow + AI) per-channel. Default ON; wa_unofficial di-backfill
+    # OFF (balasan bot dari nomor pribadi rawan banned) — dikontrol toggle di web.
+    auto_reply_enabled: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("true")
+    )

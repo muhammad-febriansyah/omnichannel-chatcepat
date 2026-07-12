@@ -20,6 +20,7 @@ from ..models import Channel, Contact, Conversation, Message
 from ..pipeline.decision import decide
 from ..pipeline.reply import Reply
 from ..repositories import channels, contacts, conversations, messages
+from . import warmup
 
 log = logging.getLogger("engine.inbound")
 
@@ -156,11 +157,20 @@ async def handle(inbound: InboundMessage) -> None:
         tenant_str = str(tenant_id)
         await _publish_message_new(tenant_str, conv.id, inbound_msg, "contact")
 
-        # wa_unofficial (whatsmeow): JANGAN auto-reply. Balasan otomatis dari nomor
-        # pribadi memicu deteksi spam WA → akun dibatasi/banned. Hanya persist +
-        # realtime; agen balas manual. Auto-reply hanya untuk channel resmi.
-        if channel.type == "wa_unofficial":
+        # Balas otomatis (flow + AI) dikontrol per-channel via toggle
+        # auto_reply_enabled. Default: official ON, wa_unofficial OFF (balasan
+        # otomatis dari nomor pribadi memicu deteksi spam WA → rawan banned).
+        # OFF → hanya persist + realtime; agen balas manual.
+        if not channel.auto_reply_enabled:
             return
+        # wa_unofficial dgn auto-reply ON: hormati cap warm-up rolling-24h supaya
+        # volume balasan otomatis tak memicu ban. Cap habis → skip balas (inbound
+        # tetap tersimpan; agen bisa balas manual).
+        if channel.type == "wa_unofficial":
+            left = await warmup.remaining(session, channel, _now())
+            if left is not None and left <= 0:
+                log.info("auto-reply skip: cap warm-up channel %s habis", channel.id)
+                return
 
         # --- DECIDE + REPLY ---
         # decide() bisa menulis (flow state) → txn sendiri, commit sebelum kirim balasan.

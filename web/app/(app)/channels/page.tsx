@@ -10,6 +10,7 @@ import { ActionLink } from "@/components/app/action-link";
 import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { DeleteButton } from "@/components/app/delete-button";
+import { AutoReplyToggle } from "@/components/app/auto-reply-toggle";
 import { disconnectChannel } from "@/lib/actions";
 import { Suspense } from "react";
 import { ConnectToast } from "./connect-toast";
@@ -101,6 +102,7 @@ export default async function ChannelsPage() {
                   </StatusPill>
                 </div>
                 <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
+                  <AutoReplyToggle channelId={c.id} type={c.type} enabled={c.autoReplyEnabled} />
                   {c.type === "wa_unofficial" && c.status !== "connected" && (
                     <ActionLink
                       href={`/channels/${c.id}/pair`}
