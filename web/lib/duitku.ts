@@ -31,7 +31,7 @@ export interface CreateInvoiceResult {
 
 // Buat invoice → balik paymentUrl (halaman bayar Duitku). Signature header SHA256.
 export async function createInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
-  if (!duitkuConfigured()) throw new Error("Duitku belum dikonfigurasi (DUITKU_MERCHANT_CODE / DUITKU_API_KEY)");
+  if (!duitkuConfigured()) throw new Error("Pembayaran belum dikonfigurasi di server");
   const timestamp = Date.now().toString();
   const signature = sha256(MERCHANT + timestamp + API_KEY);
   const res = await fetch(`${BASE}/api/merchant/createInvoice`, {
@@ -61,7 +61,7 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<CreateIn
     paymentUrl?: string;
   };
   if (!res.ok || data.statusCode !== "00" || !data.paymentUrl || !data.reference) {
-    throw new Error(data.statusMessage || `Duitku gagal membuat invoice (${res.status})`);
+    throw new Error(data.statusMessage || `Gagal membuat invoice pembayaran (${res.status})`);
   }
   return { reference: data.reference, paymentUrl: data.paymentUrl };
 }

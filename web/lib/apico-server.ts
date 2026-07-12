@@ -28,7 +28,7 @@ const ENDPOINT: Record<string, string | undefined> = {
 export async function listApiCoAccounts(type: string): Promise<ApiCoAccountsResult> {
   const path = ENDPOINT[type];
   if (!path) return { accounts: [], error: `Tipe channel "${type}" tidak didukung api.co.id` };
-  if (!KEY) return { accounts: [], error: "APICO_API_KEY belum diset di server" };
+  if (!KEY) return { accounts: [], error: "Integrasi WhatsApp belum dikonfigurasi di server" };
   try {
     const res = await fetch(BASE + path, {
       headers: { Authorization: `Bearer ${KEY}` },
@@ -37,8 +37,9 @@ export async function listApiCoAccounts(type: string): Promise<ApiCoAccountsResu
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       const detail = extractErr(safeJson(body)) || truncate(body, 300);
-      const error = `api.co.id ${path}: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`;
-      console.error("[apico] listAccounts gagal:", error);
+      // Log teknikal (host+path) untuk operator; pesan UI tanpa nama vendor.
+      console.error("[apico] listAccounts gagal:", `api.co.id ${path}: HTTP ${res.status}`, detail);
+      const error = `Penyedia WhatsApp menolak (HTTP ${res.status})${detail ? `: ${detail}` : ""}`;
       return { accounts: [], error };
     }
     const json = (await res.json()) as { data?: unknown };
@@ -48,7 +49,7 @@ export async function listApiCoAccounts(type: string): Promise<ApiCoAccountsResu
       .filter((a): a is ApiCoAccount => !!a.externalId);
     return { accounts };
   } catch (e) {
-    const error = e instanceof Error ? e.message : "gagal menghubungi api.co.id";
+    const error = e instanceof Error ? e.message : "gagal menghubungi penyedia WhatsApp";
     console.error("[apico] listAccounts error:", error);
     return { accounts: [], error };
   }
@@ -137,7 +138,7 @@ export type CreateTemplateInput = {
 export async function createApiCoTemplate(
   input: CreateTemplateInput,
 ): Promise<{ id: string; status: string } | { error: string }> {
-  if (!KEY) return { error: "APICO_API_KEY belum diset di server" };
+  if (!KEY) return { error: "Integrasi WhatsApp belum dikonfigurasi di server" };
   try {
     const res = await fetch(`${BASE}/templates`, {
       method: "POST",
@@ -156,13 +157,13 @@ export async function createApiCoTemplate(
     if (!res.ok || !id) return { error: extractErr(json) || `HTTP ${res.status}` };
     return { id: String(id), status: String(json?.data?.status ?? "PENDING").toUpperCase() };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "gagal menghubungi api.co.id" };
+    return { error: e instanceof Error ? e.message : "gagal menghubungi penyedia WhatsApp" };
   }
 }
 
 // POST /templates/:id/submit (kirim ke Meta untuk approval).
 export async function submitApiCoTemplate(id: string): Promise<{ status: string } | { error: string }> {
-  if (!KEY) return { error: "APICO_API_KEY belum diset di server" };
+  if (!KEY) return { error: "Integrasi WhatsApp belum dikonfigurasi di server" };
   try {
     const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}/submit`, {
       method: "POST",
@@ -172,7 +173,7 @@ export async function submitApiCoTemplate(id: string): Promise<{ status: string 
     if (!res.ok) return { error: extractErr(json) || `HTTP ${res.status}` };
     return { status: String(json?.data?.status ?? "PENDING").toUpperCase() };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "gagal menghubungi api.co.id" };
+    return { error: e instanceof Error ? e.message : "gagal menghubungi penyedia WhatsApp" };
   }
 }
 

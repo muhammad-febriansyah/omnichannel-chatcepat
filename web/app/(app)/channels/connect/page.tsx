@@ -99,12 +99,12 @@ export default function ConnectChannelPage() {
         if (!alive) return;
         setAccounts(r.accounts);
         setAccErr(r.error ?? "");
-        if (r.error) gooeyToast.error(`Gagal ambil akun api.co.id: ${r.error}`);
+        if (r.error) gooeyToast.error(`Gagal ambil akun: ${r.error}`);
       })
       .catch((e) => {
         if (!alive) return;
         setAccounts([]);
-        setAccErr(e instanceof Error ? e.message : "Gagal menghubungi api.co.id");
+        setAccErr(e instanceof Error ? e.message : "Gagal menghubungi penyedia WhatsApp");
       })
       .finally(() => alive && setLoadingAcc(false));
     return () => {
@@ -121,7 +121,7 @@ export default function ConnectChannelPage() {
     let credentials: Record<string, string> = creds;
     if (useApiCo) {
       if (!picked) {
-        gooeyToast.error("Pilih akun dari daftar api.co.id");
+        gooeyToast.error("Pilih akun dari daftar");
         return;
       }
       externalId = picked;
@@ -264,19 +264,19 @@ export default function ConnectChannelPage() {
                   <label className="mb-1.5 block text-sm font-medium">Akun {selectedType?.label}</label>
                   {loadingAcc ? (
                     <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" /> Memuat akun dari api.co.id…
+                      <Loader2 className="size-4 animate-spin" /> Memuat akun…
                     </div>
                   ) : accErr ? (
                     <div className="rounded-xl border border-dashed border-red-300 bg-red-50 p-4 text-xs leading-relaxed text-danger dark:border-red-500/30 dark:bg-red-500/10">
-                      <span className="font-medium">Gagal menghubungi api.co.id.</span> {accErr}
+                      <span className="font-medium">Gagal menghubungi penyedia WhatsApp.</span> {accErr}
                       <span className="mt-1 block text-danger/80">
-                        Cek APICO_API_KEY di server &amp; status akun di dashboard api.co.id, lalu muat ulang halaman.
+                        Periksa konfigurasi integrasi di server &amp; status akun kamu, lalu muat ulang halaman.
                       </span>
                     </div>
                   ) : accounts.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10">
-                      Belum ada akun {selectedType?.label} terhubung di api.co.id. Hubungkan dulu di dashboard
-                      api.co.id (Platforms), lalu buka halaman ini lagi.
+                      Belum ada akun {selectedType?.label} yang terhubung. Hubungkan dulu akun kamu, lalu buka
+                      halaman ini lagi.
                     </div>
                   ) : (
                     <div className="space-y-2">

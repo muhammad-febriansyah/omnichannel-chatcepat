@@ -89,7 +89,7 @@ export function TemplateForm({
 
   const kinds: { value: Kind; label: string; desc: string; icon: typeof Zap }[] = [
     { value: "quick_reply", label: "Balasan Cepat", desc: "Canned reply internal, langsung pakai", icon: Zap },
-    { value: "hsm", label: "Template WhatsApp (HSM)", desc: "Disubmit ke Meta via api.co.id untuk approval", icon: FileText },
+    { value: "hsm", label: "Template WhatsApp (HSM)", desc: "Disubmit ke Meta untuk approval", icon: FileText },
   ];
 
   return (

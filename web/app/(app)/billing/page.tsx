@@ -41,7 +41,7 @@ export default async function BillingPage() {
       <PageHeader
         icon={CreditCard}
         title="Tagihan & Paket"
-        description="Pilih paket yang sesuai. Pembayaran aman lewat Duitku."
+        description="Pilih paket yang sesuai. Pembayaran aman & terenkripsi."
       />
 
       {plans.length === 0 ? (
