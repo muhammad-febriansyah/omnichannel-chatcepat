@@ -2,6 +2,8 @@
 package server
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +25,7 @@ type Server struct {
 	WA            *channels.Whatsmeow
 	MetaAppSecret string
 	MetaVerifyTok string
+	ApiCoSecret   string // api.co.id webhook secret (X-Webhook-Signature HMAC-SHA256)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -35,6 +38,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/webhooks/meta/ig", s.handleMessenger) // Instagram DM
 	mux.HandleFunc("/webhooks/meta/fb", s.handleMessenger) // Facebook Messenger
 	mux.HandleFunc("/webhooks/telegram/", s.handleTelegram) // /webhooks/telegram/{channel_id}
+	mux.HandleFunc("/webhooks/apico", s.handleApiCo)        // api.co.id (WA/IG/Messenger)
 	mux.HandleFunc("/channels/", s.handleChannelOps)        // connect-unofficial / qr (stub)
 	if s.WS != nil {
 		mux.Handle("/ws", s.WS)
@@ -151,6 +155,79 @@ func (s *Server) handleMessenger(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// --- api.co.id (WhatsApp + Instagram + Messenger lewat satu REST gateway) ---
+
+// handleApiCo menerima webhook api.co.id. POST saja. Verify X-Webhook-Signature
+// (HMAC-SHA256 body, APICO_WEBHOOK_SECRET) → parse event → resolve channel → publish.
+// message.received → message.inbound; message.{sent,delivered,read,failed} → message.status.
+//
+// Resolusi channel: payload tak selalu memuat id akun bisnis penerima. Bila ada
+// (whatsapp_phone_number_id/page_id/ig id) → cocokkan ke channels.external_id; bila tidak,
+// fallback ke channel apico tunggal untuk type tsb (satu akun api.co.id per type).
+func (s *Server) handleApiCo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if !channels.VerifyApiCoSignature(s.ApiCoSecret, body, r.Header.Get("X-Webhook-Signature")) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	ev, err := channels.ParseApiCoEvent(body)
+	if err != nil {
+		http.Error(w, "parse error", http.StatusBadRequest)
+		return
+	}
+
+	// Status receipt (sent/delivered/read/failed) → message.status. Engine match by
+	// provider_message_id (= message_id api.co.id, sama dgn balikan /messages/send).
+	if st, ok := channels.ApiCoStatus(ev); ok {
+		if _, err := s.Bus.PublishStatus(r.Context(), &st); err != nil {
+			log.Printf("apico publish status gagal: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	parsed, ok := channels.ParseApiCoInbound(ev)
+	if !ok {
+		w.WriteHeader(http.StatusOK) // event tak relevan (echo outbound dll) → abaikan
+		return
+	}
+
+	cid, _, err := s.resolveApiCo(r.Context(), parsed.Inbound.ChannelType, parsed.ExternalID)
+	if err != nil {
+		log.Printf("apico webhook: %v", err)
+		w.WriteHeader(http.StatusOK) // jangan retry tanpa henti
+		return
+	}
+	inb := parsed.Inbound
+	inb.ChannelId = cid
+	inb.EventId = newEventID()
+	inb.DedupKey = cid + ":" + inb.ProviderMessageId
+	if _, err := s.Bus.PublishInbound(r.Context(), &inb); err != nil {
+		log.Printf("apico publish inbound gagal: %v", err)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// resolveApiCo memetakan event masuk → channel_id: prefer id akun bisnis (external_id),
+// fallback channel apico tunggal per type.
+func (s *Server) resolveApiCo(ctx context.Context, t contracts.ChannelType, businessID string) (string, channels.ChannelInfo, error) {
+	if businessID != "" {
+		if cid, info, err := s.Resolver.LookupByExternal(ctx, t, businessID); err == nil {
+			return cid, info, nil
+		}
+	}
+	return s.Resolver.LookupByProvider(ctx, channels.ProviderApiCo, t)
+}
+
 // --- Telegram (channel_id di path) ---
 
 func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +239,18 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	if channelID == "" {
 		http.Error(w, "channel_id wajib", http.StatusBadRequest)
 		return
+	}
+
+	// Verifikasi secret_token (X-Telegram-Bot-Api-Secret-Token) bila channel punya
+	// tg_secret — cegah injeksi pesan palsu ke URL webhook. Legacy tanpa secret = lolos.
+	if info, err := s.Resolver.Lookup(r.Context(), channelID); err == nil {
+		if want := info.Credentials.String("tg_secret"); want != "" {
+			got := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+				http.Error(w, "invalid secret", http.StatusUnauthorized)
+				return
+			}
+		}
 	}
 
 	var upd struct {

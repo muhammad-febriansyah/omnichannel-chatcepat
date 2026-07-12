@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +53,24 @@ async def count_inbound(session: AsyncSession, conversation_id: uuid.UUID) -> in
         .where(
             Message.conversation_id == conversation_id,
             Message.direction == "inbound",
+        )
+    ) or 0
+
+
+async def count_outbound_since(
+    session: AsyncSession, channel_id: uuid.UUID, since: datetime
+) -> int:
+    """Jumlah pesan outbound channel sejak `since` (rolling window anti-banned).
+    Hitung SEMUA outbound (broadcast + balasan 1:1 + AI) — volume total yang
+    memicu ban, bukan broadcast saja.
+    """
+    return await session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.channel_id == channel_id,
+            Message.direction == "outbound",
+            Message.created_at >= since,
         )
     ) or 0
 
@@ -130,6 +149,7 @@ async def add_outbound(
     idempotency_key: str,
     agent_id: uuid.UUID | None = None,
     msg_type: str = "text",
+    media: dict | None = None,
 ) -> Message:
     msg = Message(
         tenant_id=tenant_id,
@@ -140,6 +160,7 @@ async def add_outbound(
         agent_id=agent_id,
         type=msg_type,
         body=body,
+        media=media,
         idempotency_key=idempotency_key,
         status="queued",
     )

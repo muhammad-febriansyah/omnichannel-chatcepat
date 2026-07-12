@@ -3,12 +3,12 @@ import { eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { normalizeWebSettings } from "@/lib/web-settings";
 import { WebSettingsForm } from "@/components/app/web-settings-form";
 
 export default async function WebSettingsPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("billing.tenant");
   let raw: unknown = undefined;
   if (session.tenantId) {
     try {

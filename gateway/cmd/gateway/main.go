@@ -64,16 +64,28 @@ func main() {
 		wa = nil
 	}
 	if wa != nil {
+		// Persist status ban/logout durable ke channels.status (tabel milik web) —
+		// via endpoint internal web, auth SERVICE_TOKEN yang sama dengan web↔engine.
+		// Kosong → deteksi ban tetap jalan (lepas sesi + realtime), cuma tak persist.
+		if sink := channels.NewWebStatusSink(env("WEB_INTERNAL_URL", ""), env("SERVICE_TOKEN", "")); sink != nil {
+			wa.SetStatusSink(sink)
+		}
 		defer wa.Close()
 		go wa.Restore(ctx) // sambung ulang device tersimpan (non-blocking).
 	}
 
-	// Adapter per channel type.
+	// Adapter per channel type. api.co.id (provider "apico") melayani WA/IG/FB lewat
+	// satu REST gateway — dipilih bila channel.meta.provider = "apico".
+	apicoKey := env("APICO_API_KEY", "")
+	apicoBase := env("APICO_BASE_URL", "")
 	registry := channels.NewRegistry(
 		channels.NewTelegram(),
 		channels.NewMetaSender(),
 		channels.NewMessengerSender(contracts.ChannelTypeFacebook),
 		channels.NewMessengerSender(contracts.ChannelTypeInstagram),
+		channels.NewApiCoSender(contracts.ChannelTypeWaOfficial, apicoKey, apicoBase),
+		channels.NewApiCoSender(contracts.ChannelTypeInstagram, apicoKey, apicoBase),
+		channels.NewApiCoSender(contracts.ChannelTypeFacebook, apicoKey, apicoBase),
 		wa,
 	)
 
@@ -90,6 +102,7 @@ func main() {
 		WA:            wa,
 		MetaAppSecret: env("META_APP_SECRET", ""),
 		MetaVerifyTok: env("META_VERIFY_TOKEN", ""),
+		ApiCoSecret:   env("APICO_WEBHOOK_SECRET", ""),
 	}
 
 	httpSrv := &http.Server{Addr: ":8080", Handler: srv.Routes()}

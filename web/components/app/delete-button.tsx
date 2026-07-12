@@ -49,9 +49,9 @@ export function DeleteButton({
       <AlertDialogTrigger
         aria-label={triggerLabel}
         title={triggerLabel}
-        className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger"
+        className="inline-flex h-7 items-center gap-1 rounded-[min(var(--radius-md),12px)] bg-destructive/10 px-2.5 text-[0.8rem] font-medium text-destructive transition-colors hover:bg-destructive/20"
       >
-        <Trash2 className="size-4" />
+        <Trash2 className="size-3.5" /> {triggerLabel}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

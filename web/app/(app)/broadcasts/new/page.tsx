@@ -1,18 +1,24 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, tags as tagsTable, templates } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { channels, tags as tagsTable } from "@/lib/db/schema";
+import { requirePageAbility } from "@/lib/session";
+import { listApiCoTemplates } from "@/lib/apico-server";
 import { BroadcastWizard, type TemplateOpt } from "@/components/app/broadcast-wizard";
 
 export default async function NewBroadcastPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   let chans: { id: string; name: string; type: string }[] = [];
   let tagNames: string[] = [];
   let tmpls: TemplateOpt[] = [];
   if (session.tenantId) {
     try {
+      // Blast HANYA WhatsApp. Messenger/Instagram tak bisa broadcast (kebijakan Meta:
+      // free-form cuma dalam window 24 jam, no cold blast) → jangan tampilkan di picker.
       chans = await db.query.channels.findMany({
-        where: eq(channels.tenantId, session.tenantId),
+        where: and(
+          eq(channels.tenantId, session.tenantId),
+          inArray(channels.type, ["wa_official", "wa_unofficial"]),
+        ),
         columns: { id: true, name: true, type: true },
       });
       const t = await db.query.tags.findMany({
@@ -20,16 +26,9 @@ export default async function NewBroadcastPage() {
         columns: { name: true },
       });
       tagNames = t.map((x) => x.name);
-      // Hanya HSM approved yang boleh dipakai broadcast WA official.
-      const rows = await db.query.templates.findMany({
-        where: and(
-          eq(templates.tenantId, session.tenantId),
-          eq(templates.kind, "hsm"),
-          eq(templates.status, "approved"),
-        ),
-        columns: { name: true, body: true, language: true },
-      });
-      tmpls = rows.map((r) => ({ name: r.name, body: r.body, language: r.language ?? "id" }));
+      // Hanya HSM APPROVED (live api.co.id) yang boleh dipakai broadcast WA official.
+      const rows = await listApiCoTemplates({ status: "APPROVED" });
+      tmpls = rows.map((r) => ({ name: r.name, body: r.body, language: r.language }));
     } catch {
       /* kosong */
     }

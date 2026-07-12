@@ -18,6 +18,7 @@ export interface TenantTableRow {
 }
 
 const PLAN_CLS: Record<string, string> = {
+  basic: "bg-slate-50 text-slate-700",
   pro: "bg-blue-50 text-blue-700",
   business: "bg-violet-50 text-violet-700",
   enterprise: "bg-amber-50 text-amber-700",

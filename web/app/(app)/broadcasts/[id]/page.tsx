@@ -1,18 +1,20 @@
 import { and, eq, sql } from "drizzle-orm";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Send, CheckCheck, XCircle, ShieldOff, Clock } from "lucide-react";
 import { db } from "@/lib/db";
 import { broadcasts, channels } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { cleanIDR, CHANNEL_META, type ChannelType } from "@/lib/format";
+import { ActionLink } from "@/components/app/action-link";
+import { StatusPill } from "@/components/app/status-pill";
+import { SectionCard } from "@/components/app/section-card";
 
-const STATUS_CLS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  scheduled: "bg-blue-50 text-blue-700",
-  running: "bg-amber-50 text-amber-700",
-  done: "bg-emerald-50 text-emerald-700",
-  failed: "bg-red-50 text-red-700",
+const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "red" | "slate"> = {
+  draft: "slate",
+  scheduled: "blue",
+  running: "amber",
+  done: "emerald",
+  failed: "red",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -54,7 +56,7 @@ async function recipientCounts(tenantId: string, broadcastId: string) {
 
 export default async function BroadcastDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requirePageAbility("broadcast.manage");
   if (!session.tenantId) notFound();
 
   const b = await db.query.broadcasts.findFirst({
@@ -88,20 +90,17 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
 
   return (
     <div className="p-6">
-      <Link
-        href="/broadcasts"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
+      <ActionLink href="/broadcasts" variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
         <ArrowLeft className="size-4" /> Kembali ke Broadcast
-      </Link>
+      </ActionLink>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold tracking-tight">{b.name}</h1>
-            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_CLS[b.status] ?? "bg-slate-100"}`}>
+            <StatusPill tone={STATUS_TONE[b.status] ?? "slate"}>
               {STATUS_LABEL[b.status] ?? b.status}
-            </span>
+            </StatusPill>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {chMeta ? `${chMeta.label} · ` : ""}
@@ -127,9 +126,8 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
 
       {/* Progress bar */}
       {total > 0 && (
-        <div className="mt-6 rounded-xl border border-border bg-card p-5">
-          <h2 className="mb-3 text-base font-semibold">Distribusi Pengiriman</h2>
-          <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+        <SectionCard className="mt-6" title="Distribusi Pengiriman">
+          <div className="flex h-3 overflow-hidden rounded-full bg-muted">
             {[
               { v: sent, c: "#10b981" },
               { v: failed, c: "#ef4444" },
@@ -145,18 +143,17 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
             <Legend c="#f59e0b" label={`Skip opt-out ${cleanIDR(skipped)}`} />
             <Legend c="#8b5cf6" label={`Pending ${cleanIDR(pending)}`} />
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {/* Body snapshot */}
-      <div className="mt-6 rounded-xl border border-border bg-card p-5">
-        <h2 className="mb-3 text-base font-semibold">Isi Pesan</h2>
+      <SectionCard className="mt-6" title="Isi Pesan">
         {b.bodySnapshot ? (
           <p className="whitespace-pre-wrap rounded-lg bg-muted/40 p-4 text-sm leading-relaxed text-foreground">{b.bodySnapshot}</p>
         ) : (
           <p className="text-sm text-muted-foreground">{b.templateId ? `Template: ${b.templateId}` : "Tidak ada isi pesan."}</p>
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

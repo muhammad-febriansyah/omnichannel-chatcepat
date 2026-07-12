@@ -12,7 +12,7 @@ from .base import Base, TimestampMixin, UUIDPkMixin, user_role, user_status
 class User(UUIDPkMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    # nullable: super_admin = platform (tenant_id NULL). Lihat docs/prd/03.
+    # nullable: admin = platform (tenant_id NULL); client selalu punya tenant. Lihat docs/prd/03.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.Uuid, sa.ForeignKey("tenants.id", ondelete="CASCADE")
     )
@@ -24,3 +24,4 @@ class User(UUIDPkMixin, TimestampMixin, Base):
         user_status, nullable=False, server_default="invited"
     )
     last_active_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    avatar_url: Mapped[str | None] = mapped_column(sa.Text)

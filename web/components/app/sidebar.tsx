@@ -10,21 +10,29 @@ import {
   Send,
   Workflow,
   Sparkles,
+  Package,
   FileText,
   LayoutDashboard,
   BarChart3,
   Plug,
   UserCog,
   Tag,
+  CreditCard,
   Settings,
   LifeBuoy,
   MessageCircle,
   LogOut,
+  Lock,
+  ShieldCheck,
+  Receipt,
+  Users2,
+  TrendingUp,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type Ability, type Role } from "@/lib/rbac";
-import { type SidebarStats } from "@/lib/plan";
-import { CCLogo } from "@/components/app/charts";
+import { planAllows, PLAN_LABEL, type SidebarStats, type TenantPlan } from "@/lib/plan";
+import { BrandLogo } from "@/components/app/brand-logo";
 
 type Item = {
   href: string;
@@ -33,6 +41,9 @@ type Item = {
   badge?: number;
   dot?: boolean;
   ability?: Ability; // undefined = selalu tampil
+  minPlan?: TenantPlan; // paket minimal; di bawahnya item dikunci (bukan disembunyikan)
+  tenantOnly?: boolean; // hanya client; admin platform disembunyikan (mis. langganan/billing)
+  hideForClient?: boolean; // sembunyikan dari client; admin (impersonasi) tetap lihat utk support
 };
 
 const SECTIONS: { title: string; items: Item[] }[] = [
@@ -42,6 +53,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, ability: "report.view" },
       { href: "/inbox", label: "Inbox", icon: Inbox, ability: "conversation.view_assigned" },
       { href: "/contacts", label: "Kontak", icon: Users, ability: "contact.view" },
+      { href: "/products", label: "Produk", icon: Package, ability: "product.manage" },
       { href: "/broadcasts", label: "Broadcast", icon: Send, ability: "broadcast.manage" },
       { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage" },
       { href: "/flows", label: "Otomasi", icon: Workflow, ability: "flow.manage" },
@@ -50,18 +62,33 @@ const SECTIONS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Analitik",
-    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view" }],
+    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view", hideForClient: true }],
   },
   {
     title: "Pengaturan",
     items: [
       { href: "/channels", label: "Channel", icon: Plug, dot: true, ability: "channel.view" },
-      { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage" },
-      { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage" },
-      { href: "/settings", label: "Pengaturan", icon: Settings },
+      { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage", hideForClient: true },
+      { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage", hideForClient: true },
+      { href: "/billing", label: "Tagihan & Paket", icon: CreditCard, ability: "billing.tenant", tenantOnly: true },
+      { href: "/settings", label: "Pengaturan", icon: Settings, hideForClient: true },
     ],
   },
 ];
+
+// Section khusus admin platform (god-mode) — konsol platform, ditaruh paling atas.
+const PLATFORM_SECTION: { title: string; items: Item[] } = {
+  title: "Platform",
+  items: [
+    { href: "/admin", label: "Ringkasan & Tenant", icon: ShieldCheck },
+    { href: "/admin/analytics", label: "Analitik", icon: TrendingUp },
+    { href: "/admin/transactions", label: "Transaksi", icon: Receipt },
+    { href: "/admin/users", label: "Pengguna", icon: Users2 },
+    { href: "/admin/activity", label: "Aktivitas", icon: Activity },
+    { href: "/admin/plans", label: "Paket", icon: Tag },
+    { href: "/admin/settings", label: "Pengaturan", icon: Settings },
+  ],
+};
 
 export type SupportContact = { whatsapp?: string; phone?: string; email?: string };
 
@@ -70,18 +97,40 @@ export function Sidebar({
   role,
   stats,
   support,
+  logoUrl,
+  siteName,
+  impersonating = false,
 }: {
   workspaceName?: string;
   collapsed?: boolean;
   role: Role;
   stats: SidebarStats;
   support?: SupportContact;
+  logoUrl?: string;
+  siteName?: string;
+  impersonating?: boolean;
 }) {
   const pathname = usePathname();
-  const sections = SECTIONS.map((sec) => ({
-    ...sec,
-    items: sec.items.filter((it) => !it.ability || can({ role }, it.ability)),
-  })).filter((sec) => sec.items.length > 0);
+  const isPlatformAdmin = role === "admin";
+  // admin platform: default HANYA konsol platform (tracking tenant, paket). Menu
+  // operasional omnichannel disembunyikan — itu ranah tenant. Tampil hanya saat
+  // admin "masuk sebagai tenant" (impersonasi) untuk support.
+  const baseSections = isPlatformAdmin
+    ? impersonating
+      ? SECTIONS
+      : [PLATFORM_SECTION]
+    : SECTIONS;
+  // Filter per-role (hide), lalu tandai `locked` per-paket (tampil tapi terkunci).
+  const sections = baseSections
+    .map((sec) => ({
+      ...sec,
+      items: sec.items
+        .filter((it) => !it.ability || can({ role }, it.ability))
+        .filter((it) => !(isPlatformAdmin && it.tenantOnly)) // admin: sembunyikan menu langganan
+        .filter((it) => !(it.hideForClient && !isPlatformAdmin)) // client: sembunyikan; admin impersonasi tetap lihat
+        .map((it) => ({ ...it, locked: !isPlatformAdmin && it.minPlan ? !planAllows(stats.plan, it.minPlan) : false })),
+    }))
+    .filter((sec) => sec.items.length > 0);
 
   // Aktif = href dengan prefix-match terpanjang (hindari /settings ikut aktif di /settings/users).
   const activeHref = sections
@@ -110,9 +159,10 @@ export function Sidebar({
         collapsed ? "w-[72px] p-2.5" : "w-60 p-4",
       )}
     >
-      {/* Brand */}
+      {/* Brand — logo dari web_settings tenant; fallback CCLogo. Collapsed pakai ikon (logo landscape tak muat). */}
       <div className={cn("pt-1", collapsed ? "flex justify-center" : "px-2")}>
-        <CCLogo variant="dark" size={30} withWordmark={!collapsed} />
+        {/* Sama dgn login: logo upload tenant (web_settings) → img; fallback CCLogo "ChatCepat". */}
+        <BrandLogo logoUrl={logoUrl} siteName={siteName} variant="dark" size={30} withWordmark={!collapsed} />
       </div>
 
       {/* Nav */}
@@ -125,8 +175,30 @@ export function Sidebar({
               </div>
             )}
             {sec.items.map((it) => {
-              const active = it.href === activeHref;
+              const active = it.href === activeHref && !it.locked;
               const Icon = it.icon;
+
+              // Terkunci: paket tenant di bawah minPlan. Tampil abu-abu, klik → /billing (upgrade).
+              if (it.locked) {
+                const upsell = `Fitur paket ${PLAN_LABEL[it.minPlan!]} — klik untuk upgrade`;
+                return (
+                  <Link
+                    key={it.href}
+                    href="/billing"
+                    title={upsell}
+                    aria-label={`${it.label} (terkunci, butuh paket ${PLAN_LABEL[it.minPlan!]})`}
+                    className={cn(
+                      "relative flex items-center rounded-lg text-[13.5px] font-medium text-muted-foreground/50 transition-colors hover:bg-slate-100 hover:text-muted-foreground",
+                      collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
+                    )}
+                  >
+                    <Icon className="size-5 shrink-0" strokeWidth={1.75} />
+                    {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
+                    <Lock className={cn("size-3.5 shrink-0", collapsed && "absolute right-1.5 top-1.5")} />
+                  </Link>
+                );
+              }
+
               return (
                 <Link
                   key={it.href}

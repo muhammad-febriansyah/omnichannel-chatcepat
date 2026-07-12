@@ -9,6 +9,7 @@ Semua I/O channel hidup di sini. Baca root `CLAUDE.md` + `docs/prd/04-channels.m
 - Satu goroutine per koneksi WA unofficial. Webhook Meta lewat HTTP handler biasa.
 - Graceful reconnect + backoff untuk whatsmeow.
 - Throttle outbound unofficial (jeda acak) — rawan banned.
+- **Deteksi ban/logout unofficial.** Event `events.PermanentDisconnect` (LoggedOut/TemporaryBan/ConnectFailure/ClientOutdated/StreamReplaced) → lepas sesi (stop kirim) + publish realtime `channel.status`. Durable `channels.status` ditulis web (gateway tak sentuh tabel domain).
 
 ## Adapter pattern
 

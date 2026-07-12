@@ -1,17 +1,17 @@
 import { and, desc, eq, ne } from "drizzle-orm";
-import Link from "next/link";
-import { UserPlus } from "lucide-react";
+import { UserPlus, UsersRound } from "lucide-react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { requireSession } from "@/lib/session";
+import { requirePageAbility } from "@/lib/session";
 import { UsersTable, type UserRow } from "@/components/app/users-table";
 import { PageHeader } from "@/components/app/page-header";
+import { ActionLink } from "@/components/app/action-link";
 
 async function load(tenantId: string | null, selfId: string): Promise<UserRow[]> {
   if (!tenantId) return [];
   try {
     const rows = await db.query.users.findMany({
-      where: and(eq(users.tenantId, tenantId), ne(users.role, "super_admin")),
+      where: and(eq(users.tenantId, tenantId), ne(users.role, "admin")),
       orderBy: [desc(users.createdAt)],
       limit: 200,
     });
@@ -29,23 +29,19 @@ async function load(tenantId: string | null, selfId: string): Promise<UserRow[]>
 }
 
 export default async function UsersPage() {
-  const session = await requireSession();
+  const session = await requirePageAbility("user.manage");
   const rows = await load(session.tenantId, session.id);
 
   return (
     <div className="p-6">
       <PageHeader
+        icon={UsersRound}
         title="Tim"
         description={`${rows.length} anggota`}
         actions={
-          <>
-            <Link
-              href="/settings/users/new"
-              className="flex items-center gap-2 rounded-lg bg-brand-blue px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              <UserPlus className="size-4" /> Undang Anggota
-            </Link>
-          </>
+          <ActionLink href="/settings/users/new">
+            <UserPlus className="size-4" /> Undang Anggota
+          </ActionLink>
         }
       />
 

@@ -1,4 +1,4 @@
-import { pgTable, varchar, unique, uuid, text, jsonb, timestamp, foreignKey, index, uniqueIndex, integer, vector, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, varchar, unique, uuid, text, jsonb, timestamp, foreignKey, index, uniqueIndex, integer, bigint, boolean, vector, pgEnum } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const broadcastRecipientStatus = pgEnum("broadcast_recipient_status", ['pending', 'sent', 'delivered', 'failed', 'skipped_optout'])
@@ -15,13 +15,14 @@ export const messageDirection = pgEnum("message_direction", ['inbound', 'outboun
 export const messageSender = pgEnum("message_sender", ['contact', 'bot', 'agent', 'system'])
 export const messageStatus = pgEnum("message_status", ['queued', 'sent', 'delivered', 'read', 'failed'])
 export const messageType = pgEnum("message_type", ['text', 'image', 'file', 'template', 'interactive'])
+export const orderStatus = pgEnum("order_status", ['pending', 'paid', 'failed', 'expired'])
 export const optInSource = pgEnum("opt_in_source", ['import', 'form', 'click_to_chat', 'qr', 'inbound'])
 export const optInStatus = pgEnum("opt_in_status", ['opted_in', 'opted_out', 'unknown'])
 export const templateKind = pgEnum("template_kind", ['hsm', 'quick_reply'])
 export const templateStatus = pgEnum("template_status", ['draft', 'approved', 'rejected'])
 export const tenantPlan = pgEnum("tenant_plan", ['pro', 'business', 'enterprise'])
 export const tenantStatus = pgEnum("tenant_status", ['active', 'suspended'])
-export const userRole = pgEnum("user_role", ['super_admin', 'admin', 'supervisor', 'agent'])
+export const userRole = pgEnum("user_role", ['admin', 'client'])
 export const userStatus = pgEnum("user_status", ['active', 'invited', 'disabled'])
 
 
@@ -50,6 +51,7 @@ export const users = pgTable("users", {
 	passwordHash: text("password_hash").notNull(),
 	role: userRole().notNull(),
 	status: userStatus().default('invited').notNull(),
+	avatarUrl: text("avatar_url"),
 	lastActiveAt: timestamp("last_active_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -71,6 +73,7 @@ export const channels = pgTable("channels", {
 	credentials: jsonb().default({}).notNull(),
 	externalId: text("external_id"),
 	meta: jsonb().default({}).notNull(),
+	autoReplyEnabled: boolean("auto_reply_enabled").default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -398,4 +401,81 @@ export const auditLogs = pgTable("audit_logs", {
 			foreignColumns: [users.id],
 			name: "audit_logs_actor_id_fkey"
 		}).onDelete("set null"),
+]);
+
+export const plans = pgTable("plans", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tier: tenantPlan().default('pro').notNull(),
+	name: text().notNull(),
+	slug: text().notNull(),
+	priceIdr: bigint("price_idr", { mode: 'number' }).default(0).notNull(),
+	period: text().default('month').notNull(),
+	quota: integer(),
+	description: text(),
+	features: jsonb().$type<string[]>().default([]).notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	highlight: boolean().default(false).notNull(),
+	sortOrder: integer("sort_order").default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_plan_slug").on(table.slug),
+	index("idx_plan_active").on(table.isActive, table.sortOrder),
+]);
+
+export const orders = pgTable("orders", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	planId: uuid("plan_id"),
+	planName: text("plan_name").notNull(),
+	tier: tenantPlan().notNull(),
+	amountIdr: bigint("amount_idr", { mode: 'number' }).notNull(),
+	merchantOrderId: text("merchant_order_id").notNull(),
+	status: orderStatus().default('pending').notNull(),
+	duitkuReference: text("duitku_reference"),
+	paymentUrl: text("payment_url"),
+	paymentMethod: text("payment_method"),
+	customerName: text("customer_name"),
+	customerEmail: text("customer_email"),
+	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
+	raw: jsonb().default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_order_merchant_order_id").on(table.merchantOrderId),
+	index("idx_order_tenant").on(table.tenantId, table.createdAt),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "orders_tenant_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.planId],
+		foreignColumns: [plans.id],
+		name: "orders_plan_id_fkey"
+	}).onDelete("set null"),
+]);
+
+// Katalog produk tenant (DDL milik engine: migration 0007_products). Sumber balasan
+// otomatis: node flow send_catalog + konteks AI. Uang = BIGINT rupiah penuh.
+export const products = pgTable("products", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	description: text(),
+	priceIdr: bigint("price_idr", { mode: 'number' }).default(0).notNull(),
+	sku: text(),
+	stock: integer().default(0).notNull(),
+	category: text(),
+	photos: text().array().default([]).notNull(),
+	active: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_product_lookup").on(table.tenantId, table.active, table.category),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "products_tenant_id_fkey"
+	}).onDelete("cascade"),
 ]);

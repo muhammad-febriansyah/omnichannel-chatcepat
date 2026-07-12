@@ -1,0 +1,150 @@
+import { redirect } from "next/navigation";
+import { Check, Sparkles, Crown, CreditCard, Receipt } from "lucide-react";
+import { requirePageAbility } from "@/lib/session";
+import { can } from "@/lib/rbac";
+import { listActivePlans, listOrders, startCheckout } from "@/lib/billing-actions";
+import { PLAN_LABEL } from "@/lib/plan";
+import { rupiah } from "@/lib/format";
+import { PageHeader } from "@/components/app/page-header";
+import { StatusPill, type PillTone } from "@/components/app/status-pill";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+// Status order → label + warna pill (id).
+const ORDER_STATUS: Record<string, { label: string; tone: PillTone }> = {
+  paid: { label: "Lunas", tone: "emerald" },
+  pending: { label: "Menunggu", tone: "amber" },
+  failed: { label: "Gagal", tone: "red" },
+  expired: { label: "Kadaluarsa", tone: "red" },
+};
+
+function tglWaktu(v: string | Date): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(v));
+}
+
+export default async function BillingPage() {
+  const session = await requirePageAbility("billing.tenant");
+  // admin platform tidak berlangganan — kelola paket di konsol platform.
+  if (session.isPlatformAdmin) redirect("/admin/plans");
+  const [plans, orders] = await Promise.all([listActivePlans(), listOrders()]);
+  const canBuy = can(session, "billing.tenant");
+
+  return (
+    <div className="p-6">
+      <PageHeader
+        icon={CreditCard}
+        title="Tagihan & Paket"
+        description="Pilih paket yang sesuai. Pembayaran aman & terenkripsi."
+      />
+
+      {plans.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card py-16 text-center text-sm text-muted-foreground">
+          Belum ada paket tersedia. Hubungi admin.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {plans.map((p) => (
+            <div
+              key={p.id}
+              className={cn(
+                "relative flex flex-col rounded-2xl border bg-card p-6 transition",
+                p.highlight ? "border-brand-blue ring-2 ring-brand-blue/15 shadow-lg" : "border-border",
+              )}
+            >
+              {p.highlight && (
+                <span className="absolute -top-3 left-6 inline-flex items-center gap-1 rounded-full bg-brand-blue px-2.5 py-1 text-[11px] font-semibold text-white">
+                  <Sparkles className="size-3" /> Populer
+                </span>
+              )}
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-foreground">{p.name}</h3>
+                <StatusPill tone="slate">{PLAN_LABEL[p.tier as keyof typeof PLAN_LABEL] ?? p.tier}</StatusPill>
+              </div>
+              {p.description && <p className="mt-1 text-sm text-muted-foreground">{p.description}</p>}
+
+              <div className="mt-4 flex items-end gap-1">
+                <span className="text-3xl font-bold tracking-tight text-brand-navy dark:text-foreground">
+                  {p.priceIdr === 0 ? "Gratis" : rupiah(p.priceIdr)}
+                </span>
+                {p.priceIdr > 0 && (
+                  <span className="mb-1 text-sm text-muted-foreground">/{p.period === "year" ? "tahun" : "bulan"}</span>
+                )}
+              </div>
+
+              <ul className="mt-5 flex-1 space-y-2.5 text-sm">
+                {(p.features ?? []).map((f, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-success" />
+                    <span className="text-foreground">{f}</span>
+                  </li>
+                ))}
+                {p.quota != null && (
+                  <li className="flex items-start gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-success" />
+                    <span className="text-foreground">{p.quota.toLocaleString("id-ID")} pesan/bulan</span>
+                  </li>
+                )}
+              </ul>
+
+              <form action={startCheckout.bind(null, p.id)} className="mt-6">
+                <Button type="submit" size="lg" disabled={!canBuy} variant={p.highlight ? "default" : "outline"} className="w-full">
+                  <Crown className="size-4" /> {p.priceIdr === 0 ? "Pilih paket" : "Beli paket"}
+                </Button>
+              </form>
+              {!canBuy && <p className="mt-2 text-center text-xs text-muted-foreground">Hanya admin yang bisa membeli paket.</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Riwayat transaksi (client) */}
+      <section className="mt-10">
+        <div className="mb-3 flex items-center gap-2">
+          <Receipt className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">Riwayat Transaksi</h2>
+        </div>
+
+        {orders.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card py-12 text-center text-sm text-muted-foreground">
+            Belum ada transaksi.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3 font-medium">Tanggal</th>
+                  <th className="px-4 py-3 font-medium">Paket</th>
+                  <th className="px-4 py-3 font-medium">Jumlah</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Order ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => {
+                  const st = ORDER_STATUS[o.status] ?? { label: o.status, tone: "slate" as PillTone };
+                  return (
+                    <tr key={o.id} className="border-b border-border last:border-0">
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{tglWaktu(o.createdAt)}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">{o.planName}</td>
+                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-foreground">{rupiah(o.amountIdr)}</td>
+                      <td className="px-4 py-3"><StatusPill tone={st.tone}>{st.label}</StatusPill></td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{o.merchantOrderId}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

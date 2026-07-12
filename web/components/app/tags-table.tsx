@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteButton } from "@/components/app/delete-button";
+import { EditButton } from "@/components/app/action-button";
 import { deleteTag } from "@/lib/actions";
 
 export interface TagRow {
@@ -38,15 +37,8 @@ const columns: ColumnDef<TagRow>[] = [
     header: () => <span className="sr-only">Aksi</span>,
     enableSorting: false,
     cell: ({ row }) => (
-      <div className="flex items-center justify-end gap-1">
-        <Link
-          href={`/tags/${row.original.id}/edit`}
-          aria-label="Edit tag"
-          title="Edit"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-brand-blue"
-        >
-          <Pencil className="size-4" />
-        </Link>
+      <div className="flex items-center justify-end gap-1.5">
+        <EditButton href={`/tags/${row.original.id}/edit`} />
         <DeleteButton
           onConfirm={() => deleteTag(row.original.id)}
           title="Hapus tag?"
@@ -57,7 +49,6 @@ const columns: ColumnDef<TagRow>[] = [
             </>
           }
           successMessage="Tag dihapus"
-          triggerLabel="Hapus tag"
         />
       </div>
     ),

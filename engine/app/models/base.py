@@ -46,9 +46,9 @@ def pg_enum(*values: str, name: str) -> ENUM:
 
 
 # --- ENUM domain (lihat docs/prd/02, 03, 05) ---
-tenant_plan = pg_enum("pro", "business", "enterprise", name="tenant_plan")
+tenant_plan = pg_enum("basic", "pro", "business", "enterprise", name="tenant_plan")
 tenant_status = pg_enum("active", "suspended", name="tenant_status")
-user_role = pg_enum("super_admin", "admin", "supervisor", "agent", name="user_role")
+user_role = pg_enum("admin", "client", name="user_role")
 user_status = pg_enum("active", "invited", "disabled", name="user_status")
 channel_type = pg_enum(
     "wa_official", "wa_unofficial", "instagram", "facebook", "telegram", name="channel_type"
@@ -85,6 +85,7 @@ broadcast_recipient_status = pg_enum(
 )
 template_kind = pg_enum("hsm", "quick_reply", name="template_kind")
 template_status = pg_enum("draft", "approved", "rejected", name="template_status")
+order_status = pg_enum("pending", "paid", "failed", "expired", name="order_status")
 
 # Nama semua ENUM — dipakai migration untuk create/drop type berurutan.
 ENUM_NAMES = [
@@ -93,5 +94,5 @@ ENUM_NAMES = [
     "conversation_handler", "message_direction", "message_sender", "message_type",
     "message_status", "flow_status", "flow_trigger", "knowledge_source_type",
     "knowledge_status", "broadcast_status", "broadcast_recipient_status",
-    "template_kind", "template_status",
+    "template_kind", "template_status", "order_status",
 ]

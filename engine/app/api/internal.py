@@ -11,10 +11,13 @@ from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
 from ..services.broadcast import dispatch, run_broadcast
 from ..services.conversation import (
+    DailyCapReached,
+    ServiceWindowClosed,
     assign_conversation,
     send_agent_reply,
     set_handler,
     set_status,
+    start_conversation,
 )
 
 router = APIRouter(prefix="/internal/v1")
@@ -54,7 +57,11 @@ async def broadcasts_run(
     """Bangun recipients (guard opt_in) lalu dispatch di background (throttle)."""
     _auth(x_service_token)
     _require(x_actor_role, "broadcast.manage")
-    result = await run_broadcast(broadcast_id, _tenant(x_tenant_id))
+    try:
+        result = await run_broadcast(broadcast_id, _tenant(x_tenant_id))
+    except ValueError as e:
+        # Channel non-WA (Messenger/IG) / broadcast tak ada → pesan jelas, bukan 500.
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if result.get("status") == "running":
         background.add_task(dispatch, broadcast_id)
     return {"data": result}
@@ -78,9 +85,60 @@ async def conversation_reply(
     _require(x_actor_role, "conversation.takeover")
     if not payload.body.strip():
         raise HTTPException(status_code=422, detail="pesan kosong")
-    result = await send_agent_reply(
-        conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
-    )
+    try:
+        result = await send_agent_reply(
+            conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
+        )
+    except ServiceWindowClosed as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"data": result}
+
+
+class StartConversationIn(BaseModel):
+    channel_id: uuid.UUID
+    phone: str
+    name: str | None = None
+    type: str = "text"  # "text" | "template"
+    body: str | None = None
+    template_name: str | None = None
+    template_lang: str = "id"
+    agent_id: uuid.UUID | None = None
+
+
+@router.post("/conversations/start")
+async def conversation_start(
+    payload: StartConversationIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
+) -> dict:
+    """Mulai percakapan baru ke 1 nomor (kirim pesan pertama). Butuh conversation.takeover."""
+    _auth(x_service_token)
+    _require(x_actor_role, "conversation.takeover")
+    if payload.type == "text" and not (payload.body and payload.body.strip()):
+        raise HTTPException(status_code=422, detail="pesan kosong")
+    if payload.type == "template" and not payload.template_name:
+        raise HTTPException(status_code=422, detail="template wajib dipilih")
+    try:
+        result = await start_conversation(
+            _tenant(x_tenant_id),
+            payload.channel_id,
+            payload.phone,
+            name=payload.name,
+            msg_type=payload.type,
+            body=payload.body.strip() if payload.body else None,
+            template_name=payload.template_name,
+            template_lang=payload.template_lang,
+            agent_id=payload.agent_id,
+        )
+    except DailyCapReached as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"data": result}
 
 
@@ -183,6 +241,35 @@ async def knowledge_create(
     return {"data": {"document_id": str(doc_id), "chunks": n}}
 
 
+@router.delete("/knowledge/{document_id}")
+async def knowledge_delete(
+    document_id: uuid.UUID,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
+) -> dict:
+    """Hapus dokumen KB + chunks (FK ondelete cascade). knowledge.manage + tenant scope."""
+    _auth(x_service_token)
+    _require(x_actor_role, "knowledge.manage")
+    from sqlalchemy import delete as sa_delete
+
+    from ..db import AsyncSessionLocal
+    from ..models import KnowledgeDocument
+
+    tenant = _tenant(x_tenant_id)
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            res = await session.execute(
+                sa_delete(KnowledgeDocument).where(
+                    KnowledgeDocument.id == document_id,
+                    KnowledgeDocument.tenant_id == tenant,
+                )
+            )
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="dokumen tidak ada")
+    return {"data": {"deleted": str(document_id)}}
+
+
 # --- AI agent preview (06) ---
 class PreviewIn(BaseModel):
     tenant_id: uuid.UUID
@@ -222,3 +309,12 @@ async def ai_preview(
         system += f"\n\nPengetahuan (jawab hanya dari sini):\n{kb}"
     answer = await provider.complete(system, payload.message)
     return {"data": {"enabled": True, "answer": answer, "kb_used": bool(kb)}}
+
+
+@router.get("/ai-agent/status")
+async def ai_status(x_service_token: str | None = Header(default=None)) -> dict:
+    """Status AI: apakah LLM provider terkonfigurasi (env engine). Untuk indikator UI."""
+    _auth(x_service_token)
+    from ..ai.llm import get_provider
+
+    return {"data": {"enabled": get_provider() is not None}}

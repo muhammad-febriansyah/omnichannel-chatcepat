@@ -2,6 +2,11 @@ import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "./rbac";
 
 export const SESSION_COOKIE = "cc_session";
+// Tenant yang sedang "dilihat" admin platform (god-mode). Hanya admin yang pakai.
+export const ACTING_TENANT_COOKIE = "cc_acting_tenant";
+// Mode impersonasi: admin platform sedang masuk sebagai tenant (operasikan inbox dll).
+// Berisi tenantId target. Tanpa cookie ini, admin hanya lihat konsol platform.
+export const IMPERSONATE_COOKIE = "cc_impersonate";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 hari
 
 export interface SessionPayload {
@@ -10,10 +15,20 @@ export interface SessionPayload {
   tenantId: string | null;
   name: string;
   email: string;
+  avatarUrl?: string | null;
 }
 
+const DEV_SECRET = "dev-secret-change-me-in-production";
+
 function secret(): Uint8Array {
-  const s = process.env.NEXTAUTH_SECRET || "dev-secret-change-me-in-production";
+  const s = process.env.NEXTAUTH_SECRET;
+  // Prod WAJIB set secret kuat — fallback hardcoded = JWT bisa dipalsu. Fail-hard.
+  if (!s || s === DEV_SECRET) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_SECRET wajib di-set (string acak ≥32 char) di production");
+    }
+    return new TextEncoder().encode(DEV_SECRET);
+  }
   return new TextEncoder().encode(s);
 }
 
@@ -36,3 +51,25 @@ export async function verifySession(token: string | undefined): Promise<SessionP
 }
 
 export const COOKIE_MAX_AGE = MAX_AGE;
+
+// Domain cookie lintas-subdomain (mis. ".chatcepat.id"). Wajib di prod supaya sesi
+// tetap kebawa saat OAuth Meta redirect balik ke host berbeda (apex vs www vs app.*).
+// Kosong = host-only (dev/localhost).
+export const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+
+// Opsi standar cookie auth (set). maxAge default = sesi 7 hari.
+export function authCookieOptions(maxAge: number = MAX_AGE) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    domain: COOKIE_DOMAIN,
+    maxAge,
+  };
+}
+
+// Hapus cookie auth — path & domain HARUS sama dgn saat set, else tak terhapus.
+export function authCookieDelete(name: string) {
+  return { name, path: "/", domain: COOKIE_DOMAIN };
+}

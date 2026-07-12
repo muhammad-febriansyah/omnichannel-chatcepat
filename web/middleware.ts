@@ -9,6 +9,7 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
   { prefix: "/settings/users", ability: "user.manage" },
   { prefix: "/settings/business-hours", ability: "flow.manage" },
   { prefix: "/settings/web", ability: "billing.tenant" },
+  { prefix: "/billing", ability: "billing.tenant" },
   { prefix: "/contacts", ability: "contact.view" },
   { prefix: "/tags", ability: "contact.manage" },
   { prefix: "/templates", ability: "broadcast.manage" },
@@ -22,9 +23,8 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
 
 // Landing aman per-role (pasti punya ability halaman tujuan → tidak loop).
 function landingFor(role: Role): string {
-  if (role === "super_admin") return "/admin";
-  if (role === "agent") return "/inbox";
-  return "/dashboard";
+  if (role === "admin") return "/admin"; // admin platform → konsol platform
+  return "/dashboard"; // client → dashboard tenant
 }
 
 // Gate admin panel: wajib login + cek ability per halaman.
@@ -32,28 +32,30 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;
-  const isLogin = path === "/login";
-  // Publik tanpa login: form opt-in + aset upload (logo/favicon tampil di login/opt-in).
-  const isPublic = path.startsWith("/opt-in/") || path.startsWith("/uploads/");
+  const isAuthPage = path === "/login" || path === "/register";
+  // Publik tanpa login: landing (/), form opt-in, aset upload, callback Duitku (server-to-server).
+  const isPublic =
+    path === "/" ||
+    path.startsWith("/opt-in/") ||
+    path.startsWith("/uploads/") ||
+    path.startsWith("/api/duitku/") ||
+    path.startsWith("/api/meta/");
 
   if (isPublic) return NextResponse.next();
 
-  if (!valid && !isLogin) {
+  if (!valid && !isAuthPage) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (valid && isLogin) {
+  if (valid && isAuthPage) {
     return NextResponse.redirect(new URL(landingFor(valid.role), req.url));
   }
 
   // Pisah bidang platform vs tenant.
   if (valid) {
     const isPlatform = path === "/admin" || path.startsWith("/admin/");
-    // super_admin hanya di /admin; selain itu lempar ke /admin.
-    if (valid.role === "super_admin" && !isPlatform) {
-      return NextResponse.redirect(new URL("/admin", req.url));
-    }
-    // Role tenant tidak boleh masuk /admin.
-    if (valid.role !== "super_admin" && isPlatform) {
+    // admin platform god-mode: boleh ke semua halaman (platform + operasional tenant).
+    // client tidak boleh masuk /admin.
+    if (valid.role !== "admin" && isPlatform) {
       return NextResponse.redirect(new URL(landingFor(valid.role), req.url));
     }
 
@@ -73,5 +75,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.svg|.*\\.png).*)"],
 };

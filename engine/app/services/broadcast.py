@@ -12,20 +12,26 @@ import asyncio
 import logging
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ..bus import publish_outbound
 from ..config import (
     BROADCAST_BATCH,
+    BROADCAST_REST_EVERY,
+    BROADCAST_REST_MAX_S,
+    BROADCAST_REST_MIN_S,
     THROTTLE_OFFICIAL_S,
     THROTTLE_UNOFFICIAL_MAX_S,
     THROTTLE_UNOFFICIAL_MIN_S,
+    WARMUP_DAILY_CAPS,
+    WARMUP_WINDOW_S,
 )
 from ..contracts.events import OutboundCommand, Party, Template
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..models import Broadcast, BroadcastRecipient, Channel, Contact
 from ..repositories import broadcasts, channels, conversations, messages
+from . import warmup
 
 log = logging.getLogger("engine.broadcast")
 
@@ -39,6 +45,17 @@ async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = N
             raise ValueError(f"broadcast {broadcast_id} tidak ada")
         if b.status not in ("draft", "scheduled"):
             return {"status": b.status, "skipped": True}
+
+        # Blast HANYA WhatsApp. Messenger/Instagram: kebijakan Meta hanya izinkan
+        # free-form dalam window 24 jam (no cold blast) + MessengerSender pakai
+        # messaging_type RESPONSE → di luar window ditolak provider. Tolak tegas di
+        # sini, jangan biarkan jadi antrean yang pasti gagal diam-diam.
+        channel = await channels.get_by_id(session, b.channel_id)
+        if channel is None or channel.type not in ("wa_official", "wa_unofficial"):
+            raise ValueError(
+                "Broadcast hanya didukung untuk channel WhatsApp. Messenger/Instagram "
+                "tidak bisa blast (kebijakan Meta: hanya balasan dalam window 24 jam)."
+            )
 
         contacts = await broadcasts.match_contacts(session, b.tenant_id, b.audience_filter)
         pending = skipped = 0
@@ -66,6 +83,12 @@ def _throttle_seconds(channel: Channel | None) -> float:
     if channel is not None and channel.type == "wa_unofficial":
         return random.uniform(THROTTLE_UNOFFICIAL_MIN_S, THROTTLE_UNOFFICIAL_MAX_S)
     return THROTTLE_OFFICIAL_S
+
+
+def _daily_cap(channel: Channel, now: datetime) -> int:
+    """Cap outbound/rolling-24h sesuai umur channel (warmup). 0 = nonaktif.
+    Sumber tunggal di services.warmup (dipakai broadcast + kirim 1:1)."""
+    return warmup.daily_cap(channel, now)
 
 
 def _build_command(
@@ -105,7 +128,29 @@ async def dispatch(
                 return {"skipped": True}
             channel = await channels.get_by_id(session, b.channel_id)
         mtype = "template" if (channel and channel.type == "wa_official" and b.template_id) else "text"
+        is_unofficial = channel is not None and channel.type == "wa_unofficial"
 
+        # Warmup + daily cap (unofficial, throttle default). cap_remaining None =
+        # tanpa batas. Saat habis → pause: sisakan recipient pending, status tetap
+        # running; worker re-invoke dispatch tiap poll, lanjut saat window longgar.
+        cap_remaining: int | None = None
+        if is_unofficial and throttle_s is None:
+            now = datetime.now(timezone.utc)
+            cap = _daily_cap(channel, now)
+            if cap > 0:
+                async with session.begin():
+                    used = await messages.count_outbound_since(
+                        session, b.channel_id, now - timedelta(seconds=WARMUP_WINDOW_S)
+                    )
+                cap_remaining = max(0, cap - used)
+                # sisa 0 = worker poll tiap 5s sampai window longgar → debug, jangan spam info.
+                log.log(
+                    logging.INFO if cap_remaining > 0 else logging.DEBUG,
+                    "broadcast %s cap warmup: %d terpakai %d, sisa %d",
+                    broadcast_id, cap, used, cap_remaining,
+                )
+
+        paused = False
         while True:
             async with session.begin():
                 recips: list[BroadcastRecipient] = await broadcasts.pending_recipients(
@@ -115,6 +160,9 @@ async def dispatch(
                 break
 
             for r in recips:
+                if cap_remaining is not None and cap_remaining <= 0:
+                    paused = True
+                    break
                 idem = f"bcast:{broadcast_id}:{r.contact_id}"
                 try:
                     async with session.begin():
@@ -138,6 +186,8 @@ async def dispatch(
                         cmd = _build_command(b, channel, r.contact, conv.id, idem)
                     await publish_outbound(cmd.model_dump_json(by_alias=True))
                     sent += 1
+                    if cap_remaining is not None:
+                        cap_remaining -= 1
                 except Exception as e:  # noqa: BLE001
                     log.exception("broadcast recipient gagal: %s", r.contact_id)
                     async with session.begin():
@@ -149,13 +199,36 @@ async def dispatch(
                 if delay > 0:
                     await asyncio.sleep(delay)
 
-        stats = {"total": sent + failed, "sent": sent, "failed": failed}
+                # Rest panjang anti-banned: tiap N pesan terkirim, jeda lama acak
+                # meniru manusia istirahat (hanya unofficial, hanya saat memakai
+                # throttle default — bukan override eksplisit dari pemanggil).
+                if (
+                    is_unofficial
+                    and throttle_s is None
+                    and BROADCAST_REST_EVERY > 0
+                    and r.status == "sent"
+                    and sent > 0
+                    and sent % BROADCAST_REST_EVERY == 0
+                ):
+                    rest = random.uniform(BROADCAST_REST_MIN_S, BROADCAST_REST_MAX_S)
+                    log.info("broadcast %s rest %.0fs setelah %d kirim", broadcast_id, rest, sent)
+                    await asyncio.sleep(rest)
+
+            if paused:
+                break
+
+        # Stats akumulatif lintas re-invoke (cap bisa pecah broadcast jadi
+        # beberapa dispatch). Pause → status tetap running (worker lanjut nanti).
+        prev = b.stats or {}
+        stats = {
+            "total": prev.get("total", sent + failed),
+            "sent": prev.get("sent", 0) + sent,
+            "failed": prev.get("failed", 0) + failed,
+            "skipped_optout": prev.get("skipped_optout", 0),
+        }
+        status = "running" if paused else "done"
         async with session.begin():
-            await broadcasts.set_status(session, broadcast_id, "done", _merge_stats(b, stats))
-    return {"status": "done", "sent": sent, "failed": failed}
-
-
-def _merge_stats(b: Broadcast, new: dict) -> dict:
-    merged = dict(b.stats or {})
-    merged.update(new)
-    return merged
+            await broadcasts.set_status(session, broadcast_id, status, stats)
+        if paused:
+            log.info("broadcast %s pause (cap warmup tercapai), %d terkirim run ini", broadcast_id, sent)
+    return {"status": status, "sent": sent, "failed": failed, "paused": paused}
