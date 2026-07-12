@@ -268,14 +268,14 @@ export async function createChannel(input: {
     // Bedakan gagal-menghubungi dari kosong-beneran: dulu keduanya jadi "Belum ada
     // akun" yang menyesatkan saat penyebab asli key salah/endpoint/network.
     if (error) {
-      throw new Error(`Gagal menghubungi api.co.id: ${error}`);
+      throw new Error(`Gagal menghubungi penyedia WhatsApp: ${error}`);
     }
     if (accounts.length === 0) {
-      throw new Error("Belum ada akun untuk tipe ini di api.co.id. Hubungkan dulu di dashboard api.co.id.");
+      throw new Error("Belum ada akun untuk tipe ini. Hubungkan dulu akun kamu.");
     }
     const match = accounts.find((a) => a.externalId === input.externalId);
     if (!match) {
-      throw new Error("Akun tidak ditemukan di api.co.id. Pilih dari daftar yang tersedia.");
+      throw new Error("Akun tidak ditemukan. Pilih dari daftar yang tersedia.");
     }
     input.externalId = match.externalId;
   }
@@ -703,6 +703,43 @@ export async function addKnowledge(title: string, text: string) {
     throw new Error(`Gagal memproses dokumen${msg ? `: ${msg}` : ""}`);
   }
   revalidatePath("/ai-agent");
+}
+
+export async function deleteKnowledge(docId: string) {
+  const session = await requireSession();
+  requireAbility(session, "knowledge.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const res = await fetch(`${ENGINE}/knowledge/${docId}`, {
+    method: "DELETE",
+    headers: {
+      "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
+      "X-Actor-Role": session.role,
+      "X-Tenant-Id": session.tenantId,
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`Gagal menghapus dokumen${msg ? `: ${msg}` : ""}`);
+  }
+  revalidatePath("/ai-agent");
+}
+
+// Status AI (LLM terkonfigurasi di engine?) — untuk indikator aktif/nonaktif di UI.
+export async function aiAgentStatus(): Promise<boolean> {
+  const session = await requireSession();
+  requireAbility(session, "knowledge.manage");
+  try {
+    const res = await fetch(`${ENGINE}/ai-agent/status`, {
+      headers: { "X-Service-Token": process.env.SERVICE_TOKEN ?? "" },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const j = await res.json();
+    return Boolean(j?.data?.enabled);
+  } catch {
+    return false;
+  }
 }
 
 export async function previewAi(

@@ -241,6 +241,35 @@ async def knowledge_create(
     return {"data": {"document_id": str(doc_id), "chunks": n}}
 
 
+@router.delete("/knowledge/{document_id}")
+async def knowledge_delete(
+    document_id: uuid.UUID,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
+) -> dict:
+    """Hapus dokumen KB + chunks (FK ondelete cascade). knowledge.manage + tenant scope."""
+    _auth(x_service_token)
+    _require(x_actor_role, "knowledge.manage")
+    from sqlalchemy import delete as sa_delete
+
+    from ..db import AsyncSessionLocal
+    from ..models import KnowledgeDocument
+
+    tenant = _tenant(x_tenant_id)
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            res = await session.execute(
+                sa_delete(KnowledgeDocument).where(
+                    KnowledgeDocument.id == document_id,
+                    KnowledgeDocument.tenant_id == tenant,
+                )
+            )
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="dokumen tidak ada")
+    return {"data": {"deleted": str(document_id)}}
+
+
 # --- AI agent preview (06) ---
 class PreviewIn(BaseModel):
     tenant_id: uuid.UUID
@@ -280,3 +309,12 @@ async def ai_preview(
         system += f"\n\nPengetahuan (jawab hanya dari sini):\n{kb}"
     answer = await provider.complete(system, payload.message)
     return {"data": {"enabled": True, "answer": answer, "kb_used": bool(kb)}}
+
+
+@router.get("/ai-agent/status")
+async def ai_status(x_service_token: str | None = Header(default=None)) -> dict:
+    """Status AI: apakah LLM provider terkonfigurasi (env engine). Untuk indikator UI."""
+    _auth(x_service_token)
+    from ..ai.llm import get_provider
+
+    return {"data": {"enabled": get_provider() is not None}}
