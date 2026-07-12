@@ -36,6 +36,7 @@ export const tenants = pgTable("tenants", {
 	slug: text().notNull(),
 	plan: tenantPlan().default('pro').notNull(),
 	status: tenantStatus().default('active').notNull(),
+	planExpiresAt: timestamp("plan_expires_at", { withTimezone: true, mode: 'string' }),
 	settings: jsonb().default({}).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),

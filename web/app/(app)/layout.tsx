@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app/app-shell";
+import { PlanExpiryBanner } from "@/components/app/plan-expiry-banner";
 import { requireSession } from "@/lib/session";
 import { getSidebarStats } from "@/lib/sidebar-stats";
 import { getPublicWebSettings, getWebSettingsByTenant } from "@/lib/web-settings-server";
@@ -35,6 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       siteName={siteName}
       tenants={tenants}
     >
+      <PlanExpiryBanner expiresAt={session.planExpiresAt} expired={session.planExpired} />
       {children}
     </AppShell>
   );
