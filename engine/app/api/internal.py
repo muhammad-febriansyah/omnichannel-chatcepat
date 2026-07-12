@@ -57,7 +57,11 @@ async def broadcasts_run(
     """Bangun recipients (guard opt_in) lalu dispatch di background (throttle)."""
     _auth(x_service_token)
     _require(x_actor_role, "broadcast.manage")
-    result = await run_broadcast(broadcast_id, _tenant(x_tenant_id))
+    try:
+        result = await run_broadcast(broadcast_id, _tenant(x_tenant_id))
+    except ValueError as e:
+        # Channel non-WA (Messenger/IG) / broadcast tak ada → pesan jelas, bukan 500.
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if result.get("status") == "running":
         background.add_task(dispatch, broadcast_id)
     return {"data": result}

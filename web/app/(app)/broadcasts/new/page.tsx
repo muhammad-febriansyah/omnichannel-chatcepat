@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, tags as tagsTable } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -12,8 +12,13 @@ export default async function NewBroadcastPage() {
   let tmpls: TemplateOpt[] = [];
   if (session.tenantId) {
     try {
+      // Blast HANYA WhatsApp. Messenger/Instagram tak bisa broadcast (kebijakan Meta:
+      // free-form cuma dalam window 24 jam, no cold blast) → jangan tampilkan di picker.
       chans = await db.query.channels.findMany({
-        where: eq(channels.tenantId, session.tenantId),
+        where: and(
+          eq(channels.tenantId, session.tenantId),
+          inArray(channels.type, ["wa_official", "wa_unofficial"]),
+        ),
         columns: { id: true, name: true, type: true },
       });
       const t = await db.query.tags.findMany({

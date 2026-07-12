@@ -46,6 +46,17 @@ async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = N
         if b.status not in ("draft", "scheduled"):
             return {"status": b.status, "skipped": True}
 
+        # Blast HANYA WhatsApp. Messenger/Instagram: kebijakan Meta hanya izinkan
+        # free-form dalam window 24 jam (no cold blast) + MessengerSender pakai
+        # messaging_type RESPONSE → di luar window ditolak provider. Tolak tegas di
+        # sini, jangan biarkan jadi antrean yang pasti gagal diam-diam.
+        channel = await channels.get_by_id(session, b.channel_id)
+        if channel is None or channel.type not in ("wa_official", "wa_unofficial"):
+            raise ValueError(
+                "Broadcast hanya didukung untuk channel WhatsApp. Messenger/Instagram "
+                "tidak bisa blast (kebijakan Meta: hanya balasan dalam window 24 jam)."
+            )
+
         contacts = await broadcasts.match_contacts(session, b.tenant_id, b.audience_filter)
         pending = skipped = 0
         for c in contacts:
