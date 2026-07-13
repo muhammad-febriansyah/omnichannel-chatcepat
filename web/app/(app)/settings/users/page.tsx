@@ -1,11 +1,12 @@
 import { and, desc, eq, ne } from "drizzle-orm";
-import { UserPlus, UsersRound } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { UsersTable, type UserRow } from "@/components/app/users-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
+import { Card, CardContent } from "@/components/ui/card";
 
 async function load(tenantId: string | null, selfId: string): Promise<UserRow[]> {
   if (!tenantId) return [];
@@ -35,7 +36,6 @@ export default async function UsersPage() {
   return (
     <div className="p-6">
       <PageHeader
-        icon={UsersRound}
         title="Tim"
         description={`${rows.length} anggota`}
         actions={
@@ -45,7 +45,11 @@ export default async function UsersPage() {
         }
       />
 
-      <UsersTable rows={rows} />
+      <Card>
+        <CardContent className="pt-6">
+          <UsersTable rows={rows} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

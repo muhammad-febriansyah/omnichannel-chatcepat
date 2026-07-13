@@ -2,6 +2,7 @@ import { TrendingUp, Wallet, Building2, MessageSquare } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { rupiah, cleanIDR } from "@/lib/format";
 import { getMonthlyAnalytics, getRevenueStats, type MonthlyPoint } from "@/lib/platform-stats";
+import { Card, CardContent } from "@/components/ui/card";
 
 function BarRow({
   points,
@@ -77,20 +78,24 @@ export default async function PlatformAnalyticsPage() {
         })}
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold">Pendapatan / Bulan</h2>
-          <BarRow points={points} pick={(p) => p.revenue} fmt={(n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))} color="#10b981" />
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold">Tenant Baru / Bulan</h2>
-          <BarRow points={points} pick={(p) => p.tenants} fmt={(n) => String(n)} color="#8b5cf6" />
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold">Pesan / Bulan</h2>
-          <BarRow points={points} pick={(p) => p.messages} fmt={(n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))} color="#f59e0b" />
-        </div>
-      </div>
+      <Card className="mt-6">
+        <CardContent className="pt-6">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h2 className="mb-4 text-sm font-semibold">Pendapatan / Bulan</h2>
+              <BarRow points={points} pick={(p) => p.revenue} fmt={(n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))} color="#10b981" />
+            </div>
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h2 className="mb-4 text-sm font-semibold">Tenant Baru / Bulan</h2>
+              <BarRow points={points} pick={(p) => p.tenants} fmt={(n) => String(n)} color="#8b5cf6" />
+            </div>
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h2 className="mb-4 text-sm font-semibold">Pesan / Bulan</h2>
+              <BarRow points={points} pick={(p) => p.messages} fmt={(n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))} color="#f59e0b" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 import { getPlatformOverview, listTenants } from "@/lib/platform-stats";
 import { TenantsTable } from "@/components/app/tenants-table";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default async function PlatformAdminPage() {
   await requireSession();
@@ -40,10 +41,12 @@ export default async function PlatformAdminPage() {
       </div>
 
       {/* Tenant table */}
-      <div className="mt-6">
-        <h2 className="mb-3 text-base font-semibold">Daftar Tenant</h2>
-        <TenantsTable rows={tenants} />
-      </div>
+      <Card className="mt-6">
+        <CardContent className="pt-6">
+          <h2 className="mb-3 text-base font-semibold">Daftar Tenant</h2>
+          <TenantsTable rows={tenants} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

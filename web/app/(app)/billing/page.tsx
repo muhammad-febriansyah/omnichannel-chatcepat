@@ -6,28 +6,11 @@ import { listActivePlans, listOrders, startCheckout } from "@/lib/billing-action
 import { PLAN_LABEL } from "@/lib/plan";
 import { rupiah } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
-import { StatusPill, type PillTone } from "@/components/app/status-pill";
+import { StatusPill } from "@/components/app/status-pill";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ClientOrdersTable } from "@/components/app/client-orders-table";
 import { cn } from "@/lib/utils";
-
-// Status order → label + warna pill (id).
-const ORDER_STATUS: Record<string, { label: string; tone: PillTone }> = {
-  paid: { label: "Lunas", tone: "emerald" },
-  pending: { label: "Menunggu", tone: "amber" },
-  failed: { label: "Gagal", tone: "red" },
-  expired: { label: "Kadaluarsa", tone: "red" },
-};
-
-function tglWaktu(v: string | Date): string {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Jakarta",
-  }).format(new Date(v));
-}
 
 export default async function BillingPage() {
   const session = await requirePageAbility("billing.tenant");
@@ -111,39 +94,11 @@ export default async function BillingPage() {
           <h2 className="text-sm font-semibold text-foreground">Riwayat Transaksi</h2>
         </div>
 
-        {orders.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-card py-12 text-center text-sm text-muted-foreground">
-            Belum ada transaksi.
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Tanggal</th>
-                  <th className="px-4 py-3 font-medium">Paket</th>
-                  <th className="px-4 py-3 font-medium">Jumlah</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Order ID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => {
-                  const st = ORDER_STATUS[o.status] ?? { label: o.status, tone: "slate" as PillTone };
-                  return (
-                    <tr key={o.id} className="border-b border-border last:border-0">
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{tglWaktu(o.createdAt)}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">{o.planName}</td>
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-foreground">{rupiah(o.amountIdr)}</td>
-                      <td className="px-4 py-3"><StatusPill tone={st.tone}>{st.label}</StatusPill></td>
-                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{o.merchantOrderId}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <Card>
+          <CardContent className="pt-6">
+            <ClientOrdersTable rows={orders} />
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

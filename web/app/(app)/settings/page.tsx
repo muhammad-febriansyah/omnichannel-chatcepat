@@ -1,5 +1,4 @@
 import { and, desc, eq, ne } from "drizzle-orm";
-import { Settings } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants, users } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -52,7 +51,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader icon={Settings} title="Pengaturan" description="Konfigurasi workspace kamu." />
+      <PageHeader title="Pengaturan" description="Konfigurasi workspace kamu." />
       <SettingsTabs webSettings={webSettings} businessHours={businessHours} users={teamUsers} />
     </div>
   );

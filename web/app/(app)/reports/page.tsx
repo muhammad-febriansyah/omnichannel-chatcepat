@@ -1,4 +1,4 @@
-import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send, BarChart3 } from "lucide-react";
+import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send } from "lucide-react";
 import { requirePageAbility } from "@/lib/session";
 import { cleanIDR } from "@/lib/format";
 import { getReportStats } from "@/lib/report-stats";
@@ -65,7 +65,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader icon={BarChart3} title="Laporan" description="Ringkasan metrik & performa workspace." />
+      <PageHeader title="Laporan" description="Ringkasan metrik & performa workspace." />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => {

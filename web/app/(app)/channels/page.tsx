@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/app/empty-state";
 import { ActionLink } from "@/components/app/action-link";
 import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
+import { Card, CardContent } from "@/components/ui/card";
 import { DeleteButton } from "@/components/app/delete-button";
 import { AutoReplyToggle } from "@/components/app/auto-reply-toggle";
 import { disconnectChannel } from "@/lib/actions";
@@ -63,78 +64,82 @@ export default async function ChannelsPage() {
         }
       />
 
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={Plug}
-          title="Belum ada channel"
-          description="Hubungkan WhatsApp, Telegram, atau channel lain untuk mulai menerima pesan."
-          action={
-            <ActionLink href="/channels/connect">
-              <Plus className="size-4" /> Hubungkan channel pertama
-            </ActionLink>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((c) => {
-            const meta = CHANNEL_META[c.type as ChannelType];
-            const tone = STATUS_TONE[c.status] ?? "slate";
-            const dot = DOT_CLS[c.status] ?? "bg-slate-400";
-            return (
-              <div
-                key={c.id}
-                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="flex items-center gap-3">
+      <Card>
+        <CardContent className="pt-6">
+          {rows.length === 0 ? (
+            <EmptyState
+              icon={Plug}
+              title="Belum ada channel"
+              description="Hubungkan WhatsApp, Telegram, atau channel lain untuk mulai menerima pesan."
+              action={
+                <ActionLink href="/channels/connect">
+                  <Plus className="size-4" /> Hubungkan channel pertama
+                </ActionLink>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {rows.map((c) => {
+                const meta = CHANNEL_META[c.type as ChannelType];
+                const tone = STATUS_TONE[c.status] ?? "slate";
+                const dot = DOT_CLS[c.status] ?? "bg-slate-400";
+                return (
                   <div
-                    className="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-                    style={{ background: meta?.color ?? "#94a3b8" }}
+                    key={c.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:shadow-md"
                   >
-                    <ChannelIcon type={c.type as ChannelType} className="size-6 text-white" />
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
+                        style={{ background: meta?.color ?? "#94a3b8" }}
+                      >
+                        <ChannelIcon type={c.type as ChannelType} className="size-6 text-white" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold">{c.name}</div>
+                        <div className="text-xs text-muted-foreground">{meta?.label}</div>
+                      </div>
+                      <StatusPill tone={tone} className="shrink-0 gap-1.5">
+                        <span className={`size-1.5 rounded-full ${dot}`} />
+                        {statusLabel(c.status)}
+                      </StatusPill>
+                    </div>
+                    <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
+                      <AutoReplyToggle channelId={c.id} type={c.type} enabled={c.autoReplyEnabled} />
+                      {c.type === "wa_unofficial" && c.status !== "connected" && (
+                        <ActionLink
+                          href={`/channels/${c.id}/pair`}
+                          variant="outline"
+                          size="sm"
+                          aria-label="Scan QR untuk pairing"
+                          title="Scan QR untuk pairing"
+                        >
+                          <QrCode className="size-4" /> Scan QR
+                        </ActionLink>
+                      )}
+                      <DeleteButton
+                        onConfirm={async () => {
+                          "use server";
+                          await disconnectChannel(c.id);
+                        }}
+                        title="Putuskan channel?"
+                        description={
+                          <>
+                            Channel <span className="font-semibold">{c.name}</span> akan diputus. Pesan masuk
+                            berhenti dan kredensial dihapus. Hubungkan ulang untuk mengaktifkan lagi.
+                          </>
+                        }
+                        successMessage="Channel diputus"
+                        triggerLabel="Putuskan"
+                      />
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">{meta?.label}</div>
-                  </div>
-                  <StatusPill tone={tone} className="shrink-0 gap-1.5">
-                    <span className={`size-1.5 rounded-full ${dot}`} />
-                    {statusLabel(c.status)}
-                  </StatusPill>
-                </div>
-                <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
-                  <AutoReplyToggle channelId={c.id} type={c.type} enabled={c.autoReplyEnabled} />
-                  {c.type === "wa_unofficial" && c.status !== "connected" && (
-                    <ActionLink
-                      href={`/channels/${c.id}/pair`}
-                      variant="outline"
-                      size="sm"
-                      aria-label="Scan QR untuk pairing"
-                      title="Scan QR untuk pairing"
-                    >
-                      <QrCode className="size-4" /> Scan QR
-                    </ActionLink>
-                  )}
-                  <DeleteButton
-                    onConfirm={async () => {
-                      "use server";
-                      await disconnectChannel(c.id);
-                    }}
-                    title="Putuskan channel?"
-                    description={
-                      <>
-                        Channel <span className="font-semibold">{c.name}</span> akan diputus. Pesan masuk
-                        berhenti dan kredensial dihapus. Hubungkan ulang untuk mengaktifkan lagi.
-                      </>
-                    }
-                    successMessage="Channel diputus"
-                    triggerLabel="Putuskan"
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

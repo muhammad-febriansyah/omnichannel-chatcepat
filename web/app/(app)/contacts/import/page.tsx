@@ -65,7 +65,6 @@ export default function ImportContactsPage() {
       </ActionLink>
 
       <PageHeader
-        icon={Upload}
         title="Import Kontak"
         description={
           <>

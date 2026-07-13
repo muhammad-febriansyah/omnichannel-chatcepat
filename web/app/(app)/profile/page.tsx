@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { User } from "lucide-react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
@@ -12,7 +11,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="p-6">
-      <PageHeader icon={User} title="Profil Saya" description="Kelola informasi akun dan foto profil kamu." />
+      <PageHeader title="Profil Saya" description="Kelola informasi akun dan foto profil kamu." />
       <ProfileForm
         initial={{
           name: me?.name ?? session.name,

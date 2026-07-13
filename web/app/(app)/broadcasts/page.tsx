@@ -6,6 +6,7 @@ import { requirePageAbility } from "@/lib/session";
 import { BroadcastsTable, type BroadcastRow } from "@/components/app/broadcasts-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
+import { Card, CardContent } from "@/components/ui/card";
 
 async function load(tenantId: string | null): Promise<BroadcastRow[]> {
   if (!tenantId) return [];
@@ -48,7 +49,11 @@ export default async function BroadcastsPage() {
         }
       />
 
-      <BroadcastsTable rows={rows} />
+      <Card>
+        <CardContent className="pt-6">
+          <BroadcastsTable rows={rows} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

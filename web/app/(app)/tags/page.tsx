@@ -1,11 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
-import { Plus, Tag } from "lucide-react";
+import { Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { tags } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { TagsTable, type TagRow } from "@/components/app/tags-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
+import { Card, CardContent } from "@/components/ui/card";
 
 async function load(tenantId: string | null): Promise<TagRow[]> {
   if (!tenantId) return [];
@@ -28,7 +29,6 @@ export default async function TagsPage() {
   return (
     <div className="p-6">
       <PageHeader
-        icon={Tag}
         title="Tag & Label"
         description={`${rows.length} tag · segmentasi kontak untuk broadcast & filter inbox`}
         actions={
@@ -37,7 +37,11 @@ export default async function TagsPage() {
           </ActionLink>
         }
       />
-      <TagsTable rows={rows} />
+      <Card>
+        <CardContent className="pt-6">
+          <TagsTable rows={rows} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { requirePageAbility } from "@/lib/session";
 import { ContactsTable, type ContactRow } from "@/components/app/contacts-table";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
+import { Card, CardContent } from "@/components/ui/card";
 
 async function load(tenantId: string | null): Promise<ContactRow[]> {
   if (!tenantId) return [];
@@ -53,7 +54,11 @@ export default async function ContactsPage() {
         }
       />
 
-      <ContactsTable rows={rows} />
+      <Card>
+        <CardContent className="pt-6">
+          <ContactsTable rows={rows} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

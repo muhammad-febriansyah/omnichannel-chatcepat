@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -27,7 +27,6 @@ export default async function AcquirePage() {
       </ActionLink>
 
       <PageHeader
-        icon={UserPlus}
         title="Akuisisi Kontak"
         description="Kumpulkan kontak baru dengan consent (opt-in) sesuai aturan."
       />
