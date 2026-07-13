@@ -41,7 +41,7 @@ export const PLAN_LIMITS: Record<TenantPlan, PlanLimits> = {
     maxChannels: INF,
     maxAgents: INF,
     maxKbDocs: INF,
-    broadcastPerMonth: 50000,
+    broadcastPerMonth: INF,
     features: { automation: true, catalog: true, multiNumber: true },
   },
 };

@@ -28,8 +28,8 @@ export function planAllows(current: TenantPlan, required: TenantPlan): boolean {
 export const PLAN_QUOTA: Record<TenantPlan, number | null> = {
   basic: 2000,
   pro: 10000,
-  business: 25000,
-  enterprise: 50000,
+  business: 10000, // tier lama = setara Pro (lihat entitlements PLAN_LIMITS.business)
+  enterprise: null, // null = unlimited (selaras entitlements broadcastPerMonth = INF)
 };
 
 export interface SidebarStats {
