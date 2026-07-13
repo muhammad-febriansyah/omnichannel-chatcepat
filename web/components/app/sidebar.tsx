@@ -84,6 +84,7 @@ const PLATFORM_SECTION: { title: string; items: Item[] } = {
     { href: "/admin/analytics", label: "Analitik", icon: TrendingUp },
     { href: "/admin/transactions", label: "Transaksi", icon: Receipt },
     { href: "/admin/users", label: "Pengguna", icon: Users2 },
+    { href: "/admin/wa-requests", label: "Pengajuan WA", icon: MessageCircle },
     { href: "/admin/activity", label: "Aktivitas", icon: Activity },
     { href: "/admin/plans", label: "Paket", icon: Tag },
     { href: "/admin/settings", label: "Pengaturan", icon: Settings },

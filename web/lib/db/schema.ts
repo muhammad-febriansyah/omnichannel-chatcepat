@@ -22,6 +22,7 @@ export const templateKind = pgEnum("template_kind", ['hsm', 'quick_reply'])
 export const templateStatus = pgEnum("template_status", ['draft', 'approved', 'rejected'])
 export const tenantPlan = pgEnum("tenant_plan", ['pro', 'business', 'enterprise'])
 export const tenantStatus = pgEnum("tenant_status", ['active', 'suspended'])
+export const waRequestStatus = pgEnum("wa_request_status", ['pending', 'in_review', 'approved', 'rejected'])
 export const userRole = pgEnum("user_role", ['admin', 'client'])
 export const userStatus = pgEnum("user_status", ['active', 'invited', 'disabled'])
 
@@ -84,6 +85,42 @@ export const channels = pgTable("channels", {
 			foreignColumns: [tenants.id],
 			name: "channels_tenant_id_fkey"
 		}).onDelete("cascade"),
+]);
+
+// Pengajuan WhatsApp Official — tenant ajukan, operator (admin) onboard di api.co.id
+// lalu assign (bikin channel apico). Lihat migration 0011.
+export const waOfficialRequests = pgTable("wa_official_requests", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	businessName: text("business_name").notNull(),
+	phoneNumber: text("phone_number").notNull(),
+	contactName: text("contact_name"),
+	notes: text(),
+	status: waRequestStatus().default('pending').notNull(),
+	channelId: uuid("channel_id"),
+	externalId: text("external_id"),
+	reviewedBy: uuid("reviewed_by"),
+	rejectionReason: text("rejection_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_wa_request_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_wa_request_status").using("btree", table.status.asc().nullsLast().op("enum_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "wa_official_requests_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.channelId],
+			foreignColumns: [channels.id],
+			name: "wa_official_requests_channel_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.reviewedBy],
+			foreignColumns: [users.id],
+			name: "wa_official_requests_reviewed_by_fkey"
+		}).onDelete("set null"),
 ]);
 
 export const contacts = pgTable("contacts", {

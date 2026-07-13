@@ -277,6 +277,14 @@ export default function ConnectChannelPage() {
                     <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10">
                       Belum ada akun {selectedType?.label} yang terhubung. Hubungkan dulu akun kamu, lalu buka
                       halaman ini lagi.
+                      {isWaOfficial && (
+                        <Link
+                          href="/channels/request-wa-official"
+                          className="mt-3 flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-blue text-[12px] font-semibold text-white transition hover:opacity-90"
+                        >
+                          Ajukan WhatsApp Official ke tim
+                        </Link>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
