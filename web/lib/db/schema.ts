@@ -66,6 +66,24 @@ export const users = pgTable("users", {
 	unique("users_email_key").on(table.email),
 ]);
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	tokenHash: text("token_hash").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	usedAt: timestamp("used_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("password_reset_tokens_token_hash_key").on(table.tokenHash),
+	index("idx_password_reset_token_user").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_password_reset_token_expiry").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops"), table.usedAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "password_reset_tokens_user_id_fkey"
+		}).onDelete("cascade"),
+]);
+
 export const channels = pgTable("channels", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),

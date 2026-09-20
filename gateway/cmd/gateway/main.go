@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/chatcepat/gateway/internal/bus"
 	"github.com/chatcepat/gateway/internal/channels"
 	"github.com/chatcepat/gateway/internal/contracts"
+	"github.com/chatcepat/gateway/internal/omnichannel"
+	"github.com/chatcepat/gateway/internal/queue"
 	"github.com/chatcepat/gateway/internal/server"
 	"github.com/chatcepat/gateway/internal/worker"
 	"github.com/chatcepat/gateway/internal/ws"
@@ -38,6 +41,23 @@ func main() {
 
 	if err := b.Ping(ctx); err != nil {
 		log.Fatalf("redis ping: %v", err)
+	}
+
+	// Omnichannel is deliberately a separate bounded context from the existing
+	// message gateway. It owns the Instagram/automation API, Asynq task queue,
+	// account health checks, and SSE events.
+	omni, err := omnichannel.New(ctx, omnichannel.ConfigFromEnv(), b)
+	if err != nil {
+		log.Fatalf("omnichannel init gagal: %v", err)
+	}
+	defer omni.Close()
+	if env("APP_ROLE", "api") == "worker" {
+		concurrency, _ := strconv.Atoi(env("WORKER_CONCURRENCY", "5"))
+		log.Printf("omnichannel worker listening (concurrency=%d)", concurrency)
+		if err := queue.RunWorker(env("REDIS_URL", "redis://localhost:6379/0"), concurrency, omni.ProcessAutomationTask); err != nil {
+			log.Fatalf("omnichannel worker: %v", err)
+		}
+		return
 	}
 
 	// Channel store: baca tabel channels (read-only) untuk routing + creds.
@@ -97,6 +117,7 @@ func main() {
 	wsHandler := ws.NewHandler(b, env("WS_JWT_SECRET", ""))
 	srv := &server.Server{
 		Bus:           b,
+		Omnichannel:   omni,
 		Resolver:      store,
 		WS:            wsHandler,
 		WA:            wa,

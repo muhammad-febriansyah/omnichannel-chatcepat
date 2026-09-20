@@ -15,11 +15,13 @@ import (
 	"github.com/chatcepat/gateway/internal/bus"
 	"github.com/chatcepat/gateway/internal/channels"
 	"github.com/chatcepat/gateway/internal/contracts"
+	"github.com/chatcepat/gateway/internal/omnichannel"
 	"github.com/chatcepat/gateway/internal/ws"
 )
 
 type Server struct {
 	Bus           *bus.Bus
+	Omnichannel   *omnichannel.Service
 	Resolver      channels.Resolver
 	WS            *ws.Handler
 	WA            *channels.Whatsmeow
@@ -35,13 +37,16 @@ func (s *Server) Routes() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/webhooks/meta/wa", s.handleMetaWA)
-	mux.HandleFunc("/webhooks/meta/ig", s.handleMessenger) // Instagram DM
-	mux.HandleFunc("/webhooks/meta/fb", s.handleMessenger) // Facebook Messenger
+	mux.HandleFunc("/webhooks/meta/ig", s.handleMessenger)  // Instagram DM
+	mux.HandleFunc("/webhooks/meta/fb", s.handleMessenger)  // Facebook Messenger
 	mux.HandleFunc("/webhooks/telegram/", s.handleTelegram) // /webhooks/telegram/{channel_id}
 	mux.HandleFunc("/webhooks/apico", s.handleApiCo)        // api.co.id (WA/IG/Messenger)
 	mux.HandleFunc("/channels/", s.handleChannelOps)        // connect-unofficial / qr (stub)
 	if s.WS != nil {
 		mux.Handle("/ws", s.WS)
+	}
+	if s.Omnichannel != nil {
+		mux.Handle("/api/", http.StripPrefix("/api", s.Omnichannel.Handler()))
 	}
 	return mux
 }

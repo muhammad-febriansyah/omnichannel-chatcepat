@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -167,6 +168,7 @@
 }
 
 :root {
+  --font-poppins: "Poppins", ui-sans-serif, system-ui, sans-serif;
   --background: #f8fafc;
   --foreground: #1e2a78;
   --card: #ffffff;

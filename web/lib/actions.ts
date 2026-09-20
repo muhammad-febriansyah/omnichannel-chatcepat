@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { and, eq, sql } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, products, tags, templates, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import {
   assertBroadcastQuota,
@@ -73,6 +74,52 @@ export async function login(email: string, password: string): Promise<{ error: s
   store.set(SESSION_COOKIE, token, authCookieOptions(COOKIE_MAX_AGE));
   // Landing per-role: admin platform → konsol platform, client → dashboard tenant.
   redirect(user.role === "admin" ? "/admin" : "/dashboard");
+}
+
+export async function requestPasswordReset(email: string): Promise<{ ok: true; resetToken?: string }> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(normalizedEmail)) return { ok: true };
+
+  const user = await db.query.users.findFirst({ where: eq(users.email, normalizedEmail) });
+  if (!user || user.status !== "active") return { ok: true };
+
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+  await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
+
+  // Development has no mail provider configured, so return a local-only link
+  // for testing. Production must connect this boundary to an email provider.
+  if (process.env.APP_ENV !== "production") return { ok: true, resetToken: rawToken };
+  return { ok: true };
+}
+
+export async function resetPassword(token: string, password: string): Promise<{ ok: true }> {
+  if (!token || token.length !== 64 || !/^[a-f0-9]+$/i.test(token)) {
+    throw new Error("Link reset password tidak valid atau sudah kedaluwarsa");
+  }
+  if (!password || password.length < 6) throw new Error("Password minimal 6 karakter");
+
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const now = new Date().toISOString();
+  const [validToken] = await db
+    .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
+    .from(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.tokenHash, tokenHash), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+    .limit(1);
+
+  if (!validToken) throw new Error("Link reset password tidak valid atau sudah kedaluwarsa");
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, validToken.userId));
+    await tx.update(passwordResetTokens).set({ usedAt: now }).where(eq(passwordResetTokens.id, validToken.id));
+    await tx.delete(passwordResetTokens).where(and(eq(passwordResetTokens.userId, validToken.userId), isNull(passwordResetTokens.usedAt)));
+  });
+
+  return { ok: true };
 }
 
 // Self-signup: bikin tenant baru + user owner (role client), lalu login otomatis.

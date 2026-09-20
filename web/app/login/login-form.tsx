@@ -234,9 +234,9 @@ export default function LoginForm({ logoUrl, siteName }: { logoUrl?: string | nu
               </p>
             ) : (
               <div className="mt-2 text-right">
-                <span className="cursor-pointer text-[13px] font-medium text-brand-blue hover:underline">
+                <Link href="/forgot-password" className="text-[13px] font-medium text-brand-blue hover:underline">
                   {t.forgot}
-                </span>
+                </Link>
               </div>
             )}
           </div>

@@ -75,8 +75,28 @@ services:
       redis: { condition: service_healthy }
     ports: ["8080:8080"]
 
+  # Asynq consumer: automation.process → normalize → rule evaluation → action.
+  # It uses the same Go image as the API but runs with APP_ROLE=worker.
+  backend-worker:
+    build: ./gateway
+    env_file: .env
+    environment:
+      APP_ROLE: worker
+      APP_ENV: development
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080/ws}
+        NEXT_PUBLIC_FB_APP_ID: ${NEXT_PUBLIC_FB_APP_ID:-}
+        NEXT_PUBLIC_WA_CONFIG_ID: ${NEXT_PUBLIC_WA_CONFIG_ID:-}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     env_file: .env
     depends_on: [engine]
     ports: ["3000:3000"]
