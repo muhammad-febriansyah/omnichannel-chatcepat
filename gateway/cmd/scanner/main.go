@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"github.com/chatcepat/gateway/internal/queue"
@@ -20,19 +18,14 @@ func main() {
 	cfg := social.ConfigFromEnv()
 	service, err := social.New(ctx, cfg)
 	if err != nil {
-		log.Fatalf("social worker init gagal: %v", err)
+		log.Fatalf("social scanner init gagal: %v", err)
 	}
 	defer service.Close()
 	service.SetProviderFactory(socialproviders.Factory)
+	go service.ScheduleScans(ctx)
 
-	concurrency := 1
-	if raw := os.Getenv("SOCIAL_WORKER_CONCURRENCY"); raw != "" {
-		if parsed, parseErr := strconv.Atoi(raw); parseErr == nil && parsed > 0 {
-			concurrency = parsed
-		}
-	}
-	log.Printf("social worker listening (concurrency=%d)", concurrency)
-	if err := queue.RunSocialWorker(cfg.RedisURL, concurrency, service.ProcessJob); err != nil {
-		log.Fatalf("social worker stopped: %v", err)
+	log.Printf("social scanner listening interval=%s", cfg.ScannerInterval)
+	if err := queue.RunSocialScanner(cfg.RedisURL, 1, service.ProcessScan); err != nil {
+		log.Fatalf("social scanner stopped: %v", err)
 	}
 }

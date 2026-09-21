@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const accountLockTTL = 24 * time.Hour
+const accountLockTTL = 10 * time.Minute
 
 var releaseLockScript = redis.NewScript(`
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -25,13 +25,14 @@ return 0
 `)
 
 type Service struct {
-	repo    *Repository
-	pool    *pgxpool.Pool
-	rdb     *redis.Client
-	queue   *queue.Client
-	browser *browser.Manager
-	config  Config
-	logger  *slog.Logger
+	repo            *Repository
+	pool            *pgxpool.Pool
+	rdb             *redis.Client
+	queue           *queue.Client
+	browser         *browser.Manager
+	config          Config
+	logger          *slog.Logger
+	providerFactory ProviderFactory
 
 	sessionsMu sync.Mutex
 	sessions   map[string]*browser.Session
@@ -73,7 +74,8 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	return &Service{
 		repo: repoFromPool(pool), pool: pool, rdb: rdb, queue: q,
 		browser: browser.NewManager(cfg.BrowserStoragePath, cfg.BrowserHeadless, cfg.BrowserNoSandbox),
-		config:  cfg, logger: slog.Default(), sessions: make(map[string]*browser.Session), leases: make(map[string]func()),
+		config:  cfg, logger: slog.Default(), providerFactory: DefaultProviderFactory,
+		sessions: make(map[string]*browser.Session), leases: make(map[string]func()),
 	}, nil
 }
 
@@ -102,6 +104,12 @@ func (s *Service) Close() {
 }
 
 func (s *Service) Repository() *Repository { return s.repo }
+
+func (s *Service) SetProviderFactory(factory ProviderFactory) {
+	if factory != nil {
+		s.providerFactory = factory
+	}
+}
 
 func (s *Service) CreateAccount(ctx context.Context, tenantID, name, platform string, username *string) (Account, error) {
 	platform, err := normalizeAccountInput(name, platform)
@@ -168,6 +176,51 @@ func (s *Service) StartBrowser(ctx context.Context, tenantID, accountID string) 
 	_ = s.repo.AddActivity(ctx, tenantID, &account.ID, nil, "browser_opened", "Chromium opened for manual login", nil)
 	account.Status = AccountConnecting
 	return account, nil
+}
+
+func (s *Service) ValidateSession(ctx context.Context, tenantID, accountID string) (Account, error) {
+	account, err := s.repo.GetAccount(ctx, tenantID, accountID)
+	if err != nil {
+		return Account{}, err
+	}
+
+	s.sessionsMu.Lock()
+	session := s.sessions[account.ID]
+	s.sessionsMu.Unlock()
+	ownedSession := false
+	var release func()
+	if session == nil {
+		release, err = s.acquireAccountLock(ctx, account.ID, true)
+		if err != nil {
+			return Account{}, err
+		}
+		session, err = s.browser.OpenProfile(ctx, account.Platform, account.ID)
+		if err != nil {
+			release()
+			return Account{}, err
+		}
+		ownedSession = true
+	}
+	if ownedSession {
+		defer func() {
+			_ = s.browser.CloseProfile(session)
+			release()
+		}()
+	}
+
+	provider, err := s.providerFactory(account.Platform, session)
+	if err != nil {
+		return Account{}, err
+	}
+	if err := provider.CheckSession(ctx, account); err != nil {
+		_ = s.handleAutomationError(ctx, account, err)
+		return Account{}, err
+	}
+	if err := s.repo.SetAccountStatus(ctx, tenantID, account.ID, AccountConnected, ""); err != nil {
+		return Account{}, err
+	}
+	_ = s.repo.AddActivity(ctx, tenantID, &account.ID, nil, "session_connected", "Social session validated after manual login", map[string]any{"platform": account.Platform})
+	return s.repo.GetAccount(ctx, tenantID, account.ID)
 }
 
 func (s *Service) Disconnect(ctx context.Context, tenantID, accountID string) error {
@@ -264,39 +317,7 @@ func (s *Service) CancelJob(ctx context.Context, tenantID, jobID string) error {
 }
 
 func (s *Service) ProcessJob(ctx context.Context, envelope queue.SocialJobEnvelope) error {
-	job, err := s.repo.GetJobByID(ctx, envelope.JobID)
-	if err != nil {
-		return err
-	}
-	if job.Status == JobCancelled || job.Status == JobCompleted || job.Status == JobFailed {
-		return nil
-	}
-	if err := s.repo.MarkJobProcessing(ctx, job.ID); err != nil {
-		return err
-	}
-	account, err := s.repo.GetAccountByID(ctx, job.SocialAccountID)
-	if err != nil {
-		_ = s.failJob(ctx, job, err)
-		return nil
-	}
-	if account.Status == AccountActionRequired {
-		_ = s.failJob(ctx, job, ErrAccountActionRequired)
-		return nil
-	}
-	if account.Status != AccountConnected {
-		_ = s.failJob(ctx, job, ErrAccountNotConnected)
-		return nil
-	}
-	release, err := s.acquireAccountLock(ctx, account.ID, true)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	// Provider navigation/comment logic is intentionally the next phase. The
-	// queue, DB state machine, profile locking, and activity trail are live now.
-	_ = s.failJob(ctx, job, ErrAutomationNotReady)
-	return nil
+	return s.processAutomationJob(ctx, envelope.JobID)
 }
 
 func (s *Service) failJob(ctx context.Context, job Job, cause error) error {

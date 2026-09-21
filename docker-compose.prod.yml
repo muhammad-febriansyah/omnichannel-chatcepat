@@ -73,6 +73,16 @@ services:
     restart: unless-stopped
     command: "python -m app.consumers.status_consumer"
 
+  engine-notifications:
+    build: ./engine
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: "python -m app.consumers.notification_worker"
+
   gateway:
     build: ./gateway
     env_file: .env
@@ -94,6 +104,18 @@ services:
     volumes:
       - "./storage/browser:/app/storage/browser"
     entrypoint: ["/bin/social-worker"]
+    restart: unless-stopped
+
+  social-scanner:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      engine: { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - "./storage/browser:/app/storage/browser"
+    entrypoint: ["/bin/social-scanner"]
     restart: unless-stopped
 
   web:

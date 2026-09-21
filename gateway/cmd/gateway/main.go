@@ -17,6 +17,7 @@ import (
 	"github.com/chatcepat/gateway/internal/queue"
 	"github.com/chatcepat/gateway/internal/server"
 	"github.com/chatcepat/gateway/internal/social"
+	"github.com/chatcepat/gateway/internal/socialproviders"
 	"github.com/chatcepat/gateway/internal/worker"
 	"github.com/chatcepat/gateway/internal/ws"
 )
@@ -101,6 +102,7 @@ func main() {
 		log.Fatalf("social init gagal: %v", err)
 	}
 	defer socialService.Close()
+	socialService.SetProviderFactory(socialproviders.Factory)
 
 	// Adapter per channel type. api.co.id (provider "apico") melayani WA/IG/FB lewat
 	// satu REST gateway — dipilih bila channel.meta.provider = "apico".

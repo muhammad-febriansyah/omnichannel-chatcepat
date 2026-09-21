@@ -1,10 +1,10 @@
 # ChatCepat Omnichannel
 
-Omnichannel Social Media foundation untuk Instagram + WhatsApp dengan Go gateway, Next.js dashboard, PostgreSQL, Redis, Asynq, dan SSE.
+Omnichannel Social Media foundation untuk Instagram, Facebook, dan WhatsApp dengan Go gateway, Next.js dashboard, PostgreSQL, Redis, Asynq, dan SSE.
 
 Stack ini ditambahkan ke path existing repository:
 
-- `gateway/` — Go API, channel abstraction, mock/unofficial Instagram and Facebook driver boundaries, health/rate/circuit guard, Asynq task client, SSE.
+- `gateway/` — Go API, channel abstraction, mock/unofficial driver boundaries, guarded browser automation provider untuk Instagram/Facebook, health/rate/circuit guard, Asynq task client, SSE.
 - `web/` — Next.js App Router + TypeScript + Tailwind + shadcn/ui. Console development ada di `/omnichannel`.
 - `engine/migrations/versions/0012_omnichannel.py` — schema omnichannel, mengikuti aturan repository bahwa Alembic adalah pemilik DDL.
 - `docker-compose.yml` — PostgreSQL, Redis, engine migration/API existing, Go gateway, Asynq worker, dan Next.js.
@@ -154,20 +154,39 @@ npm run build
 
 Test simulator 50 comment adalah endpoint development, bukan fitur mass engagement: 50 user berbeda (`user001`–`user050`) dibuat sebagai incoming comments. Tidak ada 50 akun Instagram dan tidak ada outbound fan-out default.
 
-## Social browser foundation (MVP bertahap)
+## Social browser automation (MVP bertahap)
 
 Foundation browser automation berada di `gateway/`, bukan membuat servis backend baru:
 
 - `gateway/internal/browser` — persistent Chromium profiles, per-account lock, dan lifecycle Rod.
-- `gateway/internal/social` — repository, Gin API, account/job state machine, activity log, dan Redis enqueue.
-- `gateway/cmd/worker` — worker Asynq terpisah untuk social jobs.
-- `engine/migrations/versions/0014_social_automation.py` — DDL `social_accounts`, `social_jobs`, dan kolom social pada `activity_logs`.
+- `gateway/internal/social` — repository, Gin API, account/job state machine, rule matcher, idempotency, health guard, activity log, dan Redis enqueue.
+- `gateway/internal/social/instagram` dan `gateway/internal/social/facebook` — selector/provider terpisah untuk session check, scanner, reply comment, private reply, dan reply message.
+- `gateway/cmd/scanner` — scanner worker konservatif yang hanya menyimpan incoming event; tidak langsung mengirim balasan.
+- `gateway/cmd/worker` — action worker Asynq terpisah untuk social jobs.
+- `engine/migrations/versions/0014_social_automation.py` — DDL account/job foundation.
+- `engine/migrations/versions/0016_social_automation_rules.py` — DDL rules, keywords, incoming events, dedupe action, settings, health fields, dan relasi job.
 
 Endpoint foundation memakai prefix `/api` dan membutuhkan `X-Workspace-ID` (development boleh fallback ke tenant pertama). Di luar development, set `SOCIAL_API_TOKEN` dan kirim `Authorization: Bearer <token>`.
 
-Tahap ini baru membuat account/profile, membuka Chromium untuk login manual, validasi URL/job, queue, lock, dan status/logging. Selector serta aksi comment Facebook/Instagram belum diaktifkan; job akan berhenti aman dengan status `failed` sampai provider browser tahap berikutnya selesai.
+Flow connect: `POST /api/accounts/:id/connect` membuka Chromium untuk login manual, lalu `POST /api/accounts/:id/validate-session` memeriksa session dan mengubah status menjadi `connected`. Username, password, OTP, dan 2FA tidak pernah diisi otomatis.
+
+Dashboard `/automation` menyediakan Rules, Incoming, Activity, dan Settings. Automation default OFF per account. Rule mendukung keyword `exact`, `contains`, `starts_with`, beberapa action berurutan (`reply_comment`, `send_private_reply`, `reply_message`), response variation, ignore keyword, duplicate protection, self-event guard, cooldown, dan account health pause.
+
+Scanner/action berjalan melalui queue `social:scanner` dan `social:jobs`. Private reply hanya dibuat dari incoming comment yang tersimpan; tidak ada endpoint cold DM. Jika selector tidak menemukan target event secara tepat, action gagal aman dan tidak membalas target yang ambigu.
+
+Selector browser bersifat konservatif dan perlu diverifikasi pada DOM akun uji karena Facebook/Instagram dapat mengubah halaman. Fitur tidak melakukan CAPTCHA/checkpoint bypass, stealth patch, fingerprint spoofing, proxy rotation, credential automation, atau random behavior untuk menghindari deteksi.
 
 Catatan browser manual: `BROWSER_HEADLESS=false` membutuhkan display desktop. Jalankan gateway secara lokal untuk login manual, atau siapkan display/noVNC yang terisolasi pada deployment Docker. Image saat ini tidak mengekspos port debugging Chromium ke jaringan.
+
+## Notifikasi email Mailketing
+
+Engine memiliki template email ChatCepat dengan logo, header, body, CTA, dan footer untuk:
+
+- welcome email setelah pendaftaran berhasil;
+- reminder H-3 sebelum paket berakhir;
+- pemberitahuan saat paket sudah berakhir.
+
+Set `MAILKETING_API_TOKEN` di `.env` server. Sender `chatcepat.id@gmail.com` harus sudah ditambahkan/diizinkan di Mailketing, dan `MAILKETING_LOGO_URL` harus dapat diakses publik oleh email client. Worker `engine-notifications` menyimpan deduplikasi pengiriman di `email_notifications` sehingga reminder tidak dikirim berulang pada polling berikutnya.
 
 ## Troubleshooting
 

@@ -12,6 +12,21 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # Auth servis-ke-servis (Web → Engine). Lihat docs/prd/09.
 SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "change-me")
 
+# Mailketing transactional email notifications.
+MAILKETING_API_URL = os.environ.get(
+    "MAILKETING_API_URL", "https://api.mailketing.co.id/api/v1/send"
+)
+MAILKETING_API_TOKEN = os.environ.get("MAILKETING_API_TOKEN", "")
+MAILKETING_FROM_NAME = os.environ.get("MAILKETING_FROM_NAME", "ChatCepat")
+MAILKETING_FROM_EMAIL = os.environ.get(
+    "MAILKETING_FROM_EMAIL", "chatcepat.id@gmail.com"
+)
+MAILKETING_LOGO_URL = os.environ.get("MAILKETING_LOGO_URL", "")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:3000").rstrip("/")
+NOTIFICATION_WORKER_INTERVAL_S = int(
+    os.environ.get("NOTIFICATION_WORKER_INTERVAL_SECONDS", "3600")
+)
+
 # Redis Streams (09-api-contracts)
 STREAM_INBOUND = "message.inbound"
 STREAM_OUTBOUND = "message.outbound"

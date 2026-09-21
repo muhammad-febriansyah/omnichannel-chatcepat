@@ -25,15 +25,29 @@ func (a *API) Handler() http.Handler {
 	r.GET("/accounts/:id", a.getAccount)
 	r.POST("/accounts/:id/connect", a.connectAccount)
 	r.POST("/accounts/:id/open-browser", a.openBrowser)
+	r.POST("/accounts/:id/validate-session", a.validateSession)
 	r.POST("/accounts/:id/disconnect", a.disconnectAccount)
 	r.POST("/accounts/:id/pause", a.pauseAccount)
 	r.POST("/accounts/:id/resume", a.resumeAccount)
+	r.GET("/accounts/:id/automation/settings", a.getAutomationSettings)
+	r.PUT("/accounts/:id/automation/settings", a.updateAutomationSettings)
+	r.POST("/accounts/:id/automation/pause", a.pauseAccount)
+	r.POST("/accounts/:id/automation/resume", a.resumeAccount)
 	r.GET("/accounts/:id/logs", a.accountLogs)
 	r.GET("/jobs", a.listJobs)
 	r.POST("/jobs", a.createJob)
 	r.GET("/jobs/:id", a.getJob)
 	r.POST("/jobs/:id/cancel", a.cancelJob)
 	r.GET("/dashboard/stats", a.dashboardStats)
+	r.GET("/automation/rules", a.listRules)
+	r.POST("/automation/rules", a.createRule)
+	r.GET("/automation/rules/:id", a.getRule)
+	r.PUT("/automation/rules/:id", a.updateRule)
+	r.DELETE("/automation/rules/:id", a.deleteRule)
+	r.POST("/automation/rules/:id/enable", a.enableRule)
+	r.POST("/automation/rules/:id/disable", a.disableRule)
+	r.GET("/automation/incoming", a.listIncoming)
+	r.GET("/automation/activity", a.automationActivity)
 	return r
 }
 
@@ -72,9 +86,10 @@ func (a *API) tenantID(c *gin.Context) (string, error) {
 }
 
 type createAccountRequest struct {
-	Name     string  `json:"name" binding:"required"`
-	Platform string  `json:"platform" binding:"required"`
-	Username *string `json:"username"`
+	Name           string  `json:"name" binding:"required"`
+	Platform       string  `json:"platform" binding:"required"`
+	Username       *string `json:"username"`
+	ExternalUserID *string `json:"external_user_id"`
 }
 
 func (a *API) listAccounts(c *gin.Context) {
@@ -107,6 +122,14 @@ func (a *API) createAccount(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, err)
 		return
 	}
+	if input.ExternalUserID != nil && strings.TrimSpace(*input.ExternalUserID) != "" {
+		value := strings.TrimSpace(*input.ExternalUserID)
+		if err := a.service.repo.SetExternalUserID(c.Request.Context(), account.ID, value); err != nil {
+			writeError(c, http.StatusInternalServerError, err)
+			return
+		}
+		account.ExternalUserID = &value
+	}
 	writeSuccess(c, http.StatusCreated, "Account created", account)
 }
 
@@ -127,6 +150,19 @@ func (a *API) getAccount(c *gin.Context) {
 func (a *API) connectAccount(c *gin.Context) { a.startBrowser(c, "Account connection started") }
 
 func (a *API) openBrowser(c *gin.Context) { a.startBrowser(c, "Browser opened") }
+
+func (a *API) validateSession(c *gin.Context) {
+	tenantID, err := a.tenantID(c)
+	if err == nil {
+		var account Account
+		account, err = a.service.ValidateSession(c.Request.Context(), tenantID, c.Param("id"))
+		if err == nil {
+			writeSuccess(c, http.StatusOK, "Session validated", account)
+			return
+		}
+	}
+	writeError(c, statusForError(err), err)
+}
 
 func (a *API) startBrowser(c *gin.Context, message string) {
 	tenantID, err := a.tenantID(c)
@@ -280,6 +316,10 @@ func statusForError(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, ErrAccountBusy), errors.Is(err, ErrAccountNotConnected), errors.Is(err, ErrAccountActionRequired):
 		return http.StatusConflict
+	case errors.Is(err, ErrSessionExpired), errors.Is(err, ErrLoginRequired), errors.Is(err, ErrCaptcha), errors.Is(err, ErrCheckpoint), errors.Is(err, ErrSuspiciousLogin), errors.Is(err, ErrConfirmIdentity), errors.Is(err, ErrTemporaryBlock), errors.Is(err, ErrRateLimited):
+		return http.StatusConflict
+	case errors.Is(err, ErrRuleNotFound), errors.Is(err, ErrIncomingEventNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, ErrInvalidTargetURL), errors.Is(err, ErrContentRequired), errors.Is(err, ErrUnsupportedAction), errors.Is(err, ErrUnsupportedPlatform):
 		return http.StatusBadRequest
 	default:

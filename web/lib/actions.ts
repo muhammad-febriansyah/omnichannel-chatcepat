@@ -49,6 +49,37 @@ import {
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
+async function queueWelcomeEmail(input: {
+  tenantId: string | null;
+  userId: string;
+  recipient: string;
+  name: string;
+  business: string;
+}) {
+  if (!input.tenantId) return;
+  try {
+    const response = await fetch(`${ENGINE}/notifications/welcome`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
+      },
+      body: JSON.stringify({
+        tenant_id: input.tenantId,
+        user_id: input.userId,
+        recipient: input.recipient,
+        name: input.name,
+        business: input.business,
+      }),
+      cache: "no-store",
+    });
+    if (!response.ok) console.error("welcome email queue failed", response.status);
+  } catch {
+    // Registration should succeed even if notifications are temporarily unavailable.
+    console.error("welcome email queue unavailable");
+  }
+}
+
 // --- Auth ---
 // Catatan: Next.js menyensor pesan Error yang di-throw dari Server Action di
 // production (digest only). Kembalikan { error } agar pesan sampai ke form.
@@ -159,6 +190,14 @@ export async function register(input: { business: string; name: string; email: s
   } catch {
     throw new Error("Gagal mendaftar. Coba lagi.");
   }
+
+  await queueWelcomeEmail({
+    tenantId: user.tenantId,
+    userId: user.id,
+    recipient: user.email,
+    name: user.name,
+    business,
+  });
 
   const token = await signSession({
     sub: user.id,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -36,12 +37,14 @@ func (r *Repository) CreateAccount(ctx context.Context, tenantID, accountID, nam
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO social_accounts (id, tenant_id, name, platform, username, profile_path)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id::text, tenant_id::text, name, platform, username, profile_path, status,
-		          last_connected_at, last_activity_at, last_error, created_at, updated_at
+		RETURNING id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
+		          last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
+		          last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
 	`, accountID, tenantID, name, platform, username, profilePath).Scan(
-		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username,
+		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 		&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
-		&account.LastError, &account.CreatedAt, &account.UpdatedAt,
+		&account.LastError, &account.LastActionAt, &account.LastSuccessAt, &account.LastErrorAt,
+		&account.LastWarningAt, &account.ConsecutiveErrors, &account.PausedUntil, &account.CreatedAt, &account.UpdatedAt,
 	)
 	return account, err
 }
@@ -49,13 +52,15 @@ func (r *Repository) CreateAccount(ctx context.Context, tenantID, accountID, nam
 func (r *Repository) GetAccountByID(ctx context.Context, accountID string) (Account, error) {
 	var account Account
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, tenant_id::text, name, platform, username, profile_path, status,
-		       last_connected_at, last_activity_at, last_error, created_at, updated_at
+		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
+		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
+		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
 		FROM social_accounts WHERE id=$1
 	`, accountID).Scan(
-		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username,
+		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 		&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
-		&account.LastError, &account.CreatedAt, &account.UpdatedAt,
+		&account.LastError, &account.LastActionAt, &account.LastSuccessAt, &account.LastErrorAt,
+		&account.LastWarningAt, &account.ConsecutiveErrors, &account.PausedUntil, &account.CreatedAt, &account.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, ErrAccountNotFound
@@ -65,8 +70,9 @@ func (r *Repository) GetAccountByID(ctx context.Context, accountID string) (Acco
 
 func (r *Repository) ListAccounts(ctx context.Context, tenantID string) ([]Account, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, tenant_id::text, name, platform, username, profile_path, status,
-		       last_connected_at, last_activity_at, last_error, created_at, updated_at
+		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
+		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
+		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
 		FROM social_accounts WHERE tenant_id=$1 ORDER BY created_at DESC
 	`, tenantID)
 	if err != nil {
@@ -77,9 +83,10 @@ func (r *Repository) ListAccounts(ctx context.Context, tenantID string) ([]Accou
 	for rows.Next() {
 		var account Account
 		if err := rows.Scan(
-			&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username,
+			&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 			&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
-			&account.LastError, &account.CreatedAt, &account.UpdatedAt,
+			&account.LastError, &account.LastActionAt, &account.LastSuccessAt, &account.LastErrorAt,
+			&account.LastWarningAt, &account.ConsecutiveErrors, &account.PausedUntil, &account.CreatedAt, &account.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -91,13 +98,15 @@ func (r *Repository) ListAccounts(ctx context.Context, tenantID string) ([]Accou
 func (r *Repository) GetAccount(ctx context.Context, tenantID, accountID string) (Account, error) {
 	var account Account
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, tenant_id::text, name, platform, username, profile_path, status,
-		       last_connected_at, last_activity_at, last_error, created_at, updated_at
+		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
+		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
+		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
 		FROM social_accounts WHERE tenant_id=$1 AND id=$2
 	`, tenantID, accountID).Scan(
-		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username,
+		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 		&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
-		&account.LastError, &account.CreatedAt, &account.UpdatedAt,
+		&account.LastError, &account.LastActionAt, &account.LastSuccessAt, &account.LastErrorAt,
+		&account.LastWarningAt, &account.ConsecutiveErrors, &account.PausedUntil, &account.CreatedAt, &account.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, ErrAccountNotFound
@@ -109,8 +118,34 @@ func (r *Repository) SetAccountStatus(ctx context.Context, tenantID, accountID, 
 	_, err := r.pool.Exec(ctx, `
 		UPDATE social_accounts SET status=$1, last_error=NULLIF($2, ''),
 		last_connected_at=CASE WHEN $1='connected' THEN now() ELSE last_connected_at END,
+		paused_until=CASE WHEN $1='connected' THEN NULL ELSE paused_until END,
 		updated_at=now() WHERE tenant_id=$3 AND id=$4
 	`, status, lastError, tenantID, accountID)
+	return err
+}
+
+func (r *Repository) SetExternalUserID(ctx context.Context, accountID, externalUserID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET external_user_id=NULLIF($1, ''), updated_at=now() WHERE id=$2`, externalUserID, accountID)
+	return err
+}
+
+func (r *Repository) MarkAccountSuccess(ctx context.Context, accountID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_action_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1`, accountID)
+	return err
+}
+
+func (r *Repository) MarkAccountScanSuccess(ctx context.Context, accountID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1`, accountID)
+	return err
+}
+
+func (r *Repository) MarkAccountError(ctx context.Context, accountID, message string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_error=$1, last_error_at=now(), consecutive_errors=consecutive_errors+1, updated_at=now() WHERE id=$2`, message, accountID)
+	return err
+}
+
+func (r *Repository) MarkAccountWarning(ctx context.Context, accountID, status, message string, pausedUntil *time.Time) error {
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET status=$1, last_error=NULLIF($2, ''), last_warning_at=now(), paused_until=$3, updated_at=now() WHERE id=$4`, status, message, pausedUntil, accountID)
 	return err
 }
 
@@ -127,12 +162,12 @@ func (r *Repository) CreateJob(ctx context.Context, tenantID, accountID, platfor
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO social_jobs (tenant_id, social_account_id, platform, action, target_url, content, max_attempts)
 		VALUES ($1, $2, $3, 'comment', $4, $5, $6)
-		RETURNING id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content,
+		RETURNING id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		          status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		          error_message, created_at, updated_at
 	`, tenantID, accountID, platform, targetURL, content, maxAttempts).Scan(
 		&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
-		&job.Content, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
+		&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
 		&job.CompletedAt, &job.FailedAt, &job.ErrorMessage, &job.CreatedAt, &job.UpdatedAt,
 	)
 	return job, err
@@ -140,7 +175,7 @@ func (r *Repository) CreateJob(ctx context.Context, tenantID, accountID, platfor
 
 func (r *Repository) ListJobs(ctx context.Context, tenantID string) ([]Job, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content,
+		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
 		FROM social_jobs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200
@@ -154,7 +189,7 @@ func (r *Repository) ListJobs(ctx context.Context, tenantID string) ([]Job, erro
 		var job Job
 		if err := rows.Scan(
 			&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
-			&job.Content, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
+			&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
 			&job.CompletedAt, &job.FailedAt, &job.ErrorMessage, &job.CreatedAt, &job.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -167,13 +202,13 @@ func (r *Repository) ListJobs(ctx context.Context, tenantID string) ([]Job, erro
 func (r *Repository) GetJob(ctx context.Context, tenantID, jobID string) (Job, error) {
 	var job Job
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content,
+		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
 		FROM social_jobs WHERE tenant_id=$1 AND id=$2
 	`, tenantID, jobID).Scan(
 		&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
-		&job.Content, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
+		&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
 		&job.CompletedAt, &job.FailedAt, &job.ErrorMessage, &job.CreatedAt, &job.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -185,13 +220,13 @@ func (r *Repository) GetJob(ctx context.Context, tenantID, jobID string) (Job, e
 func (r *Repository) GetJobByID(ctx context.Context, jobID string) (Job, error) {
 	var job Job
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content,
+		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
 		FROM social_jobs WHERE id=$1
 	`, jobID).Scan(
 		&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
-		&job.Content, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
+		&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
 		&job.CompletedAt, &job.FailedAt, &job.ErrorMessage, &job.CreatedAt, &job.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -24,8 +25,10 @@ const (
 	QueueFacebookMessage   = "facebook:message"
 	QueueContactSync       = "contact:sync"
 	QueueSocialJobs        = "social:jobs"
+	QueueSocialScanner     = "social:scanner"
 	TaskAutomationProcess  = QueueAutomationProcess
 	TaskSocialJob          = QueueSocialJobs
+	TaskSocialScan         = QueueSocialScanner
 )
 
 type TaskEnvelope struct {
@@ -39,6 +42,11 @@ type TaskEnvelope struct {
 
 type SocialJobEnvelope struct {
 	JobID     string `json:"job_id"`
+	CreatedAt string `json:"created_at"`
+}
+
+type SocialScanEnvelope struct {
+	AccountID string `json:"account_id"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -65,11 +73,35 @@ func (c *Client) EnqueueAutomation(ctx context.Context, envelope TaskEnvelope) e
 }
 
 func (c *Client) EnqueueSocialJob(ctx context.Context, envelope SocialJobEnvelope) error {
+	return c.enqueueSocialJob(ctx, envelope, nil)
+}
+
+func (c *Client) EnqueueSocialJobAt(ctx context.Context, envelope SocialJobEnvelope, scheduledAt time.Time) error {
+	return c.enqueueSocialJob(ctx, envelope, &scheduledAt)
+}
+
+func (c *Client) enqueueSocialJob(ctx context.Context, envelope SocialJobEnvelope, scheduledAt *time.Time) error {
 	payload, err := json.Marshal(envelope)
 	if err != nil {
 		return err
 	}
-	task := asynq.NewTask(TaskSocialJob, payload, asynq.TaskID(envelope.JobID), asynq.MaxRetry(3), asynq.Queue(QueueSocialJobs))
+	taskID := envelope.JobID
+	options := []asynq.Option{asynq.MaxRetry(3), asynq.Queue(QueueSocialJobs)}
+	if scheduledAt != nil {
+		taskID += ":" + scheduledAt.UTC().Format("20060102150405.000000000")
+		options = append(options, asynq.ProcessAt(*scheduledAt))
+	}
+	task := asynq.NewTask(TaskSocialJob, payload, append([]asynq.Option{asynq.TaskID(taskID)}, options...)...)
+	_, err = c.client.EnqueueContext(ctx, task)
+	return err
+}
+
+func (c *Client) EnqueueSocialScan(ctx context.Context, envelope SocialScanEnvelope) error {
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	task := asynq.NewTask(TaskSocialScan, payload, asynq.TaskID("scan:"+envelope.AccountID), asynq.MaxRetry(1), asynq.Queue(QueueSocialScanner))
 	_, err = c.client.EnqueueContext(ctx, task)
 	return err
 }
@@ -124,6 +156,30 @@ func RunSocialWorker(redisURL string, concurrency int, handler SocialJobHandler)
 		var envelope SocialJobEnvelope
 		if err := json.Unmarshal(task.Payload(), &envelope); err != nil {
 			return fmt.Errorf("decode social job: %w", err)
+		}
+		return handler(ctx, envelope)
+	})
+	return server.Run(mux)
+}
+
+type SocialScanHandler func(context.Context, SocialScanEnvelope) error
+
+func RunSocialScanner(redisURL string, concurrency int, handler SocialScanHandler) error {
+	opt, err := redisOptions(redisURL)
+	if err != nil {
+		return err
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	server := asynq.NewServer(opt, asynq.Config{Concurrency: concurrency, Queues: map[string]int{
+		QueueSocialScanner: 1,
+	}})
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(TaskSocialScan, func(ctx context.Context, task *asynq.Task) error {
+		var envelope SocialScanEnvelope
+		if err := json.Unmarshal(task.Payload(), &envelope); err != nil {
+			return fmt.Errorf("decode social scan task: %w", err)
 		}
 		return handler(ctx, envelope)
 	})

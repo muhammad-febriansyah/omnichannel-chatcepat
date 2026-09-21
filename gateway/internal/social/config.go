@@ -13,6 +13,7 @@ type Config struct {
 	BrowserHeadless     bool
 	BrowserNoSandbox    bool
 	AccountMinActionGap time.Duration
+	ScannerInterval     time.Duration
 	APIAuthToken        string
 	AppEnv              string
 }
@@ -25,6 +26,7 @@ func ConfigFromEnv() Config {
 		BrowserHeadless:     envBool("BROWSER_HEADLESS", false),
 		BrowserNoSandbox:    envBool("BROWSER_NO_SANDBOX", true),
 		AccountMinActionGap: time.Duration(envInt("ACCOUNT_MIN_ACTION_INTERVAL_SECONDS", 10)) * time.Second,
+		ScannerInterval:     time.Duration(envInt("SOCIAL_SCANNER_INTERVAL_SECONDS", 60)) * time.Second,
 		APIAuthToken:        os.Getenv("SOCIAL_API_TOKEN"),
 		AppEnv:              firstEnv("APP_ENV", "development"),
 	}

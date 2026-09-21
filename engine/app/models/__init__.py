@@ -23,6 +23,7 @@ from .plan import Plan
 from .order import Order
 from .product import Product
 from .social import SocialAccount, SocialActivityLog, SocialJob
+from .email_notification import EmailNotification
 
 __all__ = [
     "Base",
@@ -47,4 +48,5 @@ __all__ = [
     "SocialAccount",
     "SocialJob",
     "SocialActivityLog",
+    "EmailNotification",
 ]

@@ -55,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 		for _, pattern := range []string{
 			"/api/accounts", "/api/accounts/",
 			"/api/jobs", "/api/jobs/",
+			"/api/automation", "/api/automation/",
 			"/api/dashboard/stats",
 		} {
 			mux.Handle(pattern, handler)

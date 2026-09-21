@@ -19,6 +19,7 @@ from ..services.conversation import (
     set_status,
     start_conversation,
 )
+from ..services.notifications import send_welcome_notification
 
 router = APIRouter(prefix="/internal/v1")
 
@@ -44,6 +45,33 @@ def _tenant(x_tenant_id: str | None) -> uuid.UUID:
         return uuid.UUID(x_tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail="X-Tenant-Id invalid") from e
+
+
+class WelcomeNotificationIn(BaseModel):
+    tenant_id: uuid.UUID
+    user_id: uuid.UUID
+    recipient: str
+    name: str
+    business: str
+
+
+@router.post("/notifications/welcome")
+async def notification_welcome(
+    payload: WelcomeNotificationIn,
+    background: BackgroundTasks,
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """Queue welcome email after a successful self-signup."""
+    _auth(x_service_token)
+    background.add_task(
+        send_welcome_notification,
+        tenant_id=payload.tenant_id,
+        user_id=payload.user_id,
+        recipient=payload.recipient,
+        name=payload.name,
+        business=payload.business,
+    )
+    return {"queued": True}
 
 
 @router.post("/broadcasts/{broadcast_id}/run")
