@@ -22,6 +22,7 @@ from .audit import AuditLog
 from .plan import Plan
 from .order import Order
 from .product import Product
+from .social import SocialAccount, SocialActivityLog, SocialJob
 
 __all__ = [
     "Base",
@@ -43,4 +44,7 @@ __all__ = [
     "Plan",
     "Order",
     "Product",
+    "SocialAccount",
+    "SocialJob",
+    "SocialActivityLog",
 ]

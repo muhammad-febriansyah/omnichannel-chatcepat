@@ -23,7 +23,9 @@ const (
 	QueueFacebookReply     = "facebook:reply"
 	QueueFacebookMessage   = "facebook:message"
 	QueueContactSync       = "contact:sync"
+	QueueSocialJobs        = "social:jobs"
 	TaskAutomationProcess  = QueueAutomationProcess
+	TaskSocialJob          = QueueSocialJobs
 )
 
 type TaskEnvelope struct {
@@ -33,6 +35,11 @@ type TaskEnvelope struct {
 	Action       string         `json:"action"`
 	Payload      map[string]any `json:"payload"`
 	CreatedAt    string         `json:"created_at"`
+}
+
+type SocialJobEnvelope struct {
+	JobID     string `json:"job_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type Client struct{ client *asynq.Client }
@@ -53,6 +60,16 @@ func (c *Client) EnqueueAutomation(ctx context.Context, envelope TaskEnvelope) e
 		return err
 	}
 	task := asynq.NewTask(TaskAutomationProcess, payload, asynq.TaskID(envelope.TaskID), asynq.MaxRetry(5), asynq.Queue(QueueAutomationProcess))
+	_, err = c.client.EnqueueContext(ctx, task)
+	return err
+}
+
+func (c *Client) EnqueueSocialJob(ctx context.Context, envelope SocialJobEnvelope) error {
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	task := asynq.NewTask(TaskSocialJob, payload, asynq.TaskID(envelope.JobID), asynq.MaxRetry(3), asynq.Queue(QueueSocialJobs))
 	_, err = c.client.EnqueueContext(ctx, task)
 	return err
 }
@@ -83,6 +100,30 @@ func RunWorker(redisURL string, concurrency int, handler Handler) error {
 		var envelope TaskEnvelope
 		if err := json.Unmarshal(task.Payload(), &envelope); err != nil {
 			return fmt.Errorf("decode automation task: %w", err)
+		}
+		return handler(ctx, envelope)
+	})
+	return server.Run(mux)
+}
+
+type SocialJobHandler func(context.Context, SocialJobEnvelope) error
+
+func RunSocialWorker(redisURL string, concurrency int, handler SocialJobHandler) error {
+	opt, err := redisOptions(redisURL)
+	if err != nil {
+		return err
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	server := asynq.NewServer(opt, asynq.Config{Concurrency: concurrency, Queues: map[string]int{
+		QueueSocialJobs: 1,
+	}})
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(TaskSocialJob, func(ctx context.Context, task *asynq.Task) error {
+		var envelope SocialJobEnvelope
+		if err := json.Unmarshal(task.Payload(), &envelope); err != nil {
+			return fmt.Errorf("decode social job: %w", err)
 		}
 		return handler(ctx, envelope)
 	})

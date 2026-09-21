@@ -16,6 +16,7 @@ import (
 	"github.com/chatcepat/gateway/internal/omnichannel"
 	"github.com/chatcepat/gateway/internal/queue"
 	"github.com/chatcepat/gateway/internal/server"
+	"github.com/chatcepat/gateway/internal/social"
 	"github.com/chatcepat/gateway/internal/worker"
 	"github.com/chatcepat/gateway/internal/ws"
 )
@@ -94,6 +95,13 @@ func main() {
 		go wa.Restore(ctx) // sambung ulang device tersimpan (non-blocking).
 	}
 
+	socialCfg := social.ConfigFromEnv()
+	socialService, err := social.New(ctx, socialCfg)
+	if err != nil {
+		log.Fatalf("social init gagal: %v", err)
+	}
+	defer socialService.Close()
+
 	// Adapter per channel type. api.co.id (provider "apico") melayani WA/IG/FB lewat
 	// satu REST gateway — dipilih bila channel.meta.provider = "apico".
 	apicoKey := env("APICO_API_KEY", "")
@@ -124,6 +132,7 @@ func main() {
 		MetaAppSecret: env("META_APP_SECRET", ""),
 		MetaVerifyTok: env("META_VERIFY_TOKEN", ""),
 		ApiCoSecret:   env("APICO_WEBHOOK_SECRET", ""),
+		SocialAPI:     social.NewAPI(socialService, socialCfg),
 	}
 
 	httpSrv := &http.Server{Addr: ":8080", Handler: srv.Routes()}

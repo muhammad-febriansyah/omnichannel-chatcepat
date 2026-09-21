@@ -25,10 +25,7 @@ type Tag = { label: string; tone: "green" | "blue" | "amber" | "slate" };
 
 const TYPES: { value: ChannelType; label: string; desc: string; tag: Tag }[] = [
   { value: "telegram", label: "Telegram", desc: "Paste bot token dari @BotFather", tag: { label: "Gratis", tone: "green" } },
-  { value: "wa_official", label: "WhatsApp Official", desc: "API resmi — kirim & terima pesan", tag: { label: "Resmi", tone: "blue" } },
   { value: "wa_unofficial", label: "WhatsApp Unofficial", desc: "Scan QR (gratis, rawan banned)", tag: { label: "Rawan banned", tone: "amber" } },
-  { value: "instagram", label: "Instagram", desc: "DM masuk langsung ke inbox", tag: { label: "Resmi", tone: "blue" } },
-  { value: "facebook", label: "Facebook", desc: "Pesan masuk langsung ke inbox", tag: { label: "Resmi", tone: "blue" } },
 ];
 
 const TAG_CLS: Record<Tag["tone"], string> = {

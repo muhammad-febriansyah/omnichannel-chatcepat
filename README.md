@@ -154,6 +154,21 @@ npm run build
 
 Test simulator 50 comment adalah endpoint development, bukan fitur mass engagement: 50 user berbeda (`user001`–`user050`) dibuat sebagai incoming comments. Tidak ada 50 akun Instagram dan tidak ada outbound fan-out default.
 
+## Social browser foundation (MVP bertahap)
+
+Foundation browser automation berada di `gateway/`, bukan membuat servis backend baru:
+
+- `gateway/internal/browser` — persistent Chromium profiles, per-account lock, dan lifecycle Rod.
+- `gateway/internal/social` — repository, Gin API, account/job state machine, activity log, dan Redis enqueue.
+- `gateway/cmd/worker` — worker Asynq terpisah untuk social jobs.
+- `engine/migrations/versions/0014_social_automation.py` — DDL `social_accounts`, `social_jobs`, dan kolom social pada `activity_logs`.
+
+Endpoint foundation memakai prefix `/api` dan membutuhkan `X-Workspace-ID` (development boleh fallback ke tenant pertama). Di luar development, set `SOCIAL_API_TOKEN` dan kirim `Authorization: Bearer <token>`.
+
+Tahap ini baru membuat account/profile, membuka Chromium untuk login manual, validasi URL/job, queue, lock, dan status/logging. Selector serta aksi comment Facebook/Instagram belum diaktifkan; job akan berhenti aman dengan status `failed` sampai provider browser tahap berikutnya selesai.
+
+Catatan browser manual: `BROWSER_HEADLESS=false` membutuhkan display desktop. Jalankan gateway secara lokal untuk login manual, atau siapkan display/noVNC yang terisolasi pada deployment Docker. Image saat ini tidak mengekspos port debugging Chromium ke jaringan.
+
 ## Troubleshooting
 
 - `workspace resolve` gagal → jalankan `docker compose exec engine python -m app.seed`, atau masukkan tenant UUID di Settings.

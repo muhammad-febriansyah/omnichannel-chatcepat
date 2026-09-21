@@ -16,6 +16,7 @@ import (
 	"github.com/chatcepat/gateway/internal/channels"
 	"github.com/chatcepat/gateway/internal/contracts"
 	"github.com/chatcepat/gateway/internal/omnichannel"
+	"github.com/chatcepat/gateway/internal/social"
 	"github.com/chatcepat/gateway/internal/ws"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	MetaAppSecret string
 	MetaVerifyTok string
 	ApiCoSecret   string // api.co.id webhook secret (X-Webhook-Signature HMAC-SHA256)
+	SocialAPI     *social.API
 }
 
 func (s *Server) Routes() http.Handler {
@@ -47,6 +49,16 @@ func (s *Server) Routes() http.Handler {
 	}
 	if s.Omnichannel != nil {
 		mux.Handle("/api/", http.StripPrefix("/api", s.Omnichannel.Handler()))
+	}
+	if s.SocialAPI != nil {
+		handler := http.StripPrefix("/api", s.SocialAPI.Handler())
+		for _, pattern := range []string{
+			"/api/accounts", "/api/accounts/",
+			"/api/jobs", "/api/jobs/",
+			"/api/dashboard/stats",
+		} {
+			mux.Handle(pattern, handler)
+		}
 	}
 	return mux
 }

@@ -56,7 +56,7 @@ export default async function ChannelsPage() {
       <PageHeader
         icon={Plug}
         title="Channel"
-        description={rows.length ? `${rows.length} channel · ${connected} terhubung` : "WhatsApp, Telegram, IG, FB"}
+        description={rows.length ? `${rows.length} channel · ${connected} terhubung` : "WhatsApp & Telegram"}
         actions={
           <ActionLink href="/channels/connect">
             <Plus className="size-4" /> Hubungkan Channel
@@ -70,7 +70,7 @@ export default async function ChannelsPage() {
             <EmptyState
               icon={Plug}
               title="Belum ada channel"
-              description="Hubungkan WhatsApp, Telegram, atau channel lain untuk mulai menerima pesan."
+              description="Hubungkan WhatsApp atau Telegram untuk mulai menerima pesan."
               action={
                 <ActionLink href="/channels/connect">
                   <Plus className="size-4" /> Hubungkan channel pertama
