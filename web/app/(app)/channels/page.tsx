@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
-import { channels } from "@/lib/db/schema";
+import { channels, flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { CHANNEL_META, ChannelType, statusLabel } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
@@ -11,7 +11,7 @@ import { ChannelIcon } from "@/components/app/channel-icon";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeleteButton } from "@/components/app/delete-button";
-import { AutoReplyToggle } from "@/components/app/auto-reply-toggle";
+import { ChannelAutomationSettings } from "@/components/app/channel-automation-settings";
 import { disconnectChannel } from "@/lib/actions";
 import { Suspense } from "react";
 import { ConnectToast } from "./connect-toast";
@@ -45,6 +45,13 @@ async function load(tenantId: string | null) {
 export default async function ChannelsPage() {
   const session = await requirePageAbility("channel.view");
   const rows = await load(session.tenantId);
+  const menuFlows = session.tenantId
+    ? await db.query.flows.findMany({
+        where: and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")),
+        columns: { id: true, name: true, status: true },
+        orderBy: [desc(flows.createdAt)],
+      })
+    : [];
 
   const connected = rows.filter((c) => c.status === "connected").length;
 
@@ -116,10 +123,13 @@ export default async function ChannelsPage() {
                       </StatusPill>
                     </div>
                     <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
-                      <AutoReplyToggle
+                      <ChannelAutomationSettings
                         channelId={c.id}
                         type={c.type}
                         enabled={c.autoReplyEnabled}
+                        mode={c.autoReplyMode as "menu" | "ai" | "hybrid"}
+                        defaultFlowId={c.defaultFlowId}
+                        flows={menuFlows}
                       />
                       {c.type === "wa_unofficial" &&
                         c.status !== "connected" && (

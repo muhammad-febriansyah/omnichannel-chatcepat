@@ -56,6 +56,7 @@ channel_type = pg_enum(
 channel_status = pg_enum(
     "connected", "disconnected", "pending", "banned", name="channel_status"
 )
+auto_reply_mode = pg_enum("menu", "ai", "hybrid", name="auto_reply_mode")
 opt_in_status = pg_enum("opted_in", "opted_out", "unknown", name="opt_in_status")
 opt_in_source = pg_enum(
     "import", "form", "click_to_chat", "qr", "inbound", name="opt_in_source"
@@ -89,7 +90,7 @@ order_status = pg_enum("pending", "paid", "failed", "expired", name="order_statu
 
 # Nama semua ENUM — dipakai migration untuk create/drop type berurutan.
 ENUM_NAMES = [
-    "tenant_plan", "tenant_status", "user_role", "user_status", "channel_type",
+    "tenant_plan", "tenant_status", "user_role", "user_status", "channel_type", "auto_reply_mode",
     "channel_status", "opt_in_status", "opt_in_source", "conversation_status",
     "conversation_handler", "message_direction", "message_sender", "message_type",
     "message_status", "flow_status", "flow_trigger", "knowledge_source_type",

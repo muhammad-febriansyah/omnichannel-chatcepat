@@ -20,6 +20,7 @@ import {
   Flag,
   Info,
   Plus,
+  ListChecks,
 } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { saveFlow } from "@/lib/actions";
@@ -30,13 +31,17 @@ import { WaMessageEditor } from "@/components/app/wa-message-editor";
 type Step =
   | { type: "send_text"; text: string }
   | { type: "send_catalog"; category: string; intro: string }
+  | { type: "choice_menu"; prompt: string; saveAs: string; invalidText: string; options: ChoiceOption[] }
   | { type: "wait_reply"; saveAs: string }
   | { type: "ai_agent" }
   | { type: "handoff" };
 
+type ChoiceOption = { code: string; label: string; response: string };
+
 const STEP_LABEL: Record<Step["type"], string> = {
   send_text: "Kirim Teks",
   send_catalog: "Kirim Katalog",
+  choice_menu: "Menu Pilihan",
   wait_reply: "Tunggu Balasan",
   ai_agent: "AI Agent",
   handoff: "Alihkan ke Agen",
@@ -45,15 +50,30 @@ const STEP_LABEL: Record<Step["type"], string> = {
 const STEP_META: Record<Step["type"], { icon: React.ElementType; color: string; desc: string }> = {
   send_text: { icon: MessageSquare, color: "#3b82f6", desc: "Kirim pesan teks ke pelanggan" },
   send_catalog: { icon: ShoppingBag, color: "#0ea5e9", desc: "Kirim foto + harga produk aktif (katalog)" },
+  choice_menu: { icon: ListChecks, color: "#2563eb", desc: "Tampilkan pilihan teks dan balasan per opsi" },
   wait_reply: { icon: Clock, color: "#f59e0b", desc: "Tunggu balasan, simpan ke variabel" },
   ai_agent: { icon: Sparkles, color: "#8b5cf6", desc: "Serahkan ke AI (jawab dari knowledge base)" },
   handoff: { icon: UserPlus, color: "#10b981", desc: "Alihkan ke agen manusia — flow selesai" },
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function parse(nodes: any[]): { keywords: string[]; steps: Step[] } {
+function parse(definition: any): { triggerKind: "keyword" | "welcome"; keywords: string[]; steps: Step[] } {
+  const nodes: any[] = definition?.nodes ?? [];
   const trig = nodes.find((n) => n?.type === "trigger");
   const keywords: string[] = trig?.trigger?.match ?? [];
+  if (definition?.menu) {
+    return {
+      triggerKind: trig?.trigger?.kind === "welcome" ? "welcome" : "keyword",
+      keywords,
+      steps: [{
+        type: "choice_menu",
+        prompt: definition.menu.prompt ?? "",
+        saveAs: definition.menu.saveAs ?? "pilihan",
+        invalidText: definition.menu.invalidText ?? "Pilihan belum dikenali. Silakan coba lagi.",
+        options: Array.isArray(definition.menu.options) ? definition.menu.options : [],
+      }],
+    };
+  }
   const steps: Step[] = [];
   for (const n of nodes.filter((x) => x?.type !== "trigger")) {
     if (n.type === "send_text") steps.push({ type: "send_text", text: n.text ?? "" });
@@ -62,28 +82,53 @@ function parse(nodes: any[]): { keywords: string[]; steps: Step[] } {
     else if (n.type === "ai_agent") steps.push({ type: "ai_agent" });
     else if (n.type === "handoff") steps.push({ type: "handoff" });
   }
-  return { keywords, steps };
+  return { triggerKind: trig?.trigger?.kind === "welcome" ? "welcome" : "keyword", keywords, steps };
 }
 
-function compile(keywords: string[], steps: Step[]) {
+function compile(triggerKind: "keyword" | "welcome", keywords: string[], steps: Step[]) {
   const nodes: any[] = [
     {
       id: "start",
       type: "trigger",
-      trigger: { kind: "keyword", match: keywords },
+      trigger: { kind: triggerKind, match: triggerKind === "keyword" ? keywords : [] },
       next: steps.length ? "s0" : null,
     },
   ];
+  const menu = steps.find((s): s is Extract<Step, { type: "choice_menu" }> => s.type === "choice_menu");
   steps.forEach((s, i) => {
     const id = `s${i}`;
     const next = i < steps.length - 1 ? `s${i + 1}` : null;
     if (s.type === "send_text") nodes.push({ id, type: "send_text", text: s.text, next });
     else if (s.type === "send_catalog") nodes.push({ id, type: "send_catalog", category: s.category || undefined, intro: s.intro || undefined, next });
+    else if (s.type === "choice_menu") {
+      const waitId = `${id}_wait`;
+      const branchId = `${id}_branch`;
+      const invalidId = `${id}_invalid`;
+      nodes.push({ id, type: "send_text", text: s.prompt, next: waitId });
+      nodes.push({ id: waitId, type: "wait_reply", save_as: s.saveAs || `choice${i}`, normalize: "choice", next: branchId });
+      nodes.push({
+        id: branchId,
+        type: "condition",
+        branches: s.options.flatMap((option) => {
+          const target = `${id}_${option.code.toLowerCase()}`;
+          const aliases = [option.code, option.label].map((value) => value.trim().toLocaleLowerCase());
+          return aliases.map((value) => ({ if: `${s.saveAs || `choice${i}`} == '${value.replaceAll("'", "")}'`, next: target }));
+        }),
+        else: invalidId,
+      });
+      s.options.forEach((option) => nodes.push({
+        id: `${id}_${option.code.toLowerCase()}`,
+        type: "send_text",
+        text: option.response,
+        next,
+      }));
+      nodes.push({ id: invalidId, type: "send_text", text: s.invalidText, next: id });
+    }
     else if (s.type === "wait_reply") nodes.push({ id, type: "wait_reply", save_as: s.saveAs || `var${i}`, next });
     else if (s.type === "ai_agent") nodes.push({ id, type: "ai_agent", next });
     else if (s.type === "handoff") nodes.push({ id, type: "handoff", to: "agent" });
   });
-  return { nodes };
+  return { nodes, ...(menu ? { menu } : {}) };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -135,6 +180,8 @@ function FlowCanvas({ keywords, steps }: { keywords: string[]; steps: Step[] }) 
                 ? s.text || "(teks kosong)"
                 : s.type === "send_catalog"
                   ? `kirim produk${s.category ? ` · ${s.category}` : " (semua)"}`
+                  : s.type === "choice_menu"
+                    ? `${s.options.length} pilihan · balasan berdasarkan kode/label`
                   : s.type === "wait_reply"
                     ? `simpan → ${s.saveAs || "var"}`
                     : s.type === "ai_agent"
@@ -218,6 +265,8 @@ function FlowTestPanel({ keywords, steps, onClose }: { keywords: string[]; steps
             const marker =
               s.type === "send_catalog"
                 ? `🛍 Kirim katalog produk${s.category ? ` (${s.category})` : ""} — foto + harga`
+                : s.type === "choice_menu"
+                  ? `☷ Menu pilihan (${s.options.map((option) => `${option.code}. ${option.label}`).join(" · ")})`
                 : s.type === "wait_reply"
                   ? `⏸ Menunggu balasan user → simpan ke "${s.saveAs || "var"}"`
                   : s.type === "ai_agent"
@@ -246,18 +295,19 @@ export function FlowEditor({
   id: string;
   name: string;
   status: "draft" | "active";
-  definition: { nodes?: unknown[] };
+  definition: { nodes?: unknown[]; menu?: unknown; };
 }) {
-  const parsed = useMemo(() => parse((definition.nodes as never[]) ?? []), [definition]);
+  const parsed = useMemo(() => parse(definition), [definition]);
   const [name, setName] = useState(initName);
   const [status, setStatus] = useState<"draft" | "active">(initStatus);
+  const [triggerKind, setTriggerKind] = useState<"keyword" | "welcome">(parsed.triggerKind);
   const [keywords, setKeywords] = useState<string[]>(parsed.keywords);
   const [kwInput, setKwInput] = useState("");
   const [steps, setSteps] = useState<Step[]>(parsed.steps);
   const [pending, start] = useTransition();
   const [testOpen, setTestOpen] = useState(false);
 
-  const compiled = useMemo(() => compile(keywords, steps), [keywords, steps]);
+  const compiled = useMemo(() => compile(triggerKind, keywords, steps), [triggerKind, keywords, steps]);
 
   function addKeyword() {
     const v = kwInput.trim().toLowerCase();
@@ -270,6 +320,11 @@ export function FlowEditor({
         ? { type, text: "" }
         : type === "send_catalog"
           ? { type, category: "", intro: "" }
+          : type === "choice_menu"
+            ? { type, prompt: "Silakan pilih:\nA. Opsi pertama\nB. Opsi kedua", saveAs: "pilihan", invalidText: "Pilihan belum dikenali. Balas A atau B.", options: [
+                { code: "A", label: "Opsi pertama", response: "Terima kasih, kami akan menjelaskan opsi pertama." },
+                { code: "B", label: "Opsi kedua", response: "Terima kasih, kami akan menjelaskan opsi kedua." },
+              ] }
           : type === "wait_reply"
             ? { type, saveAs: "" }
             : { type };
@@ -287,9 +342,24 @@ export function FlowEditor({
 
   function save() {
     if (!name.trim()) return gooeyToast.error("Nama flow wajib");
+    if (triggerKind === "keyword" && keywords.length === 0) return gooeyToast.error("Tambahkan minimal satu keyword");
+    const choice = steps.find((s): s is Extract<Step, { type: "choice_menu" }> => s.type === "choice_menu");
+    if (choice) {
+      if (steps.length !== 1) return gooeyToast.error("Menu Pilihan saat ini harus menjadi satu-satunya langkah flow");
+      if (!choice.prompt.trim()) return gooeyToast.error("Pesan menu wajib diisi");
+      if (choice.options.length < 2 || choice.options.length > 10) return gooeyToast.error("Menu harus punya 2–10 pilihan");
+      if (!/^[a-zA-Z0-9_]+$/.test(choice.saveAs.trim() || "")) return gooeyToast.error("Nama variabel hanya boleh berisi huruf, angka, underscore");
+      const codes = choice.options.map((option) => option.code.trim().toLocaleLowerCase());
+      const labels = choice.options.map((option) => option.label.trim().toLocaleLowerCase());
+      if (codes.some((code) => !code) || codes.length !== new Set(codes).size || labels.length !== new Set(labels).size) {
+        return gooeyToast.error("Kode dan label pilihan harus unik");
+      }
+      if (choice.options.some((option) => !/^[a-zA-Z0-9_]+$/.test(option.code.trim()))) return gooeyToast.error("Kode pilihan hanya boleh berisi huruf, angka, underscore");
+      if (choice.options.some((option) => !option.response.trim())) return gooeyToast.error("Balasan tiap pilihan wajib diisi");
+    }
     start(async () => {
       try {
-        await gooeyToast.promise(saveFlow(id, { name, status, trigger: "keyword", definition: compiled }), {
+        await gooeyToast.promise(saveFlow(id, { name, status, trigger: triggerKind, definition: compiled }), {
           loading: "Menyimpan flow…",
           success: "Flow tersimpan",
           error: "Gagal menyimpan",
@@ -353,12 +423,23 @@ export function FlowEditor({
         {/* Editor */}
         <div>
           <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Zap className="size-4 text-brand-navy" />
-              <h2 className="text-sm font-semibold">Trigger · keyword</h2>
+              <h2 className="text-sm font-semibold">Trigger · {triggerKind === "welcome" ? "pesan pertama" : "keyword"}</h2>
+              <select
+                value={triggerKind}
+                onChange={(event) => setTriggerKind(event.target.value as "keyword" | "welcome")}
+                aria-label="Jenis trigger"
+                className="ml-auto rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-brand-blue"
+              >
+                <option value="welcome">Pesan pertama</option>
+                <option value="keyword">Keyword</option>
+              </select>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Pesan masuk yang cocok dengan salah satu keyword akan memulai flow.</p>
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
+            <p className="mt-1 text-xs text-muted-foreground">
+              {triggerKind === "welcome" ? "Pesan pertama dari pelanggan akan memulai flow ini." : "Pesan masuk yang cocok dengan salah satu keyword akan memulai flow."}
+            </p>
+            {triggerKind === "keyword" && <div className="mt-2.5 flex flex-wrap gap-1.5">
               {keywords.map((k) => (
                 <span key={k} className="flex items-center gap-1 rounded-full bg-blue-50 py-1 pl-2.5 pr-1.5 text-xs text-brand-blue dark:bg-blue-500/10 dark:text-blue-300">
                   {k}
@@ -381,7 +462,7 @@ export function FlowEditor({
                 placeholder="+ ketik keyword, Enter"
                 className="w-40 rounded-full border border-dashed border-border bg-background px-2.5 py-1 text-xs outline-none focus:border-brand-blue"
               />
-            </div>
+            </div>}
           </div>
 
           <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Langkah</h2>
@@ -434,6 +515,89 @@ export function FlowEditor({
                       />
                     </div>
                   )}
+                  {s.type === "choice_menu" && (
+                    <div className="space-y-3">
+                      <WaMessageEditor
+                        value={s.prompt}
+                        onChange={(v) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, prompt: v } : y)))}
+                        rows={4}
+                        variables={[{ label: "{{nama}}", token: "{{nama}}" }]}
+                        placeholder="Contoh: Halo {{nama}}, silakan pilih tujuan Anda…"
+                      />
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <label className="text-xs text-muted-foreground">
+                          Simpan pilihan ke variabel
+                          <input
+                            value={s.saveAs}
+                            onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, saveAs: e.target.value } : y)))}
+                            placeholder="pilihan"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-brand-blue"
+                          />
+                        </label>
+                        <label className="text-xs text-muted-foreground">
+                          Pesan pilihan tidak dikenal
+                          <input
+                            value={s.invalidText}
+                            onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, invalidText: e.target.value } : y)))}
+                            placeholder="Balas A atau B…"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-brand-blue"
+                          />
+                        </label>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                          <span>Pilihan & balasan</span>
+                          <span className="font-normal text-muted-foreground">{s.options.length}/10</span>
+                        </div>
+                        {s.options.map((option, optionIndex) => (
+                          <div key={optionIndex} className="grid gap-2 rounded-lg border border-border bg-background p-2 sm:grid-cols-[64px_1fr_auto]">
+                            <input
+                              value={option.code}
+                              onChange={(e) => setSteps((x) => x.map((y, j) => j === i && y.type === "choice_menu" ? { ...y, options: y.options.map((o, k) => k === optionIndex ? { ...o, code: e.target.value } : o) } : y))}
+                              aria-label={`Kode pilihan ${optionIndex + 1}`}
+                              placeholder="A"
+                              className="h-9 rounded-md border border-border bg-card px-2 text-sm font-semibold uppercase outline-none focus:border-brand-blue"
+                            />
+                            <div className="space-y-2">
+                              <input
+                                value={option.label}
+                                onChange={(e) => setSteps((x) => x.map((y, j) => j === i && y.type === "choice_menu" ? { ...y, options: y.options.map((o, k) => k === optionIndex ? { ...o, label: e.target.value } : o) } : y))}
+                                aria-label={`Label pilihan ${optionIndex + 1}`}
+                                placeholder="Label pilihan, mis. Turki"
+                                className="h-9 w-full rounded-md border border-border bg-card px-2 text-sm outline-none focus:border-brand-blue"
+                              />
+                              <textarea
+                                value={option.response}
+                                onChange={(e) => setSteps((x) => x.map((y, j) => j === i && y.type === "choice_menu" ? { ...y, options: y.options.map((o, k) => k === optionIndex ? { ...o, response: e.target.value } : o) } : y))}
+                                aria-label={`Balasan pilihan ${optionIndex + 1}`}
+                                placeholder="Balasan yang dikirim setelah dipilih"
+                                rows={2}
+                                className="w-full resize-y rounded-md border border-border bg-card px-2 py-1.5 text-sm outline-none focus:border-brand-blue"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSteps((x) => x.map((y, j) => j === i && y.type === "choice_menu" ? { ...y, options: y.options.filter((_, k) => k !== optionIndex) } : y))}
+                              disabled={s.options.length <= 2}
+                              aria-label={`Hapus pilihan ${optionIndex + 1}`}
+                              className="grid size-9 place-items-center self-start rounded-md text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSteps((x) => x.map((y, j) => j === i && y.type === "choice_menu" && y.options.length < 10 ? { ...y, options: [...y.options, { code: String.fromCharCode(65 + y.options.length), label: "Pilihan baru", response: "" }] } : y))}
+                          disabled={s.options.length >= 10}
+                        >
+                          <Plus className="size-3.5" /> Tambah pilihan
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {s.type === "wait_reply" && (
                     <input
                       value={s.saveAs}
@@ -452,7 +616,7 @@ export function FlowEditor({
 
           <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">Tambah langkah</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {(["send_text", "send_catalog", "wait_reply", "ai_agent", "handoff"] as Step["type"][]).map((t) => {
+            {(["send_text", "send_catalog", "choice_menu", "wait_reply", "ai_agent", "handoff"] as Step["type"][]).map((t) => {
               const meta = STEP_META[t];
               const Icon = meta.icon;
               return (

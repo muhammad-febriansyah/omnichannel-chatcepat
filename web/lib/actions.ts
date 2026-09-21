@@ -390,6 +390,8 @@ export async function createChannel(input: {
       // Balas otomatis: unofficial default OFF (nomor pribadi rawan banned bila
       // auto-reply) — harus di-ON-kan sadar risiko. Channel resmi default ON.
       autoReplyEnabled: input.type !== "wa_unofficial",
+      autoReplyMode: "hybrid",
+      defaultFlowId: null,
     })
     .returning({ id: channels.id });
 
@@ -449,6 +451,39 @@ export async function setChannelAutoReply(channelId: string, enabled: boolean) {
   await db
     .update(channels)
     .set({ autoReplyEnabled: enabled, updatedAt: sql`now()` })
+    .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
+  revalidatePath("/channels");
+}
+
+export async function setChannelAutomation(
+  channelId: string,
+  input: { enabled: boolean; mode: "menu" | "ai" | "hybrid"; flowId: string | null },
+) {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!["menu", "ai", "hybrid"].includes(input.mode)) throw new Error("Mode balasan tidak valid");
+  if (input.enabled && input.mode === "menu" && !input.flowId) throw new Error("Pilih menu untuk mode Menu otomatis");
+
+  if (input.flowId) {
+    const flow = await db.query.flows.findFirst({
+      where: and(eq(flows.id, input.flowId), eq(flows.tenantId, session.tenantId)),
+      columns: { id: true, status: true },
+    });
+    if (!flow) throw new Error("Menu tidak ditemukan");
+    if (input.mode !== "ai" && flow.status !== "active") {
+      throw new Error("Menu harus berstatus aktif sebelum dipakai sebagai balasan otomatis");
+    }
+  }
+
+  await db
+    .update(channels)
+    .set({
+      autoReplyEnabled: input.enabled,
+      autoReplyMode: input.mode,
+      defaultFlowId: input.flowId,
+      updatedAt: sql`now()`,
+    })
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
   revalidatePath("/channels");
 }
@@ -872,13 +907,26 @@ export async function createFlow() {
       tenantId: session.tenantId,
       name: "Flow Baru",
       status: "draft",
-      trigger: "keyword",
+      trigger: "welcome",
       definition: {
         nodes: [
-          { id: "start", type: "trigger", trigger: { kind: "keyword", match: ["menu"] }, next: "greet" },
-          { id: "greet", type: "send_text", text: "Halo 👋 ada yang bisa dibantu?", next: "handoff" },
-          { id: "handoff", type: "handoff", to: "agent" },
+          { id: "start", type: "trigger", trigger: { kind: "welcome", match: [] }, next: "menu" },
+          { id: "menu", type: "send_text", text: "Halo 👋 silakan pilih:\nA. Informasi\nB. Hubungi agen", next: "menu_wait" },
+          { id: "menu_wait", type: "wait_reply", save_as: "pilihan", normalize: "choice", next: "menu_branch" },
+          { id: "menu_branch", type: "condition", branches: [{ if: "pilihan == 'a'", next: "info" }, { if: "pilihan == 'b'", next: "agent" }], else: "menu" },
+          { id: "info", type: "send_text", text: "Informasi akan kami kirimkan segera." },
+          { id: "agent", type: "handoff", to: "agent" },
         ],
+        menu: {
+          type: "choice_menu",
+          prompt: "Halo 👋 silakan pilih:\nA. Informasi\nB. Hubungi agen",
+          saveAs: "pilihan",
+          invalidText: "Pilihan belum dikenali. Balas A atau B.",
+          options: [
+            { code: "A", label: "Informasi", response: "Informasi akan kami kirimkan segera." },
+            { code: "B", label: "Hubungi agen", response: "Baik, kami alihkan ke agen." },
+          ],
+        },
       },
     })
     .returning({ id: flows.id });
@@ -897,6 +945,37 @@ export async function saveFlow(
   const session = await requireSession();
   requireAbility(session, "flow.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!input.name.trim()) throw new Error("Nama flow wajib diisi");
+  const definition = input.definition as {
+    menu?: { prompt?: unknown; saveAs?: unknown; invalidText?: unknown; options?: unknown[] };
+  };
+  if (definition?.menu) {
+    const menu = definition.menu;
+    if (typeof menu.prompt !== "string" || !menu.prompt.trim()) throw new Error("Pesan menu wajib diisi");
+    if (!Array.isArray(menu.options) || menu.options.length < 2 || menu.options.length > 10) {
+      throw new Error("Menu harus punya 2–10 pilihan");
+    }
+    if (typeof menu.saveAs !== "string" || !/^[a-zA-Z0-9_]+$/.test(menu.saveAs.trim())) {
+      throw new Error("Nama variabel menu tidak valid");
+    }
+    const codes = new Set<string>();
+    const labels = new Set<string>();
+    for (const rawOption of menu.options) {
+      if (!rawOption || typeof rawOption !== "object") throw new Error("Format pilihan menu tidak valid");
+      const option = rawOption as { code?: unknown; label?: unknown; response?: unknown };
+      const code = typeof option.code === "string" ? option.code.trim() : "";
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const response = typeof option.response === "string" ? option.response.trim() : "";
+      if (!/^[a-zA-Z0-9_]+$/.test(code) || !label || !response) {
+        throw new Error("Setiap pilihan harus punya kode, label, dan balasan");
+      }
+      if (codes.has(code.toLowerCase()) || labels.has(label.toLowerCase())) {
+        throw new Error("Kode dan label pilihan menu harus unik");
+      }
+      codes.add(code.toLowerCase());
+      labels.add(label.toLowerCase());
+    }
+  }
   await db
     .update(flows)
     .set({

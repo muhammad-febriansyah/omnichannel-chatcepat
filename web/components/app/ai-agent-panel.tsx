@@ -6,7 +6,6 @@ import {
   Plus,
   Bot,
   Sparkles,
-  MessageSquare,
   CheckCircle2,
   Clock,
   ArrowRight,
@@ -26,7 +25,7 @@ import { statusLabel, CHANNEL_META, type ChannelType } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 
 type Doc = { id: string; title: string; status: string; sourceType: string };
-type Chan = { id: string; name: string; type: string; status: string; autoReplyEnabled: boolean };
+type Chan = { id: string; name: string; type: string; status: string; autoReplyEnabled: boolean; autoReplyMode: string };
 
 // Template persona siap-pakai — sekali klik isi textarea. Mempermudah user yang
 // bingung mulai dari mana. Semua bisa disunting setelah dipilih.
@@ -70,7 +69,7 @@ export function AiAgentPanel({
   const [previewing, startPreview] = useTransition();
 
   const dirty = personaText !== savedPersona;
-  const activeChannels = channels.filter((c) => c.autoReplyEnabled && c.status === "connected");
+  const activeChannels = channels.filter((c) => c.autoReplyEnabled && c.status === "connected" && c.autoReplyMode !== "menu");
 
   function doSavePersona() {
     startSaveP(async () => {

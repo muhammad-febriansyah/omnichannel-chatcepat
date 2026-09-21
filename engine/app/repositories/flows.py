@@ -8,8 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Flow
 
 
-async def get(session: AsyncSession, flow_id: uuid.UUID) -> Flow | None:
-    return await session.scalar(select(Flow).where(Flow.id == flow_id))
+async def get(
+    session: AsyncSession, flow_id: uuid.UUID, tenant_id: uuid.UUID | None = None
+) -> Flow | None:
+    stmt = select(Flow).where(Flow.id == flow_id)
+    if tenant_id is not None:
+        stmt = stmt.where(Flow.tenant_id == tenant_id)
+    return await session.scalar(stmt)
 
 
 async def list_active(session: AsyncSession, tenant_id: uuid.UUID) -> list[Flow]:
@@ -27,12 +32,21 @@ def _trigger_node(flow: Flow) -> dict | None:
 
 
 async def match_trigger(
-    session: AsyncSession, tenant_id: uuid.UUID, body: str, is_first: bool
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    body: str,
+    is_first: bool,
+    preferred_flow_id: uuid.UUID | None = None,
 ) -> Flow | None:
     """Cari flow aktif yang trigger-nya cocok dgn pesan (keyword) atau welcome (pesan pertama)."""
     text = (body or "").lower()
     welcome: Flow | None = None
-    for flow in await list_active(session, tenant_id):
+    active = await list_active(session, tenant_id)
+    if preferred_flow_id is not None:
+        preferred = next((f for f in active if f.id == preferred_flow_id), None)
+        if preferred is not None:
+            active = [preferred] + [f for f in active if f.id != preferred.id]
+    for flow in active:
         node = _trigger_node(flow)
         if node is None:
             continue

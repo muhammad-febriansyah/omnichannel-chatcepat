@@ -208,6 +208,7 @@ async def run(
     channel: Channel,
     contact: Contact,
     inbound: InboundMessage,
+    preferred_flow_id=None,
 ) -> FlowOutcome | None:
     """Lanjut flow aktif atau mulai flow baru via trigger. None = tak ada flow (→ AI/fallback)."""
     body = inbound.body or ""
@@ -216,7 +217,7 @@ async def run(
     state = await states.get(session, conv.id)
     if state is not None:
         expired = state.expires_at is not None and state.expires_at <= _now()
-        flow = None if expired else await flows.get(session, state.flow_id)
+        flow = None if expired else await flows.get(session, state.flow_id, conv.tenant_id)
         if flow is None or state.current_node_id is None:
             await states.delete(session, conv.id)
         else:
@@ -224,7 +225,10 @@ async def run(
             ctx = dict(state.context or {})
             wait_node = _nodes(flow).get(state.current_node_id)
             if wait_node and wait_node.get("save_as"):
-                ctx[wait_node["save_as"]] = body
+                value = body.strip()
+                if wait_node.get("normalize") == "choice":
+                    value = " ".join(value.casefold().split())
+                ctx[wait_node["save_as"]] = value
             next_id = wait_node.get("next") if wait_node else None
             wait, _ended = await _walk(
                 session, conv, channel, contact, inbound, flow, next_id, ctx, outcome
@@ -234,7 +238,13 @@ async def run(
 
     # Tak ada state → cocokkan trigger.
     is_first = (await messages.count_inbound(session, conv.id)) <= 1
-    flow = await flows.match_trigger(session, conv.tenant_id, body, is_first)
+    flow = await flows.match_trigger(
+        session,
+        conv.tenant_id,
+        body,
+        is_first,
+        preferred_flow_id=preferred_flow_id,
+    )
     if flow is None:
         return None
 

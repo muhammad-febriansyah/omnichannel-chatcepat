@@ -5,6 +5,7 @@ export const broadcastRecipientStatus = pgEnum("broadcast_recipient_status", ['p
 export const broadcastStatus = pgEnum("broadcast_status", ['draft', 'scheduled', 'running', 'done', 'failed'])
 export const channelStatus = pgEnum("channel_status", ['connected', 'disconnected', 'pending', 'banned'])
 export const channelType = pgEnum("channel_type", ['wa_official', 'wa_unofficial', 'instagram', 'facebook', 'telegram'])
+export const autoReplyMode = pgEnum("auto_reply_mode", ['menu', 'ai', 'hybrid'])
 export const conversationHandler = pgEnum("conversation_handler", ['bot', 'agent', 'idle'])
 export const conversationStatus = pgEnum("conversation_status", ['open', 'pending', 'resolved', 'snoozed'])
 export const flowStatus = pgEnum("flow_status", ['draft', 'active'])
@@ -94,6 +95,8 @@ export const channels = pgTable("channels", {
 	externalId: text("external_id"),
 	meta: jsonb().default({}).notNull(),
 	autoReplyEnabled: boolean("auto_reply_enabled").default(true).notNull(),
+	autoReplyMode: autoReplyMode("auto_reply_mode").default('hybrid').notNull(),
+	defaultFlowId: uuid("default_flow_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [

@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, TimestampMixin, UUIDPkMixin, channel_status, channel_type
+from .base import Base, TimestampMixin, UUIDPkMixin, auto_reply_mode, channel_status, channel_type
 
 
 class Channel(UUIDPkMixin, TimestampMixin, Base):
@@ -32,4 +32,11 @@ class Channel(UUIDPkMixin, TimestampMixin, Base):
     # OFF (balasan bot dari nomor pribadi rawan banned) — dikontrol toggle di web.
     auto_reply_enabled: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.text("true")
+    )
+    # Sumber balasan saat auto-reply aktif. Hybrid mempertahankan perilaku flow → AI.
+    auto_reply_mode: Mapped[str] = mapped_column(
+        auto_reply_mode, nullable=False, server_default="hybrid"
+    )
+    default_flow_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("flows.id", ondelete="SET NULL")
     )

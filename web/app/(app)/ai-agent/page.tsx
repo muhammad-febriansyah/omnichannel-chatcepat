@@ -9,7 +9,7 @@ export default async function AiAgentPage() {
   const session = await requirePageAbility("knowledge.manage");
   let persona = "";
   let docs: { id: string; title: string; status: string; sourceType: string }[] = [];
-  let chans: { id: string; name: string; type: string; status: string; autoReplyEnabled: boolean }[] = [];
+  let chans: { id: string; name: string; type: string; status: string; autoReplyEnabled: boolean; autoReplyMode: string }[] = [];
   let aiEnabled = false;
   if (session.tenantId) {
     try {
@@ -23,7 +23,7 @@ export default async function AiAgentPage() {
       chans = await db.query.channels.findMany({
         where: eq(channels.tenantId, session.tenantId),
         orderBy: [desc(channels.createdAt)],
-        columns: { id: true, name: true, type: true, status: true, autoReplyEnabled: true },
+        columns: { id: true, name: true, type: true, status: true, autoReplyEnabled: true, autoReplyMode: true },
       });
       aiEnabled = await aiAgentStatus();
     } catch {
