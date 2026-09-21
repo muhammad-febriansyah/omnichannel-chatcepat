@@ -24,23 +24,61 @@ import { ChannelIcon } from "@/components/app/channel-icon";
 type Tag = { label: string; tone: "green" | "blue" | "amber" | "slate" };
 
 const TYPES: { value: ChannelType; label: string; desc: string; tag: Tag }[] = [
-  { value: "telegram", label: "Telegram", desc: "Paste bot token dari @BotFather", tag: { label: "Gratis", tone: "green" } },
-  { value: "wa_unofficial", label: "WhatsApp Unofficial", desc: "Scan QR (gratis, rawan banned)", tag: { label: "Rawan banned", tone: "amber" } },
+  {
+    value: "telegram",
+    label: "Telegram",
+    desc: "Paste bot token dari @BotFather",
+    tag: { label: "Gratis", tone: "green" },
+  },
+  {
+    value: "wa_unofficial",
+    label: "WhatsApp Unofficial",
+    desc: "Scan QR untuk menghubungkan",
+    tag: { label: "Scan QR", tone: "blue" },
+  },
+  {
+    value: "instagram",
+    label: "Instagram",
+    desc: "Pilih akun Instagram yang sudah terhubung",
+    tag: { label: "Tersedia", tone: "green" },
+  },
+  {
+    value: "facebook",
+    label: "Facebook",
+    desc: "Pilih akun Facebook yang sudah terhubung",
+    tag: { label: "Tersedia", tone: "green" },
+  },
 ];
 
 const TAG_CLS: Record<Tag["tone"], string> = {
-  green: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  green:
+    "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   blue: "bg-blue-100 text-brand-navy dark:bg-blue-500/15 dark:text-blue-300",
   amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
   slate: "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300",
 };
 
-const FIELDS: Record<ChannelType, { key: string; label: string; placeholder: string; hint?: string }[]> = {
-  telegram: [{ key: "bot_token", label: "Bot Token", placeholder: "123456:ABC-DEF…", hint: "Dari @BotFather → /newbot." }],
+const FIELDS: Record<
+  ChannelType,
+  { key: string; label: string; placeholder: string; hint?: string }[]
+> = {
+  telegram: [
+    {
+      key: "bot_token",
+      label: "Bot Token",
+      placeholder: "123456:ABC-DEF…",
+      hint: "Dari @BotFather → /newbot.",
+    },
+  ],
   wa_official: [
     { key: "phone_number_id", label: "Phone Number ID", placeholder: "1098…" },
     { key: "waba_id", label: "WABA ID", placeholder: "1023…" },
-    { key: "access_token", label: "Access Token", placeholder: "EAAG…", hint: "Permanent token dari Meta Business." },
+    {
+      key: "access_token",
+      label: "Access Token",
+      placeholder: "EAAG…",
+      hint: "Permanent token dari Meta Business.",
+    },
   ],
   instagram: [
     { key: "page_id", label: "Page/IG ID", placeholder: "1789…" },
@@ -55,9 +93,19 @@ const FIELDS: Record<ChannelType, { key: string; label: string; placeholder: str
 
 // Transport gateway (kredensial sistem disetel di env, tidak ditampilkan di UI). WA butuh
 // Phone Number ID utk identifikasi nomor pengirim & resolve pesan masuk. IG/FB cukup nama.
-const APICO_FIELDS: Partial<Record<ChannelType, { key: string; label: string; placeholder: string; hint?: string }[]>> = {
+const APICO_FIELDS: Partial<
+  Record<
+    ChannelType,
+    { key: string; label: string; placeholder: string; hint?: string }[]
+  >
+> = {
   wa_official: [
-    { key: "apico_phone_number_id", label: "Phone Number ID", placeholder: "890836697444150", hint: "ID nomor WhatsApp Business kamu." },
+    {
+      key: "apico_phone_number_id",
+      label: "Phone Number ID",
+      placeholder: "890836697444150",
+      hint: "ID nomor WhatsApp Business kamu.",
+    },
   ],
   instagram: [],
   facebook: [],
@@ -79,7 +127,7 @@ export default function ConnectChannelPage() {
   const isWaOfficial = type === "wa_official";
   const useApiCo = isMeta || isWaOfficial;
 
-  const fields = useApiCo ? APICO_FIELDS[type] ?? [] : FIELDS[type];
+  const fields = useApiCo ? (APICO_FIELDS[type] ?? []) : FIELDS[type];
 
   // Saat tipe api.co.id dipilih, tarik daftar akun asli dari api.co.id.
   useEffect(() => {
@@ -101,7 +149,11 @@ export default function ConnectChannelPage() {
       .catch((e) => {
         if (!alive) return;
         setAccounts([]);
-        setAccErr(e instanceof Error ? e.message : "Gagal menghubungi penyedia WhatsApp");
+        setAccErr(
+          e instanceof Error
+            ? e.message
+            : `Gagal menghubungi penyedia ${CHANNEL_META[type].label}`,
+        );
       })
       .finally(() => alive && setLoadingAcc(false));
     return () => {
@@ -123,7 +175,8 @@ export default function ConnectChannelPage() {
       }
       externalId = picked;
       // WA: credential apico_phone_number_id = id akun (dipakai gateway saat kirim).
-      credentials = type === "wa_official" ? { apico_phone_number_id: picked } : {};
+      credentials =
+        type === "wa_official" ? { apico_phone_number_id: picked } : {};
     } else {
       for (const f of fields) {
         if (!creds[f.key]?.trim()) {
@@ -145,7 +198,9 @@ export default function ConnectChannelPage() {
         });
       } catch (e) {
         unstable_rethrow(e);
-        gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan channel");
+        gooeyToast.error(
+          e instanceof Error ? e.message : "Gagal menghubungkan channel",
+        );
       }
     });
   }
@@ -164,13 +219,19 @@ export default function ConnectChannelPage() {
       >
         <ArrowLeft className="size-4" /> Kembali
       </Link>
-      <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Hubungkan Channel</h1>
-      <p className="text-sm text-muted-foreground">Pilih tipe channel lalu isi kredensial.</p>
+      <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+        Hubungkan Channel
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        Pilih tipe channel lalu isi kredensial.
+      </p>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         {/* Type picker */}
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tipe Channel</p>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tipe Channel
+          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {TYPES.map((t) => {
               const active = type === t.value;
@@ -197,7 +258,11 @@ export default function ConnectChannelPage() {
                         : "scale-0 bg-muted text-muted-foreground group-hover:scale-100",
                     )}
                   >
-                    {active ? <Check className="size-3" /> : <ChevronRight className="size-3" />}
+                    {active ? (
+                      <Check className="size-3" />
+                    ) : (
+                      <ChevronRight className="size-3" />
+                    )}
                   </span>
 
                   <span
@@ -210,11 +275,18 @@ export default function ConnectChannelPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">{t.label}</span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", TAG_CLS[t.tag.tone])}>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          TAG_CLS[t.tag.tone],
+                        )}
+                      >
                         {t.tag.label}
                       </span>
                     </div>
-                    <p className="text-xs leading-snug text-muted-foreground">{t.desc}</p>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {t.desc}
+                    </p>
                   </div>
                 </button>
               );
@@ -237,14 +309,20 @@ export default function ConnectChannelPage() {
                 <ChannelIcon type={type} className="size-5" />
               </span>
               <div className="min-w-0">
-                <div className="text-sm font-semibold">{selectedType?.label}</div>
-                <div className="truncate text-xs text-muted-foreground">{selectedType?.desc}</div>
+                <div className="text-sm font-semibold">
+                  {selectedType?.label}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {selectedType?.desc}
+                </div>
               </div>
             </div>
 
             <div className="space-y-4 p-5">
               <div>
-                <label className="mb-1.5 block text-sm font-medium">Nama Channel</label>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Nama Channel
+                </label>
                 <div className="relative">
                   <Plug className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <input
@@ -258,22 +336,28 @@ export default function ConnectChannelPage() {
 
               {useApiCo ? (
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium">Akun {selectedType?.label}</label>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Akun {selectedType?.label}
+                  </label>
                   {loadingAcc ? (
                     <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
                       <Loader2 className="size-4 animate-spin" /> Memuat akun…
                     </div>
                   ) : accErr ? (
                     <div className="rounded-xl border border-dashed border-red-300 bg-red-50 p-4 text-xs leading-relaxed text-danger dark:border-red-500/30 dark:bg-red-500/10">
-                      <span className="font-medium">Gagal menghubungi penyedia WhatsApp.</span> {accErr}
+                      <span className="font-medium">
+                        Gagal menghubungi penyedia {selectedType?.label}.
+                      </span>{" "}
+                      {accErr}
                       <span className="mt-1 block text-danger/80">
-                        Periksa konfigurasi integrasi di server &amp; status akun kamu, lalu muat ulang halaman.
+                        Periksa konfigurasi integrasi di server &amp; status
+                        akun kamu, lalu muat ulang halaman.
                       </span>
                     </div>
                   ) : accounts.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10">
-                      Belum ada akun {selectedType?.label} yang terhubung. Hubungkan dulu akun kamu, lalu buka
-                      halaman ini lagi.
+                      Belum ada akun {selectedType?.label} yang terhubung.
+                      Hubungkan dulu akun kamu, lalu buka halaman ini lagi.
                       {isWaOfficial && (
                         <Link
                           href="/channels/request-wa-official"
@@ -301,10 +385,18 @@ export default function ConnectChannelPage() {
                           )}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{a.name}</span>
-                            {a.detail && <span className="block truncate text-xs text-muted-foreground">{a.detail}</span>}
+                            <span className="block truncate text-sm font-medium">
+                              {a.name}
+                            </span>
+                            {a.detail && (
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {a.detail}
+                              </span>
+                            )}
                           </span>
-                          {picked === a.externalId && <Check className="size-4 shrink-0 text-brand-blue" />}
+                          {picked === a.externalId && (
+                            <Check className="size-4 shrink-0 text-brand-blue" />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -313,17 +405,25 @@ export default function ConnectChannelPage() {
               ) : (
                 fields.map((f) => (
                   <div key={f.key}>
-                    <label className="mb-1.5 block text-sm font-medium">{f.label}</label>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      {f.label}
+                    </label>
                     <div className="relative">
                       <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                       <input
                         value={creds[f.key] ?? ""}
-                        onChange={(e) => setCreds((c) => ({ ...c, [f.key]: e.target.value }))}
+                        onChange={(e) =>
+                          setCreds((c) => ({ ...c, [f.key]: e.target.value }))
+                        }
                         placeholder={f.placeholder}
                         className={cn(inputCls, "font-mono")}
                       />
                     </div>
-                    {f.hint && <p className="mt-1.5 text-xs text-muted-foreground">{f.hint}</p>}
+                    {f.hint && (
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        {f.hint}
+                      </p>
+                    )}
                   </div>
                 ))
               )}
@@ -333,21 +433,30 @@ export default function ConnectChannelPage() {
                   <span className="grid size-12 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
                     <QrCode className="size-6" />
                   </span>
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Pairing via Scan QR</p>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Pairing via Scan QR
+                  </p>
                   <p className="text-xs leading-snug text-amber-700/90 dark:text-amber-300/80">
-                    Setelah dibuat, kamu diarahkan ke halaman scan QR untuk pairing. Rawan banned untuk broadcast —
-                    gunakan hati-hati.
+                    Setelah dibuat, kamu diarahkan ke halaman scan QR untuk
+                    pairing.
                   </p>
                 </div>
               )}
 
               <Button
                 onClick={submit}
-                disabled={pending || (useApiCo && (loadingAcc || accounts.length === 0 || !picked))}
+                disabled={
+                  pending ||
+                  (useApiCo && (loadingAcc || accounts.length === 0 || !picked))
+                }
                 size="lg"
                 className="w-full"
               >
-                {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+                {pending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plug className="size-4" />
+                )}
                 {pending ? "Menghubungkan…" : "Hubungkan"}
               </Button>
 

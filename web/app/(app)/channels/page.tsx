@@ -56,7 +56,11 @@ export default async function ChannelsPage() {
       <PageHeader
         icon={Plug}
         title="Channel"
-        description={rows.length ? `${rows.length} channel · ${connected} terhubung` : "WhatsApp & Telegram"}
+        description={
+          rows.length
+            ? `${rows.length} channel · ${connected} terhubung`
+            : "WhatsApp, Telegram, Facebook, atau Instagram"
+        }
         actions={
           <ActionLink href="/channels/connect">
             <Plus className="size-4" /> Hubungkan Channel
@@ -70,7 +74,7 @@ export default async function ChannelsPage() {
             <EmptyState
               icon={Plug}
               title="Belum ada channel"
-              description="Hubungkan WhatsApp atau Telegram untuk mulai menerima pesan."
+              description="Hubungkan WhatsApp, Telegram, Facebook, atau Instagram untuk mulai menerima pesan."
               action={
                 <ActionLink href="/channels/connect">
                   <Plus className="size-4" /> Hubungkan channel pertama
@@ -93,11 +97,18 @@ export default async function ChannelsPage() {
                         className="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
                         style={{ background: meta?.color ?? "#94a3b8" }}
                       >
-                        <ChannelIcon type={c.type as ChannelType} className="size-6 text-white" />
+                        <ChannelIcon
+                          type={c.type as ChannelType}
+                          className="size-6 text-white"
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">{c.name}</div>
-                        <div className="text-xs text-muted-foreground">{meta?.label}</div>
+                        <div className="truncate text-sm font-semibold">
+                          {c.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {meta?.label}
+                        </div>
                       </div>
                       <StatusPill tone={tone} className="shrink-0 gap-1.5">
                         <span className={`size-1.5 rounded-full ${dot}`} />
@@ -105,18 +116,23 @@ export default async function ChannelsPage() {
                       </StatusPill>
                     </div>
                     <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
-                      <AutoReplyToggle channelId={c.id} type={c.type} enabled={c.autoReplyEnabled} />
-                      {c.type === "wa_unofficial" && c.status !== "connected" && (
-                        <ActionLink
-                          href={`/channels/${c.id}/pair`}
-                          variant="outline"
-                          size="sm"
-                          aria-label="Scan QR untuk pairing"
-                          title="Scan QR untuk pairing"
-                        >
-                          <QrCode className="size-4" /> Scan QR
-                        </ActionLink>
-                      )}
+                      <AutoReplyToggle
+                        channelId={c.id}
+                        type={c.type}
+                        enabled={c.autoReplyEnabled}
+                      />
+                      {c.type === "wa_unofficial" &&
+                        c.status !== "connected" && (
+                          <ActionLink
+                            href={`/channels/${c.id}/pair`}
+                            variant="outline"
+                            size="sm"
+                            aria-label="Scan QR untuk pairing"
+                            title="Scan QR untuk pairing"
+                          >
+                            <QrCode className="size-4" /> Scan QR
+                          </ActionLink>
+                        )}
                       <DeleteButton
                         onConfirm={async () => {
                           "use server";
@@ -125,8 +141,10 @@ export default async function ChannelsPage() {
                         title="Putuskan channel?"
                         description={
                           <>
-                            Channel <span className="font-semibold">{c.name}</span> akan diputus. Pesan masuk
-                            berhenti dan kredensial dihapus. Hubungkan ulang untuk mengaktifkan lagi.
+                            Channel{" "}
+                            <span className="font-semibold">{c.name}</span> akan
+                            diputus. Pesan masuk berhenti dan kredensial
+                            dihapus. Hubungkan ulang untuk mengaktifkan lagi.
                           </>
                         }
                         successMessage="Channel diputus"
