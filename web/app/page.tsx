@@ -1,5 +1,5 @@
 import { listActivePlans } from "@/lib/billing-actions";
-import { getActiveWebSettings } from "@/lib/web-settings-server";
+import { getPublicWebSettings } from "@/lib/web-settings-server";
 import { ScrollProgress } from "@/components/landing/scroll-progress";
 import { FloatingActions } from "@/components/landing/floating-actions";
 import { Navbar } from "@/components/landing/navbar";
@@ -24,7 +24,7 @@ export default async function Home() {
     // Landing tetap tampil walau DB/pricing tidak tersedia.
     plans = [];
   }
-  const ws = await getActiveWebSettings();
+  const ws = await getPublicWebSettings();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
