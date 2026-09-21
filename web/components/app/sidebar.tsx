@@ -7,7 +7,6 @@ import { logout } from "@/lib/actions";
 import {
   Inbox,
   Users,
-  Send,
   Workflow,
   Sparkles,
   Package,
@@ -55,7 +54,6 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { href: "/inbox", label: "Inbox", icon: Inbox, ability: "conversation.view_assigned" },
       { href: "/contacts", label: "Kontak", icon: Users, ability: "contact.view" },
       { href: "/products", label: "Produk", icon: Package, ability: "product.manage" },
-      { href: "/broadcasts", label: "Broadcast", icon: Send, ability: "broadcast.manage" },
       { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage" },
       { href: "/flows", label: "Otomasi", icon: Workflow, ability: "flow.manage" },
       { href: "/automation", label: "Automation", icon: Bot, ability: "flow.manage" },

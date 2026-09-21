@@ -55,7 +55,7 @@ func (r *Repository) GetAccountByID(ctx context.Context, accountID string) (Acco
 		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
 		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
 		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
-		FROM social_accounts WHERE id=$1
+		FROM social_accounts WHERE id=$1::uuid
 	`, accountID).Scan(
 		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 		&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
@@ -73,7 +73,7 @@ func (r *Repository) ListAccounts(ctx context.Context, tenantID string) ([]Accou
 		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
 		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
 		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
-		FROM social_accounts WHERE tenant_id=$1 ORDER BY created_at DESC
+		FROM social_accounts WHERE tenant_id=$1::uuid ORDER BY created_at DESC
 	`, tenantID)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func (r *Repository) GetAccount(ctx context.Context, tenantID, accountID string)
 		SELECT id::text, tenant_id::text, name, platform, username, external_user_id, profile_path, status,
 		       last_connected_at, last_activity_at, last_error, last_action_at, last_success_at,
 		       last_error_at, last_warning_at, consecutive_errors, paused_until, created_at, updated_at
-		FROM social_accounts WHERE tenant_id=$1 AND id=$2
+		FROM social_accounts WHERE tenant_id=$1::uuid AND id=$2::uuid
 	`, tenantID, accountID).Scan(
 		&account.ID, &account.TenantID, &account.Name, &account.Platform, &account.Username, &account.ExternalUserID,
 		&account.ProfilePath, &account.Status, &account.LastConnectedAt, &account.LastActivityAt,
@@ -119,38 +119,38 @@ func (r *Repository) SetAccountStatus(ctx context.Context, tenantID, accountID, 
 		UPDATE social_accounts SET status=$1, last_error=NULLIF($2, ''),
 		last_connected_at=CASE WHEN $1='connected' THEN now() ELSE last_connected_at END,
 		paused_until=CASE WHEN $1='connected' THEN NULL ELSE paused_until END,
-		updated_at=now() WHERE tenant_id=$3 AND id=$4
+		updated_at=now() WHERE tenant_id=$3::uuid AND id=$4::uuid
 	`, status, lastError, tenantID, accountID)
 	return err
 }
 
 func (r *Repository) SetExternalUserID(ctx context.Context, accountID, externalUserID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET external_user_id=NULLIF($1, ''), updated_at=now() WHERE id=$2`, externalUserID, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET external_user_id=NULLIF($1, ''), updated_at=now() WHERE id=$2::uuid`, externalUserID, accountID)
 	return err
 }
 
 func (r *Repository) MarkAccountSuccess(ctx context.Context, accountID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_action_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1`, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_action_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1::uuid`, accountID)
 	return err
 }
 
 func (r *Repository) MarkAccountScanSuccess(ctx context.Context, accountID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1`, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_success_at=now(), last_activity_at=now(), consecutive_errors=0, last_error=NULL, updated_at=now() WHERE id=$1::uuid`, accountID)
 	return err
 }
 
 func (r *Repository) MarkAccountError(ctx context.Context, accountID, message string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_error=$1, last_error_at=now(), consecutive_errors=consecutive_errors+1, updated_at=now() WHERE id=$2`, message, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_error=$1, last_error_at=now(), consecutive_errors=consecutive_errors+1, updated_at=now() WHERE id=$2::uuid`, message, accountID)
 	return err
 }
 
 func (r *Repository) MarkAccountWarning(ctx context.Context, accountID, status, message string, pausedUntil *time.Time) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET status=$1, last_error=NULLIF($2, ''), last_warning_at=now(), paused_until=$3, updated_at=now() WHERE id=$4`, status, message, pausedUntil, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET status=$1, last_error=NULLIF($2, ''), last_warning_at=now(), paused_until=$3, updated_at=now() WHERE id=$4::uuid`, status, message, pausedUntil, accountID)
 	return err
 }
 
 func (r *Repository) MarkAccountActivity(ctx context.Context, tenantID, accountID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_activity_at=now(), updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, accountID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_accounts SET last_activity_at=now(), updated_at=now() WHERE tenant_id=$1::uuid AND id=$2::uuid`, tenantID, accountID)
 	return err
 }
 
@@ -161,7 +161,7 @@ func (r *Repository) CreateJob(ctx context.Context, tenantID, accountID, platfor
 	}
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO social_jobs (tenant_id, social_account_id, platform, action, target_url, content, max_attempts)
-		VALUES ($1, $2, $3, 'comment', $4, $5, $6)
+		VALUES ($1::uuid, $2::uuid, $3, 'comment', $4, $5, $6)
 		RETURNING id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		          status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		          error_message, created_at, updated_at
@@ -178,7 +178,7 @@ func (r *Repository) ListJobs(ctx context.Context, tenantID string) ([]Job, erro
 		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
-		FROM social_jobs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 200
+		FROM social_jobs WHERE tenant_id=$1::uuid ORDER BY created_at DESC LIMIT 200
 	`, tenantID)
 	if err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func (r *Repository) GetJob(ctx context.Context, tenantID, jobID string) (Job, e
 		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
-		FROM social_jobs WHERE tenant_id=$1 AND id=$2
+		FROM social_jobs WHERE tenant_id=$1::uuid AND id=$2::uuid
 	`, tenantID, jobID).Scan(
 		&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
 		&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
@@ -223,7 +223,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (Job, error) 
 		SELECT id::text, tenant_id::text, social_account_id::text, platform, action, target_url, content, source_event_id, rule_id,
 		       status, attempts, max_attempts, scheduled_at, started_at, completed_at, failed_at,
 		       error_message, created_at, updated_at
-		FROM social_jobs WHERE id=$1
+		FROM social_jobs WHERE id=$1::uuid
 	`, jobID).Scan(
 		&job.ID, &job.TenantID, &job.SocialAccountID, &job.Platform, &job.Action, &job.TargetURL,
 		&job.Content, &job.SourceEventID, &job.RuleID, &job.Status, &job.Attempts, &job.MaxAttempts, &job.ScheduledAt, &job.StartedAt,
@@ -236,27 +236,27 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (Job, error) 
 }
 
 func (r *Repository) MarkJobQueued(ctx context.Context, tenantID, jobID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='queued', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'`, tenantID, jobID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='queued', updated_at=now() WHERE tenant_id=$1::uuid AND id=$2::uuid AND status='pending'`, tenantID, jobID)
 	return err
 }
 
 func (r *Repository) MarkJobProcessing(ctx context.Context, jobID string) (bool, error) {
-	result, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', attempts=attempts+1, started_at=now(), updated_at=now() WHERE id=$1 AND status IN ('pending','queued')`, jobID)
+	result, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', attempts=attempts+1, started_at=now(), updated_at=now() WHERE id=$1::uuid AND status IN ('pending','queued')`, jobID)
 	return result.RowsAffected() == 1, err
 }
 
 func (r *Repository) MarkJobCompleted(ctx context.Context, jobID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1`, jobID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1::uuid`, jobID)
 	return err
 }
 
 func (r *Repository) MarkJobFailed(ctx context.Context, jobID, message string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='failed', failed_at=now(), error_message=$2, updated_at=now() WHERE id=$1`, jobID, message)
+	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='failed', failed_at=now(), error_message=$2, updated_at=now() WHERE id=$1::uuid`, jobID, message)
 	return err
 }
 
 func (r *Repository) CancelJob(ctx context.Context, tenantID, jobID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='cancelled', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status IN ('pending','queued')`, tenantID, jobID)
+	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='cancelled', updated_at=now() WHERE tenant_id=$1::uuid AND id=$2::uuid AND status IN ('pending','queued')`, tenantID, jobID)
 	return err
 }
 
@@ -270,7 +270,7 @@ func (r *Repository) AddActivity(ctx context.Context, tenantID string, accountID
 	}
 	_, err = r.pool.Exec(ctx, `
 		INSERT INTO activity_logs (workspace_id, connection_id, type, description, metadata, social_account_id, social_job_id, event, message)
-		VALUES ($1, NULL, $2, $3, $4, $5, $6, $2, $3)
+		VALUES ($1::uuid, NULL, $2, $3, $4, $5::uuid, $6::uuid, $2, $3)
 	`, tenantID, event, message, raw, accountID, jobID)
 	return err
 }
@@ -280,7 +280,7 @@ func (r *Repository) ListActivity(ctx context.Context, tenantID, accountID strin
 		SELECT id::text, social_account_id::text, social_job_id::text,
 		       COALESCE(event, type), COALESCE(message, description), metadata, created_at
 		FROM activity_logs
-		WHERE workspace_id=$1 AND ($2='' OR social_account_id=$2)
+		WHERE workspace_id=$1::uuid AND ($2='' OR social_account_id=NULLIF($2, '')::uuid)
 		ORDER BY created_at DESC LIMIT 200
 	`, tenantID, accountID)
 	if err != nil {
@@ -307,10 +307,10 @@ func (r *Repository) Stats(ctx context.Context, tenantID string) (map[string]int
 	var accounts, connected, jobs, pending int64
 	err := r.pool.QueryRow(ctx, `
 		SELECT
-		  (SELECT count(*) FROM social_accounts WHERE tenant_id=$1),
-		  (SELECT count(*) FROM social_accounts WHERE tenant_id=$1 AND status='connected'),
-		  (SELECT count(*) FROM social_jobs WHERE tenant_id=$1),
-		  (SELECT count(*) FROM social_jobs WHERE tenant_id=$1 AND status IN ('pending','queued','processing'))
+		  (SELECT count(*) FROM social_accounts WHERE tenant_id=$1::uuid),
+		  (SELECT count(*) FROM social_accounts WHERE tenant_id=$1::uuid AND status='connected'),
+		  (SELECT count(*) FROM social_jobs WHERE tenant_id=$1::uuid),
+		  (SELECT count(*) FROM social_jobs WHERE tenant_id=$1::uuid AND status IN ('pending','queued','processing'))
 	`, tenantID).Scan(&accounts, &connected, &jobs, &pending)
 	if err != nil {
 		return nil, err
