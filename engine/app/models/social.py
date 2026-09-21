@@ -73,7 +73,9 @@ class SocialActivityLog(UUIDPkMixin, Base):
     description: Mapped[str] = mapped_column(sa.Text, nullable=False)
     event: Mapped[str | None] = mapped_column(sa.Text)
     message: Mapped[str | None] = mapped_column(sa.Text)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
