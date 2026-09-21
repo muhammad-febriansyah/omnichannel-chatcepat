@@ -198,8 +198,12 @@ func (s *Service) processAutomationJob(ctx context.Context, jobID string) error 
 	if job.Status == JobCancelled || job.Status == JobCompleted || job.Status == JobFailed {
 		return nil
 	}
-	if err := s.repo.MarkJobProcessing(ctx, job.ID); err != nil {
+	claimed, err := s.repo.MarkJobProcessing(ctx, job.ID)
+	if err != nil {
 		return err
+	}
+	if !claimed {
+		return nil
 	}
 	account, err := s.repo.GetAccountByID(ctx, job.SocialAccountID)
 	if err != nil {

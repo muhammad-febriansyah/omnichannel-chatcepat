@@ -10,6 +10,7 @@ var (
 	ErrAccountBusy             = errors.New("social account is already in use")
 	ErrAccountNotConnected     = errors.New("social account is not connected")
 	ErrUnsupportedPlatform     = errors.New("unsupported social platform")
+	ErrRulePlatformMismatch    = errors.New("rule platform does not match social account platform")
 	ErrUnsupportedAction       = errors.New("unsupported social action")
 	ErrAutomationNotReady      = errors.New("social browser automation is not implemented yet")
 	ErrInvalidTargetURL        = errors.New("target URL does not match the account platform")

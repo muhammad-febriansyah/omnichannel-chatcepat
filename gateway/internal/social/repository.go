@@ -240,9 +240,9 @@ func (r *Repository) MarkJobQueued(ctx context.Context, tenantID, jobID string) 
 	return err
 }
 
-func (r *Repository) MarkJobProcessing(ctx context.Context, jobID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', attempts=attempts+1, started_at=now(), updated_at=now() WHERE id=$1 AND status IN ('pending','queued')`, jobID)
-	return err
+func (r *Repository) MarkJobProcessing(ctx context.Context, jobID string) (bool, error) {
+	result, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', attempts=attempts+1, started_at=now(), updated_at=now() WHERE id=$1 AND status IN ('pending','queued')`, jobID)
+	return result.RowsAffected() == 1, err
 }
 
 func (r *Repository) MarkJobCompleted(ctx context.Context, jobID string) error {

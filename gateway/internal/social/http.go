@@ -322,6 +322,8 @@ func statusForError(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, ErrInvalidTargetURL), errors.Is(err, ErrContentRequired), errors.Is(err, ErrUnsupportedAction), errors.Is(err, ErrUnsupportedPlatform):
 		return http.StatusBadRequest
+	case errors.Is(err, ErrRulePlatformMismatch):
+		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
 	}

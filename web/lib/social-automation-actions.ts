@@ -11,7 +11,11 @@ export type SocialAccount = {
   name: string;
   platform: "facebook" | "instagram";
   username?: string | null;
+  external_user_id?: string | null;
   status: string;
+  last_activity_at?: string | null;
+  last_connected_at?: string | null;
+  last_error?: string | null;
 };
 
 export type AutoReplyAction = {
@@ -99,6 +103,39 @@ export async function getAutomationPageData() {
     accounts.map(async (account) => [account.id, await socialRequest<AutomationSettings>(session, `/api/accounts/${account.id}/automation/settings`)] as const),
   );
   return { accounts, rules, incoming, activity, settings: Object.fromEntries(settingsEntries) as Record<string, AutomationSettings> };
+}
+
+export async function createSocialAccount(input: {
+  name: string;
+  platform: "facebook" | "instagram";
+  username?: string;
+  external_user_id?: string;
+}) {
+  const session = await requireSession();
+  const account = await socialRequest<SocialAccount>(session, "/api/accounts", { method: "POST", body: JSON.stringify(input) });
+  revalidatePath("/automation");
+  return account;
+}
+
+export async function connectSocialAccount(accountID: string) {
+  const session = await requireSession();
+  const account = await socialRequest<SocialAccount>(session, `/api/accounts/${accountID}/connect`, { method: "POST" });
+  revalidatePath("/automation");
+  return account;
+}
+
+export async function openSocialAccountBrowser(accountID: string) {
+  const session = await requireSession();
+  const account = await socialRequest<SocialAccount>(session, `/api/accounts/${accountID}/open-browser`, { method: "POST" });
+  revalidatePath("/automation");
+  return account;
+}
+
+export async function validateSocialAccountSession(accountID: string) {
+  const session = await requireSession();
+  const account = await socialRequest<SocialAccount>(session, `/api/accounts/${accountID}/validate-session`, { method: "POST" });
+  revalidatePath("/automation");
+  return account;
 }
 
 export async function createAutomationRule(input: {

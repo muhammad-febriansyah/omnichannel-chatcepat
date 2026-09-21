@@ -121,6 +121,9 @@ func (r *Repository) CreateRule(ctx context.Context, tenantID, accountID string,
 	if err := validateRuleInput(input); err != nil {
 		return AutoReplyRule{}, err
 	}
+	if err := r.validateRuleAccountPlatform(ctx, tenantID, accountID, input.Platform); err != nil {
+		return AutoReplyRule{}, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return AutoReplyRule{}, err
@@ -153,6 +156,22 @@ func (r *Repository) UpdateRule(ctx context.Context, tenantID, ruleID string, in
 	if err := validateRuleInput(input); err != nil {
 		return AutoReplyRule{}, err
 	}
+	var accountPlatform string
+	err := r.pool.QueryRow(ctx, `
+		SELECT sa.platform
+		FROM auto_reply_rules ar
+		JOIN social_accounts sa ON sa.id=ar.social_account_id
+		WHERE sa.tenant_id=$1 AND ar.id=$2
+	`, tenantID, ruleID).Scan(&accountPlatform)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AutoReplyRule{}, ErrRuleNotFound
+	}
+	if err != nil {
+		return AutoReplyRule{}, err
+	}
+	if accountPlatform != input.Platform {
+		return AutoReplyRule{}, ErrRulePlatformMismatch
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return AutoReplyRule{}, err
@@ -182,6 +201,21 @@ func (r *Repository) UpdateRule(ctx context.Context, tenantID, ruleID string, in
 		return AutoReplyRule{}, err
 	}
 	return r.GetRule(ctx, tenantID, ruleID)
+}
+
+func (r *Repository) validateRuleAccountPlatform(ctx context.Context, tenantID, accountID, platform string) error {
+	var accountPlatform string
+	err := r.pool.QueryRow(ctx, `SELECT platform FROM social_accounts WHERE tenant_id=$1 AND id=$2`, tenantID, accountID).Scan(&accountPlatform)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAccountNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if accountPlatform != platform {
+		return ErrRulePlatformMismatch
+	}
+	return nil
 }
 
 func (r *Repository) DeleteRule(ctx context.Context, tenantID, ruleID string) error {

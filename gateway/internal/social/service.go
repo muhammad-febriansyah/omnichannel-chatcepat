@@ -219,8 +219,28 @@ func (s *Service) ValidateSession(ctx context.Context, tenantID, accountID strin
 	if err := s.repo.SetAccountStatus(ctx, tenantID, account.ID, AccountConnected, ""); err != nil {
 		return Account{}, err
 	}
+	if !ownedSession {
+		s.closeManagedSession(account.ID, session)
+	}
 	_ = s.repo.AddActivity(ctx, tenantID, &account.ID, nil, "session_connected", "Social session validated after manual login", map[string]any{"platform": account.Platform})
 	return s.repo.GetAccount(ctx, tenantID, account.ID)
+}
+
+func (s *Service) closeManagedSession(accountID string, expected *browser.Session) {
+	s.sessionsMu.Lock()
+	session := s.sessions[accountID]
+	release := s.leases[accountID]
+	if session != expected {
+		s.sessionsMu.Unlock()
+		return
+	}
+	delete(s.sessions, accountID)
+	delete(s.leases, accountID)
+	s.sessionsMu.Unlock()
+	_ = s.browser.CloseProfile(session)
+	if release != nil {
+		release()
+	}
 }
 
 func (s *Service) Disconnect(ctx context.Context, tenantID, accountID string) error {

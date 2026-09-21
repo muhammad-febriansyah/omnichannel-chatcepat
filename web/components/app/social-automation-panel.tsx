@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronRight, CircleAlert, Plus, Save, Trash2, Zap } from "lucide-react";
+import { Bot, ChevronRight, CircleAlert, ExternalLink, Plus, Save, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,9 +11,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   createAutomationRule,
+  createSocialAccount,
+  connectSocialAccount,
   deleteAutomationRule,
+  openSocialAccountBrowser,
   toggleAutomationRule,
   updateAutomationSettings,
+  validateSocialAccountSession,
   type AutoReplyAction,
   type AutoReplyRule,
   type AutomationActivity,
@@ -58,6 +62,7 @@ export function SocialAutomationPanel({
 }) {
   const [tab, setTab] = useState<Tab>("rules");
   const [showCreate, setShowCreate] = useState(false);
+  const [showAccountCreate, setShowAccountCreate] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
@@ -91,10 +96,24 @@ export function SocialAutomationPanel({
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Automation</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Balas interaksi yang masuk dari Instagram dan Facebook dengan rule yang dapat ditinjau, dijeda, dan dicatat.</p>
         </div>
-        <Button className="bg-brand-blue hover:bg-brand-blue/90" onClick={() => setShowCreate(true)} disabled={accounts.length === 0}>
-          <Plus data-icon="inline-start" /> Buat rule
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setShowAccountCreate(true)} disabled={pending}>
+            <Plus data-icon="inline-start" /> Tambah account
+          </Button>
+          <Button className="bg-brand-blue hover:bg-brand-blue/90" onClick={() => setShowCreate(true)} disabled={accounts.length === 0 || pending}>
+            <Plus data-icon="inline-start" /> Buat rule
+          </Button>
+        </div>
       </div>
+
+      <AccountsView
+        accounts={accounts}
+        pending={pending}
+        onCreate={() => setShowAccountCreate(true)}
+        onConnect={(id) => run(async () => { await connectSocialAccount(id); }, "Browser account dibuka. Silakan login manual lalu validasi session.")}
+        onOpenBrowser={(id) => run(async () => { await openSocialAccountBrowser(id); }, "Browser account dibuka.")}
+        onValidate={(id) => run(async () => { await validateSocialAccountSession(id); }, "Session account berhasil divalidasi.")}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Rule aktif" value={rules.filter((rule) => rule.is_active).length} tone="blue" />
@@ -116,12 +135,22 @@ export function SocialAutomationPanel({
       {tab === "settings" && <SettingsView accounts={accounts} settings={settings} pending={pending} onSave={(id, value) => run(() => updateAutomationSettings(id, value), "Settings automation disimpan")} />}
 
       {showCreate && <CreateRuleDialog accounts={accounts} pending={pending} onClose={() => setShowCreate(false)} onSave={(input) => run(async () => { await createAutomationRule(input); setShowCreate(false); }, "Rule berhasil dibuat")} />}
+      {showAccountCreate && <CreateSocialAccountDialog pending={pending} onClose={() => setShowAccountCreate(false)} onSave={(input) => run(async () => { const account = await createSocialAccount(input); await connectSocialAccount(account.id); setShowAccountCreate(false); }, "Account dibuat dan browser dibuka. Silakan login manual lalu validasi session.")} />}
     </div>
   );
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: "blue" | "violet" | "emerald" }) {
   return <Card className="rounded-xl shadow-none"><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold text-brand-navy">{value}</p></div><span className={cn("grid size-9 place-items-center rounded-lg", tone === "blue" ? "bg-blue-50 text-blue-600" : tone === "violet" ? "bg-violet-50 text-violet-600" : "bg-emerald-50 text-emerald-600")}><Bot className="size-4" /></span></CardContent></Card>;
+}
+
+function AccountsView({ accounts, pending, onCreate, onConnect, onOpenBrowser, onValidate }: { accounts: SocialAccount[]; pending: boolean; onCreate: () => void; onConnect: (id: string) => void; onOpenBrowser: (id: string) => void; onValidate: (id: string) => void }) {
+  return <Card className="rounded-xl shadow-none"><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Social accounts</CardTitle><CardDescription>Profile browser terpisah untuk setiap Facebook dan Instagram. Login selalu dilakukan manual di Chromium.</CardDescription></div><Button variant="outline" size="sm" onClick={onCreate} disabled={pending}><Plus data-icon="inline-start" /> Tambah</Button></CardHeader><CardContent className="p-0">{accounts.length === 0 ? <Empty title="Belum ada social account" text="Tambahkan Facebook atau Instagram untuk mulai menghubungkan browser profile." /> : accounts.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-5 py-4 first:border-t-0"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-foreground">{account.name}</p><Badge variant="outline" className="capitalize">{account.platform}</Badge><AccountStatus status={account.status} /></div><p className="mt-1 text-xs text-muted-foreground">{account.username ? `@${account.username}` : "Username belum diisi"}{account.last_activity_at ? ` · Aktivitas ${new Date(account.last_activity_at).toLocaleString("id-ID")}` : ""}</p>{account.last_error && <p className="mt-1 max-w-xl text-xs text-red-700">{account.last_error}</p>}</div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" disabled={pending} onClick={() => onOpenBrowser(account.id)}><ExternalLink data-icon="inline-start" /> Buka browser</Button>{account.status === "connected" ? <Button variant="outline" size="sm" disabled={pending} onClick={() => onValidate(account.id)}>Validasi</Button> : <Button className="bg-brand-blue hover:bg-brand-blue/90" size="sm" disabled={pending} onClick={() => onConnect(account.id)}>Hubungkan</Button>}</div></div>)}</CardContent></Card>;
+}
+
+function AccountStatus({ status }: { status: string }) {
+  const tone = status === "connected" ? "bg-emerald-50 text-emerald-700" : status === "action_required" ? "bg-orange-50 text-orange-700" : status === "paused" ? "bg-amber-50 text-amber-700" : status === "connecting" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-600";
+  return <Badge className={cn("capitalize", tone)}>{status.replaceAll("_", " ")}</Badge>;
 }
 
 function RulesView({ rules, accounts, pending, onToggle, onDelete }: { rules: AutoReplyRule[]; accounts: SocialAccount[]; pending: boolean; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void }) {
@@ -149,6 +178,14 @@ function SettingsView({ accounts, settings, pending, onSave }: { accounts: Socia
 
 function Toggle({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) {
   return <button type="button" role="switch" aria-checked={value} onClick={() => onChange(!value)} className={cn("flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors", value ? "border-blue-200 bg-blue-50/70" : "border-border bg-background hover:bg-muted/40")}><span><span className="block text-sm font-medium">{label}</span><span className="mt-0.5 block text-xs text-muted-foreground">{description}</span></span><span className={cn("relative h-6 w-11 rounded-full transition-colors", value ? "bg-brand-blue" : "bg-slate-200")}><span className={cn("absolute top-1 size-4 rounded-full bg-white transition-transform", value ? "translate-x-6" : "translate-x-1")} /></span></button>;
+}
+
+function CreateSocialAccountDialog({ pending, onClose, onSave }: { pending: boolean; onClose: () => void; onSave: (input: { name: string; platform: "facebook" | "instagram"; username?: string; external_user_id?: string }) => void }) {
+  const [name, setName] = useState("");
+  const [platform, setPlatform] = useState<"facebook" | "instagram">("instagram");
+  const [username, setUsername] = useState("");
+  const [externalUserID, setExternalUserID] = useState("");
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[.16em] text-brand-blue">Social account</p><h2 className="mt-1 text-xl font-semibold text-brand-navy">Tambah account</h2><p className="mt-1 text-sm text-muted-foreground">Browser profile akan dibuat terpisah. Jangan masukkan password ke aplikasi.</p></div><Button variant="ghost" size="sm" onClick={onClose}>Tutup</Button></div><div className="mt-6 space-y-4"><label className="block text-sm font-medium">Nama account<Input className="mt-2" value={name} onChange={(event) => setName(event.target.value)} placeholder="Instagram Shop" /></label><label className="block text-sm font-medium">Platform<select value={platform} onChange={(event) => setPlatform(event.target.value as "facebook" | "instagram")} className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"><option value="instagram">Instagram</option><option value="facebook">Facebook</option></select></label><label className="block text-sm font-medium">Username <span className="font-normal text-muted-foreground">(opsional)</span><Input className="mt-2" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="namaakun" /></label><label className="block text-sm font-medium">External user ID <span className="font-normal text-muted-foreground">(opsional)</span><Input className="mt-2" value={externalUserID} onChange={(event) => setExternalUserID(event.target.value)} placeholder="ID profil jika tersedia" /></label><div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm leading-6 text-blue-950">Setelah disimpan, Chromium akan dibuka. Login dan 2FA dilakukan manual di browser, lalu klik <strong>Validasi</strong>.</div></div><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Batal</Button><Button className="bg-brand-blue hover:bg-brand-blue/90" disabled={pending || !name.trim()} onClick={() => onSave({ name: name.trim(), platform, ...(username.trim() ? { username: username.trim() } : {}), ...(externalUserID.trim() ? { external_user_id: externalUserID.trim() } : {}) })}><Save data-icon="inline-start" /> Simpan & buka browser</Button></div></div></div>;
 }
 
 function CreateRuleDialog({ accounts, pending, onClose, onSave }: { accounts: SocialAccount[]; pending: boolean; onClose: () => void; onSave: (input: { account_id: string; name: string; platform: string; source_type: string; match_type: string; is_active: boolean; priority: number; keywords: string[]; actions: AutoReplyAction[] }) => void }) {
