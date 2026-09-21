@@ -14,7 +14,7 @@ SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "change-me")
 
 # Mailketing transactional email notifications.
 MAILKETING_API_URL = os.environ.get(
-    "MAILKETING_API_URL", "https://api.mailketing.co.id/api/v1/send"
+    "MAILKETING_API_URL", "https://api.mailketing.co.id/api/v2/send"
 )
 MAILKETING_API_TOKEN = os.environ.get("MAILKETING_API_TOKEN", "")
 MAILKETING_FROM_NAME = os.environ.get("MAILKETING_FROM_NAME", "ChatCepat")

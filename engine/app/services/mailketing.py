@@ -113,7 +113,6 @@ async def send_email(*, recipient: str, subject: str, content: str) -> None:
         raise MailketingError("Mailketing belum dikonfigurasi")
 
     payload = {
-        "api_token": MAILKETING_API_TOKEN,
         "from_name": MAILKETING_FROM_NAME,
         "from_email": MAILKETING_FROM_EMAIL,
         "recipient": recipient,
@@ -122,7 +121,14 @@ async def send_email(*, recipient: str, subject: str, content: str) -> None:
     }
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(MAILKETING_API_URL, data=payload)
+            response = await client.post(
+                MAILKETING_API_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Api-Token": MAILKETING_API_TOKEN,
+                },
+                json=payload,
+            )
     except httpx.HTTPError as exc:
         raise MailketingError("Mailketing tidak dapat dihubungi") from exc
 
@@ -130,9 +136,11 @@ async def send_email(*, recipient: str, subject: str, content: str) -> None:
         data = response.json()
     except ValueError:
         data = {}
-    provider_status = str(data.get("status", "")).lower()
-    if response.status_code >= 400 or provider_status != "success":
-        reason = str(data.get("response") or f"HTTP {response.status_code}")
+    provider_success = data.get("success") is True
+    if response.status_code >= 400 or not provider_success:
+        reason = str(
+            data.get("message") or data.get("response") or f"HTTP {response.status_code}"
+        )
         raise MailketingError(f"Mailketing menolak email: {reason[:180]}")
 
 
