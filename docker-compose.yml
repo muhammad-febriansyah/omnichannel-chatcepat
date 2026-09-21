@@ -86,7 +86,7 @@ services:
       redis: { condition: service_healthy }
     volumes:
       - "./storage/browser:/app/storage/browser"
-    command: "/bin/social-worker"
+    entrypoint: ["/bin/social-worker"]
     restart: unless-stopped
 
   # Asynq consumer: automation.process → normalize → rule evaluation → action.
