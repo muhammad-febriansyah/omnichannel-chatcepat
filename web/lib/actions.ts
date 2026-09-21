@@ -1088,6 +1088,22 @@ export async function deleteUser(id: string) {
   revalidatePath("/settings/users");
 }
 
+export async function deletePlatformUser(id: string) {
+  const session = await requireSession();
+  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  if (id === session.id) throw new Error("Tidak bisa menghapus akun sendiri");
+
+  const target = await db.query.users.findFirst({
+    where: eq(users.id, id),
+    columns: { id: true, role: true },
+  });
+  if (!target) throw new Error("Pengguna tidak ditemukan");
+  if (target.role === "admin") throw new Error("Akun admin platform tidak bisa dihapus dari sini");
+
+  await db.delete(users).where(eq(users.id, id));
+  revalidatePath("/admin/users");
+}
+
 // --- Platform: aktifkan / suspend tenant (admin platform, tenant.manage). ---
 export async function setTenantStatus(id: string, status: "active" | "suspended") {
   const session = await requireSession();
