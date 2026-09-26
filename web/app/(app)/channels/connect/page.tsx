@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { unstable_rethrow } from "next/navigation";
+import { useState, useTransition } from "react";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -14,8 +14,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
-import { createChannel, listApiCoAccounts } from "@/lib/actions";
-import type { ApiCoAccount } from "@/lib/apico-server";
+import { createChannel } from "@/lib/actions";
 import { CHANNEL_META, ChannelType } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,13 +38,13 @@ const TYPES: { value: ChannelType; label: string; desc: string; tag: Tag }[] = [
   {
     value: "instagram",
     label: "Instagram",
-    desc: "Pilih akun Instagram yang sudah terhubung",
+    desc: "Kelola akun dan balasan Instagram di Automation",
     tag: { label: "Tersedia", tone: "green" },
   },
   {
     value: "facebook",
     label: "Facebook",
-    desc: "Pilih akun Facebook yang sudah terhubung",
+    desc: "Kelola akun dan balasan Facebook di Automation",
     tag: { label: "Tersedia", tone: "green" },
   },
 ];
@@ -91,98 +90,23 @@ const FIELDS: Record<
   wa_unofficial: [],
 };
 
-// Transport gateway (kredensial sistem disetel di env, tidak ditampilkan di UI). WA butuh
-// Phone Number ID utk identifikasi nomor pengirim & resolve pesan masuk. IG/FB cukup nama.
-const APICO_FIELDS: Partial<
-  Record<
-    ChannelType,
-    { key: string; label: string; placeholder: string; hint?: string }[]
-  >
-> = {
-  wa_official: [
-    {
-      key: "apico_phone_number_id",
-      label: "Phone Number ID",
-      placeholder: "890836697444150",
-      hint: "ID nomor WhatsApp Business kamu.",
-    },
-  ],
-  instagram: [],
-  facebook: [],
-};
-
 export default function ConnectChannelPage() {
+  const router = useRouter();
   const [type, setType] = useState<ChannelType>("telegram");
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
-  // Akun ASLI di api.co.id (picker) — cegah connect channel phantom.
-  const [accounts, setAccounts] = useState<ApiCoAccount[]>([]);
-  const [loadingAcc, setLoadingAcc] = useState(false);
-  const [accErr, setAccErr] = useState(""); // alasan gagal ambil akun api.co.id (bukan ditelan)
-  const [picked, setPicked] = useState(""); // externalId terpilih
-
-  // WA/IG/FB seluruhnya lewat api.co.id (integrasi Meta langsung dinonaktifkan).
-  const isMeta = type === "facebook" || type === "instagram";
-  const isWaOfficial = type === "wa_official";
-  const useApiCo = isMeta || isWaOfficial;
-
-  const fields = useApiCo ? (APICO_FIELDS[type] ?? []) : FIELDS[type];
-
-  // Saat tipe api.co.id dipilih, tarik daftar akun asli dari api.co.id.
-  useEffect(() => {
-    setPicked("");
-    if (!useApiCo) {
-      setAccounts([]);
-      return;
-    }
-    let alive = true;
-    setLoadingAcc(true);
-    setAccErr("");
-    listApiCoAccounts(type)
-      .then((r) => {
-        if (!alive) return;
-        setAccounts(r.accounts);
-        setAccErr(r.error ?? "");
-        if (r.error) gooeyToast.error(`Gagal ambil akun: ${r.error}`);
-      })
-      .catch((e) => {
-        if (!alive) return;
-        setAccounts([]);
-        setAccErr(
-          e instanceof Error
-            ? e.message
-            : `Gagal menghubungi penyedia ${CHANNEL_META[type].label}`,
-        );
-      })
-      .finally(() => alive && setLoadingAcc(false));
-    return () => {
-      alive = false;
-    };
-  }, [type, useApiCo]);
+  const fields = FIELDS[type];
 
   function submit() {
     if (!name.trim()) {
       gooeyToast.error("Nama channel wajib diisi");
       return;
     }
-    let externalId: string | undefined;
-    let credentials: Record<string, string> = creds;
-    if (useApiCo) {
-      if (!picked) {
-        gooeyToast.error("Pilih akun dari daftar");
+    for (const field of fields) {
+      if (!creds[field.key]?.trim()) {
+        gooeyToast.error(`${field.label} wajib diisi`);
         return;
-      }
-      externalId = picked;
-      // WA: credential apico_phone_number_id = id akun (dipakai gateway saat kirim).
-      credentials =
-        type === "wa_official" ? { apico_phone_number_id: picked } : {};
-    } else {
-      for (const f of fields) {
-        if (!creds[f.key]?.trim()) {
-          gooeyToast.error(`${f.label} wajib diisi`);
-          return;
-        }
       }
     }
     start(async () => {
@@ -192,9 +116,7 @@ export default function ConnectChannelPage() {
         await createChannel({
           type,
           name,
-          credentials,
-          externalId,
-          provider: useApiCo ? "apico" : undefined,
+          credentials: creds,
         });
       } catch (e) {
         unstable_rethrow(e);
@@ -240,6 +162,10 @@ export default function ConnectChannelPage() {
                 <button
                   key={t.value}
                   onClick={() => {
+                    if (t.value === "instagram" || t.value === "facebook") {
+                      router.push("/automation");
+                      return;
+                    }
                     setType(t.value);
                     setCreds({});
                   }}
@@ -334,76 +260,7 @@ export default function ConnectChannelPage() {
                 </div>
               </div>
 
-              {useApiCo ? (
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
-                    Akun {selectedType?.label}
-                  </label>
-                  {loadingAcc ? (
-                    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" /> Memuat akun…
-                    </div>
-                  ) : accErr ? (
-                    <div className="rounded-xl border border-dashed border-red-300 bg-red-50 p-4 text-xs leading-relaxed text-danger dark:border-red-500/30 dark:bg-red-500/10">
-                      <span className="font-medium">
-                        Gagal menghubungi penyedia {selectedType?.label}.
-                      </span>{" "}
-                      {accErr}
-                      <span className="mt-1 block text-danger/80">
-                        Periksa konfigurasi integrasi di server &amp; status
-                        akun kamu, lalu muat ulang halaman.
-                      </span>
-                    </div>
-                  ) : accounts.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10">
-                      Belum ada akun {selectedType?.label} yang terhubung.
-                      Hubungkan dulu akun kamu, lalu buka halaman ini lagi.
-                      {isWaOfficial && (
-                        <Link
-                          href="/channels/request-wa-official"
-                          className="mt-3 flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-blue text-[12px] font-semibold text-white transition hover:opacity-90"
-                        >
-                          Ajukan WhatsApp Official ke tim
-                        </Link>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {accounts.map((a) => (
-                        <button
-                          key={a.externalId}
-                          type="button"
-                          onClick={() => {
-                            setPicked(a.externalId);
-                            if (!name.trim()) setName(a.name);
-                          }}
-                          className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition",
-                            picked === a.externalId
-                              ? "border-brand-blue bg-blue-50 dark:bg-blue-500/10"
-                              : "border-border hover:border-brand-blue/40",
-                          )}
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
-                              {a.name}
-                            </span>
-                            {a.detail && (
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {a.detail}
-                              </span>
-                            )}
-                          </span>
-                          {picked === a.externalId && (
-                            <Check className="size-4 shrink-0 text-brand-blue" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                fields.map((f) => (
+              {fields.map((f) => (
                   <div key={f.key}>
                     <label className="mb-1.5 block text-sm font-medium">
                       {f.label}
@@ -425,8 +282,7 @@ export default function ConnectChannelPage() {
                       </p>
                     )}
                   </div>
-                ))
-              )}
+                ))}
 
               {type === "wa_unofficial" && (
                 <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
@@ -445,10 +301,7 @@ export default function ConnectChannelPage() {
 
               <Button
                 onClick={submit}
-                disabled={
-                  pending ||
-                  (useApiCo && (loadingAcc || accounts.length === 0 || !picked))
-                }
+                disabled={pending}
                 size="lg"
                 className="w-full"
               >

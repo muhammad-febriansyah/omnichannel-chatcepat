@@ -144,6 +144,21 @@ async def send_email(*, recipient: str, subject: str, content: str) -> None:
         raise MailketingError(f"Mailketing menolak email: {reason[:180]}")
 
 
+def password_reset_email(*, name: str, token: str) -> tuple[str, str]:
+    return (
+        "Reset password ChatCepat",
+        _render_email(
+            preheader="Link reset password berlaku selama 30 menit.",
+            title="Reset password",
+            greeting=name,
+            paragraphs=("Kami menerima permintaan reset password akun Anda.", "Jika Anda tidak meminta perubahan ini, abaikan email ini."),
+            cta_label="Reset password",
+            cta_url=_url("/reset-password?token=" + token),
+            footer_note="Link berlaku selama 30 menit dan hanya dapat dipakai sekali.",
+        ),
+    )
+
+
 def welcome_email(*, name: str, business: str) -> tuple[str, str]:
     return (
         "Selamat datang di ChatCepat",

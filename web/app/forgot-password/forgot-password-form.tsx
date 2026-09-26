@@ -20,7 +20,7 @@ export default function ForgotPasswordForm() {
     start(async () => {
       try {
         const result = await requestPasswordReset(email);
-        setMessage("Jika email terdaftar, instruksi reset password akan tersedia.");
+        setMessage("Jika email terdaftar, link reset password dikirim ke email tersebut.");
         if (result.resetToken) setResetLink(`/reset-password?token=${encodeURIComponent(result.resetToken)}`);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Permintaan reset password gagal");

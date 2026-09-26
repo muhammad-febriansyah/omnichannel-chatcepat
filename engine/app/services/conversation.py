@@ -118,6 +118,10 @@ def _normalize_phone(raw: str) -> str:
     Nomor yang sudah diawali kode negara (62, 1, …) dibiarkan.
     """
     d = "".join(ch for ch in raw if ch.isdigit())
+    if raw.strip().startswith("+"):
+        return d
+    if d.startswith("00"):
+        return d[2:]
     if d.startswith("0"):
         d = "62" + d[1:]
     elif d.startswith("8"):
@@ -148,8 +152,14 @@ async def start_conversation(
     from ..models import Channel
 
     phone_norm = _normalize_phone(phone)
-    if not phone_norm:
+    if not 8 <= len(phone_norm) <= 15:
         raise ValueError("nomor telepon tidak valid")
+    if msg_type not in ("text", "template"):
+        raise ValueError("jenis pesan tidak didukung")
+    if msg_type == "text" and not (body or "").strip():
+        raise ValueError("pesan kosong")
+    if msg_type == "template" and not (template_name or "").strip():
+        raise ValueError("template wajib dipilih")
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
@@ -160,6 +170,12 @@ async def start_conversation(
                 raise ValueError(f"channel {channel_id} tidak ada")
             if channel.status != "connected":
                 raise ValueError("channel belum terhubung")
+            if channel.type not in ("wa_official", "wa_unofficial"):
+                raise ValueError("Percakapan baru lewat nomor telepon hanya untuk WhatsApp")
+            if msg_type == "template" and channel.type != "wa_official":
+                raise ValueError("Template hanya didukung WhatsApp official")
+            if channel.type == "wa_official" and msg_type != "template":
+                raise ValueError("Pesan pertama WhatsApp official harus memakai template")
             # Warm-up cap (unofficial): first-contact/compose paling rawan banned —
             # blok bila volume rolling-24h sudah lewat batas umur channel.
             await warmup.enforce_unofficial(session, channel)
@@ -298,6 +314,14 @@ async def assign_conversation(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             conv = await _load(session, conversation_id, tenant_id)
+            from sqlalchemy import or_, select
+            from ..models import User
+            agent = await session.scalar(select(User).where(
+                User.id == agent_id, User.status == "active",
+                or_(User.tenant_id == conv.tenant_id, User.role == "admin"),
+            ))
+            if agent is None:
+                raise ValueError("Agen aktif tidak ditemukan dalam tenant ini")
             conv.assigned_agent_id = agent_id
             conv.handler = "agent"
             conv.updated_at = datetime.now(timezone.utc)

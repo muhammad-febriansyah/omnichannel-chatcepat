@@ -9,8 +9,11 @@ from sqlalchemy.orm import joinedload
 from ..models import Broadcast, BroadcastRecipient, Contact
 
 
-async def get(session: AsyncSession, broadcast_id: uuid.UUID) -> Broadcast | None:
-    return await session.scalar(select(Broadcast).where(Broadcast.id == broadcast_id))
+async def get(session: AsyncSession, broadcast_id: uuid.UUID, *, lock: bool = False) -> Broadcast | None:
+    stmt = select(Broadcast).where(Broadcast.id == broadcast_id)
+    if lock:
+        stmt = stmt.with_for_update()
+    return await session.scalar(stmt)
 
 
 async def match_contacts(

@@ -241,8 +241,14 @@ func (r *Repository) MarkJobQueued(ctx context.Context, tenantID, jobID string) 
 }
 
 func (r *Repository) MarkJobProcessing(ctx context.Context, jobID string) (bool, error) {
-	result, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', attempts=attempts+1, started_at=now(), updated_at=now() WHERE id=$1::uuid AND status IN ('pending','queued')`, jobID)
+	result, err := r.pool.Exec(ctx, `UPDATE social_jobs SET status='processing', started_at=now(), updated_at=now() WHERE id=$1::uuid AND status IN ('pending','queued')`, jobID)
 	return result.RowsAffected() == 1, err
+}
+
+func (r *Repository) MarkJobAttempt(ctx context.Context, jobID string) (int, error) {
+	var attempts int
+	err := r.pool.QueryRow(ctx, `UPDATE social_jobs SET attempts=attempts+1 WHERE id=$1::uuid AND status='processing' RETURNING attempts`, jobID).Scan(&attempts)
+	return attempts, err
 }
 
 func (r *Repository) MarkJobCompleted(ctx context.Context, jobID string) error {

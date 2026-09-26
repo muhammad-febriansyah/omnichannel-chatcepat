@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, tags as tagsTable } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -17,6 +17,8 @@ export default async function NewBroadcastPage() {
       chans = await db.query.channels.findMany({
         where: and(
           eq(channels.tenantId, session.tenantId),
+          eq(channels.status, "connected"),
+          sql`COALESCE(${channels.meta}->>'provider', '') <> 'apico'`,
           inArray(channels.type, ["wa_official", "wa_unofficial"]),
         ),
         columns: { id: true, name: true, type: true },

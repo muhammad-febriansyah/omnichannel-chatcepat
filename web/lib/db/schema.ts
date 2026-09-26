@@ -487,6 +487,7 @@ export const orders = pgTable("orders", {
 	tenantId: uuid("tenant_id").notNull(),
 	planId: uuid("plan_id"),
 	planName: text("plan_name").notNull(),
+	period: text("period").default("month").notNull(),
 	tier: tenantPlan().notNull(),
 	amountIdr: bigint("amount_idr", { mode: 'number' }).notNull(),
 	merchantOrderId: text("merchant_order_id").notNull(),

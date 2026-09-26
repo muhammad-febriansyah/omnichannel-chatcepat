@@ -13,6 +13,7 @@ import logging
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import text
 
 from ..bus import publish_outbound
 from ..config import (
@@ -28,7 +29,7 @@ from ..config import (
 )
 from ..contracts.events import OutboundCommand, Party, Template
 from ..contracts.events import Type1 as OutboundType
-from ..db import AsyncSessionLocal
+from ..db import AsyncSessionLocal, engine
 from ..models import Broadcast, BroadcastRecipient, Channel, Contact
 from ..repositories import broadcasts, channels, conversations, messages
 from . import warmup
@@ -39,7 +40,7 @@ log = logging.getLogger("engine.broadcast")
 async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> dict:
     """Bangun recipients dari audience (partisi opt_in), set status running."""
     async with AsyncSessionLocal() as session, session.begin():
-        b = await broadcasts.get(session, broadcast_id)
+        b = await broadcasts.get(session, broadcast_id, lock=True)
         # Tenant scope (defense-in-depth): mismatch = tidak ada.
         if b is None or (tenant_id is not None and b.tenant_id != tenant_id):
             raise ValueError(f"broadcast {broadcast_id} tidak ada")
@@ -56,6 +57,13 @@ async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = N
                 "Broadcast hanya didukung untuk channel WhatsApp. Messenger/Instagram "
                 "tidak bisa blast (kebijakan Meta: hanya balasan dalam window 24 jam)."
             )
+
+        if channel.tenant_id != b.tenant_id or channel.status != "connected":
+            raise ValueError("Channel broadcast belum terhubung")
+        if channel.type == "wa_official" and not b.template_id:
+            raise ValueError("Broadcast WhatsApp official memerlukan template")
+        if channel.type == "wa_unofficial" and not (b.body_snapshot or "").strip():
+            raise ValueError("Isi broadcast tidak boleh kosong")
 
         contacts = await broadcasts.match_contacts(session, b.tenant_id, b.audience_filter)
         pending = skipped = 0
@@ -119,8 +127,24 @@ def _build_command(
 async def dispatch(
     broadcast_id: uuid.UUID, throttle_s: float | None = None, batch: int = BROADCAST_BATCH
 ) -> dict:
+    # HTTP background tasks and the polling worker may pick the same broadcast.
+    # Hold a session advisory lock across transaction boundaries and throttling.
+    key = broadcast_id.int % (1 << 63)
+    async with engine.connect() as connection:
+        acquired = await connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
+        if not acquired:
+            return {"skipped": True}
+        try:
+            return await _dispatch_locked(broadcast_id, throttle_s, batch)
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+
+
+async def _dispatch_locked(
+    broadcast_id: uuid.UUID, throttle_s: float | None = None, batch: int = BROADCAST_BATCH
+) -> dict:
     """Kirim semua penerima pending (throttle). Update status + stats. Idempoten per penerima."""
-    sent = failed = 0
+    sent = failed = skipped_optout = 0
     async with AsyncSessionLocal() as session:
         async with session.begin():
             b = await broadcasts.get(session, broadcast_id)
@@ -166,6 +190,18 @@ async def dispatch(
                 idem = f"bcast:{broadcast_id}:{r.contact_id}"
                 try:
                     async with session.begin():
+                        # Consent may have changed after the audience was built.
+                        await session.refresh(r.contact)
+                        if r.contact.opt_in_status != "opted_in":
+                            r.status = "skipped_optout"
+                            skipped_optout += 1
+                            continue
+                        if channel is None:
+                            raise ValueError("Channel tidak ditemukan")
+                        await session.refresh(channel)
+                        if channel.status != "connected":
+                            paused = True
+                            break
                         conv = await conversations.get_or_create_active(
                             session, b.tenant_id, b.channel_id, r.contact_id
                         )
@@ -224,7 +260,7 @@ async def dispatch(
             "total": prev.get("total", sent + failed),
             "sent": prev.get("sent", 0) + sent,
             "failed": prev.get("failed", 0) + failed,
-            "skipped_optout": prev.get("skipped_optout", 0),
+            "skipped_optout": prev.get("skipped_optout", 0) + skipped_optout,
         }
         status = "running" if paused else "done"
         async with session.begin():

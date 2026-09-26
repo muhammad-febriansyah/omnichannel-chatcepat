@@ -10,9 +10,10 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from urllib.parse import urljoin
 
 from ..bus import publish_outbound, publish_realtime
-from ..config import OPT_OUT_KEYWORDS, SERVICE_WINDOW_HOURS
+from ..config import APP_BASE_URL, OPT_OUT_KEYWORDS, SERVICE_WINDOW_HOURS
 from ..contracts.events import InboundMessage, Media, OutboundCommand, Party
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
@@ -98,7 +99,7 @@ async def _publish_outbound(
         ),
         type=OutboundType.media if is_media else OutboundType.text,
         body=reply.text,
-        media=Media(url=reply.media_url, mime=_guess_mime(reply.media_url)) if is_media else None,
+        media=Media(url=urljoin(APP_BASE_URL + "/", reply.media_url), mime=_guess_mime(reply.media_url)) if is_media else None,
         conversation_id=conv.id,
     )
     await publish_outbound(cmd.model_dump_json(by_alias=True))
@@ -166,15 +167,14 @@ async def handle(inbound: InboundMessage) -> None:
         # wa_unofficial dgn auto-reply ON: hormati cap warm-up rolling-24h supaya
         # volume balasan otomatis tak memicu ban. Cap habis → skip balas (inbound
         # tetap tersimpan; agen bisa balas manual).
-        if channel.type == "wa_unofficial":
-            left = await warmup.remaining(session, channel, _now())
-            if left is not None and left <= 0:
-                log.info("auto-reply skip: cap warm-up channel %s habis", channel.id)
-                return
-
         # --- DECIDE + REPLY ---
         # decide() bisa menulis (flow state) → txn sendiri, commit sebelum kirim balasan.
         async with session.begin():
+            if channel.type == "wa_unofficial":
+                left = await warmup.remaining(session, channel, _now())
+                if left is not None and left <= 0:
+                    log.info("auto-reply skip: cap warm-up channel %s habis", channel.id)
+                    return
             decision = await decide(session, conv, channel, contact, inbound)
         if decision.stop:
             return

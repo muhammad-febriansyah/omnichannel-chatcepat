@@ -39,12 +39,13 @@ const (
 )
 
 type Account struct {
-	ID             string  `json:"id"`
-	TenantID       string  `json:"tenant_id"`
-	Name           string  `json:"name"`
-	Platform       string  `json:"platform"`
-	Username       *string `json:"username,omitempty"`
-	ExternalUserID *string `json:"external_user_id,omitempty"`
+	CommentPostURLs []string `json:"-"`
+	ID              string   `json:"id"`
+	TenantID        string   `json:"tenant_id"`
+	Name            string   `json:"name"`
+	Platform        string   `json:"platform"`
+	Username        *string  `json:"username,omitempty"`
+	ExternalUserID  *string  `json:"external_user_id,omitempty"`
 	// ProfilePath is intentionally kept out of API responses. Browser profiles
 	// contain sensitive cookies and local browser state.
 	ProfilePath       string     `json:"-"`
@@ -128,15 +129,16 @@ type AutoReplyAction struct {
 }
 
 type AutomationSettings struct {
-	SocialAccountID            string `json:"social_account_id"`
-	AutomationEnabled          bool   `json:"automation_enabled"`
-	CommentScannerEnabled      bool   `json:"comment_scanner_enabled"`
-	MessageScannerEnabled      bool   `json:"message_scanner_enabled"`
-	CommentReplyEnabled        bool   `json:"comment_reply_enabled"`
-	CommentPrivateReplyEnabled bool   `json:"comment_private_reply_enabled"`
-	MessageReplyEnabled        bool   `json:"message_reply_enabled"`
-	ReplyCooldownSeconds       int    `json:"reply_cooldown_seconds"`
-	MaxConsecutiveErrors       int    `json:"max_consecutive_errors"`
+	CommentPostURLs            []string `json:"comment_post_urls"`
+	SocialAccountID            string   `json:"social_account_id"`
+	AutomationEnabled          bool     `json:"automation_enabled"`
+	CommentScannerEnabled      bool     `json:"comment_scanner_enabled"`
+	MessageScannerEnabled      bool     `json:"message_scanner_enabled"`
+	CommentReplyEnabled        bool     `json:"comment_reply_enabled"`
+	CommentPrivateReplyEnabled bool     `json:"comment_private_reply_enabled"`
+	MessageReplyEnabled        bool     `json:"message_reply_enabled"`
+	ReplyCooldownSeconds       int      `json:"reply_cooldown_seconds"`
+	MaxConsecutiveErrors       int      `json:"max_consecutive_errors"`
 }
 
 type SocialEventAction struct {

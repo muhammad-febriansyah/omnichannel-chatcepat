@@ -56,6 +56,7 @@ export type IncomingSocialEvent = {
 };
 
 export type AutomationSettings = {
+	comment_post_urls: string[];
   social_account_id: string;
   automation_enabled: boolean;
   comment_scanner_enabled: boolean;

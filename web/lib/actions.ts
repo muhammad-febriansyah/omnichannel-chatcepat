@@ -17,6 +17,7 @@ import {
   requireFeature,
 } from "./entitlements";
 import { requireSession, type Session } from "./session";
+import { normalizePhone } from "./phone";
 import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
 import {
@@ -121,9 +122,21 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true; r
   await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
   await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
 
-  // Development has no mail provider configured, so return a local-only link
-  // for testing. Production must connect this boundary to an email provider.
-  if (process.env.APP_ENV !== "production") return { ok: true, resetToken: rawToken };
+  // Development may expose a local test link; production always delivers by email.
+  if (process.env.NODE_ENV !== "production" && process.env.APP_ENV !== "production") return { ok: true, resetToken: rawToken };
+  try {
+    const response = await fetch(`${ENGINE}/notifications/password-reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Service-Token": process.env.SERVICE_TOKEN ?? "" },
+      body: JSON.stringify({ user_id: user.id, token: rawToken }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!response.ok) throw new Error("email unavailable");
+  } catch {
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
+    throw new Error("Layanan email reset belum tersedia. Coba lagi nanti.");
+  }
   return { ok: true };
 }
 
@@ -145,8 +158,12 @@ export async function resetPassword(token: string, password: string): Promise<{ 
 
   const passwordHash = await bcrypt.hash(password, 10);
   await db.transaction(async (tx) => {
+    const [claimed] = await tx.update(passwordResetTokens)
+      .set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.id, validToken.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+      .returning({ id: passwordResetTokens.id });
+    if (!claimed) throw new Error("Link reset password sudah dipakai atau kedaluwarsa");
     await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, validToken.userId));
-    await tx.update(passwordResetTokens).set({ usedAt: now }).where(eq(passwordResetTokens.id, validToken.id));
     await tx.delete(passwordResetTokens).where(and(eq(passwordResetTokens.userId, validToken.userId), isNull(passwordResetTokens.usedAt)));
   });
 
@@ -695,9 +712,15 @@ export async function createAndRunBroadcast(input: {
   // Channel WAJIB milik tenant ini — cegah broadcast lewat channel tenant lain.
   const channel = await db.query.channels.findFirst({
     where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
-    columns: { id: true },
+    columns: { id: true, type: true, status: true, meta: true },
   });
   if (!channel) throw new Error("Channel tidak ditemukan");
+  if ((channel.meta as { provider?: string })?.provider === "apico") throw new Error("Integrasi provider ini sudah dinonaktifkan");
+  if (channel.status !== "connected") throw new Error("Channel belum terhubung");
+  if (!["wa_official", "wa_unofficial"].includes(channel.type)) throw new Error("Broadcast hanya untuk WhatsApp");
+  if (!input.name.trim()) throw new Error("Nama broadcast wajib diisi");
+  if (channel.type === "wa_official" && !input.templateId?.trim()) throw new Error("Pilih template WhatsApp official");
+  if (channel.type === "wa_unofficial" && !input.body.trim()) throw new Error("Isi broadcast tidak boleh kosong");
 
   const [row] = await db
     .insert(broadcasts)
@@ -768,9 +791,10 @@ export async function startConversation(input: {
   // Channel wajib milik tenant (cegah IDOR lintas-tenant).
   const ch = await db.query.channels.findFirst({
     where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
-    columns: { id: true, status: true },
+    columns: { id: true, status: true, meta: true },
   });
   if (!ch) throw new Error("Channel tidak ditemukan");
+  if ((ch.meta as { provider?: string })?.provider === "apico") throw new Error("Integrasi provider ini sudah dinonaktifkan");
   if (ch.status !== "connected") throw new Error("Channel belum terhubung");
 
   const res = await fetch(`${ENGINE}/conversations/start`, {
@@ -1007,7 +1031,7 @@ export async function createContact(input: ContactInput) {
   requireAbility(session, "contact.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   const name = input.name.trim();
-  const phone = input.phone.trim();
+  const phone = normalizePhone(input.phone);
   if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
   const optedIn = input.optInStatus === "opted_in";
   try {
@@ -1032,7 +1056,7 @@ export async function updateContact(id: string, input: ContactInput) {
   requireAbility(session, "contact.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   const name = input.name.trim();
-  const phone = input.phone.trim();
+  const phone = normalizePhone(input.phone);
   if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
   try {
     await db
@@ -1068,7 +1092,7 @@ export async function importContacts(
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
 
   const clean = rows
-    .map((r) => ({ name: (r.name ?? "").trim(), phone: (r.phone ?? "").trim() }))
+    .map((r) => ({ name: (r.name ?? "").trim(), phone: normalizePhone(r.phone ?? "") }))
     .filter((r) => r.name || r.phone);
   if (!clean.length) throw new Error("Tidak ada baris valid untuk diimport");
   if (clean.length > 5000) throw new Error("Maksimal 5.000 baris per import");

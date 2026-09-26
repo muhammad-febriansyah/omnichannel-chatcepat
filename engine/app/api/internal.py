@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import SERVICE_TOKEN
 from ..rbac import PermissionDenied, require
@@ -22,6 +22,30 @@ from ..services.conversation import (
 from ..services.notifications import send_welcome_notification
 
 router = APIRouter(prefix="/internal/v1")
+
+
+class PasswordResetNotificationIn(BaseModel):
+    user_id: uuid.UUID
+    token: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+@router.post("/notifications/password-reset")
+async def notification_password_reset(payload: PasswordResetNotificationIn, x_service_token: str | None = Header(default=None)) -> dict:
+    _auth(x_service_token)
+    from ..db import AsyncSessionLocal
+    from ..models import User
+    from ..services.mailketing import MailketingError, password_reset_email, send_email
+
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, payload.user_id)
+        if user is None or user.status != "active":
+            return {"sent": False}
+        subject, content = password_reset_email(name=user.name, token=payload.token)
+        try:
+            await send_email(recipient=user.email, subject=subject, content=content)
+        except MailketingError as exc:
+            raise HTTPException(status_code=503, detail="Layanan email reset belum tersedia") from exc
+    return {"sent": True}
 
 
 def _auth(token: str | None) -> None:

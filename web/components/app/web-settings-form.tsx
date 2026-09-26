@@ -181,9 +181,9 @@ export function WebSettingsForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <ImageUpload
               label="Logo"
-              hint="Rasio landscape, PNG/SVG transparan. Maks 2 MB."
+              hint="Rasio landscape, PNG/WebP transparan. Maks 2 MB."
               value={v.logoUrl}
-              accept="image/png,image/svg+xml,image/webp,image/jpeg"
+              accept="image/png,image/webp,image/jpeg"
               preview="logo"
               onChange={(url) => set({ logoUrl: url })}
             />

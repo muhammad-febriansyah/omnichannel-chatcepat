@@ -31,8 +31,8 @@ function Counter({ to, decimals = 0, prefix = "", suffix = "" }: { to: number; d
   useEffect(() => {
     if (!inView) return;
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setN(to);
-      return;
+      const frame = requestAnimationFrame(() => setN(to));
+      return () => cancelAnimationFrame(frame);
     }
     let raf = 0;
     let started: number | null = null;

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { APICO_ENABLED } from "@/lib/features";
 import { CheckCircle2 } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
@@ -12,6 +13,7 @@ export default async function AdminWaRequestsPage({
   searchParams: Promise<{ assigned?: string }>;
 }) {
   const session = await requireSession();
+  if (!APICO_ENABLED) notFound();
   if (!can(session, "tenant.manage")) notFound();
 
   const [{ assigned }, rows] = await Promise.all([searchParams, listAllWaRequests()]);

@@ -21,6 +21,7 @@ class Order(UUIDPkMixin, TimestampMixin, Base):
         sa.Uuid, sa.ForeignKey("plans.id", ondelete="SET NULL")
     )
     plan_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    period: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="month")
     tier: Mapped[str] = mapped_column(tenant_plan, nullable=False)
     amount_idr: Mapped[int] = mapped_column(sa.BigInteger, nullable=False)
     merchant_order_id: Mapped[str] = mapped_column(sa.Text, nullable=False, unique=True)

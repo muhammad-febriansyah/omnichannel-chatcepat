@@ -3,12 +3,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { tenants } from "./db/schema";
+import { tenants, users } from "./db/schema";
 import { ACTING_TENANT_COOKIE, IMPERSONATE_COOKIE, SESSION_COOKIE, verifySession } from "./auth";
 import { can, type Ability, type Role, type SessionUser } from "./rbac";
 import { type TenantPlan } from "./plan";
 
 export interface Session extends SessionUser {
+  evaluatedAt: number;
   name: string;
   email: string;
   avatarUrl: string | null;
@@ -29,9 +30,15 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const payload = await verifySession(store.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
 
-  const isPlatformAdmin = payload.role === "admin";
+  // Resolve current access on every request. A valid old cookie must not keep
+  // a disabled/deleted user or a revoked role signed in for another week.
+  const user = await db.query.users.findFirst({ where: eq(users.id, payload.sub) });
+  if (!user || user.status !== "active") return null;
+
+  const isPlatformAdmin = user.role === "admin";
+  if (!isPlatformAdmin && !user.tenantId) return null;
   // admin platform tak punya tenant sendiri → pakai acting tenant (cookie), default tenant pertama.
-  let tenantId = payload.tenantId;
+  let tenantId = user.tenantId;
   let actingTenantId: string | null = null;
   if (isPlatformAdmin) {
     const cookieTenant = store.get(ACTING_TENANT_COOKIE)?.value || null;
@@ -53,6 +60,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
   try {
     if (tenantId) {
       const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
+      if (!isPlatformAdmin && (!t || t.status !== "active")) return null;
       tenantName = t?.name ?? null;
       planExpiresAt = t?.planExpiresAt ?? null;
       planExpired = !!planExpiresAt && new Date(planExpiresAt).getTime() < Date.now();
@@ -61,15 +69,16 @@ export const getSession = cache(async (): Promise<Session | null> => {
       plan = planExpired ? "basic" : ((t?.plan as TenantPlan) ?? null);
     }
   } catch {
-    /* abaikan */
+    return null;
   }
   return {
+    evaluatedAt: Date.now(),
     id: payload.sub,
-    role: payload.role as Role,
+    role: user.role as Role,
     tenantId,
-    name: payload.name,
-    email: payload.email,
-    avatarUrl: payload.avatarUrl ?? null,
+    name: user.name,
+    email: user.email,
+    avatarUrl: user.avatarUrl ?? null,
     tenantName,
     plan,
     planExpiresAt,

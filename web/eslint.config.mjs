@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone design references use browser globals; not application modules.
+    "chatcepat/**",
   ]),
 ]);
 

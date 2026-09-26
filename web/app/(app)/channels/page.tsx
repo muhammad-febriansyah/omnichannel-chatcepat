@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
 import { channels, flows } from "@/lib/db/schema";
@@ -34,7 +34,7 @@ async function load(tenantId: string | null) {
   if (!tenantId) return [];
   try {
     return await db.query.channels.findMany({
-      where: eq(channels.tenantId, tenantId),
+      where: and(eq(channels.tenantId, tenantId), sql`COALESCE(${channels.meta}->>'provider', '') <> 'apico'`),
       orderBy: [desc(channels.createdAt)],
     });
   } catch {

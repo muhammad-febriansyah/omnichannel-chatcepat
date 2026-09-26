@@ -10,6 +10,7 @@ import { requireAbility } from "./rbac";
 import { encryptCreds } from "./channel-crypto";
 import { listApiCoAccounts as fetchApiCoAccounts } from "./apico-server";
 import { writeAudit } from "./audit";
+import { APICO_ENABLED } from "./features";
 
 // --- Client: ajukan WhatsApp Official ---
 // Tenant tak bisa self-onboard (embedded signup ada di sisi provider). Kirim
@@ -20,6 +21,7 @@ export async function requestWaOfficial(input: {
   contactName?: string;
   notes?: string;
 }): Promise<void> {
+  if (!APICO_ENABLED) throw new Error("Pengajuan provider ini sudah dinonaktifkan");
   const session = await requireSession();
   requireAbility(session, "channel.connect");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");

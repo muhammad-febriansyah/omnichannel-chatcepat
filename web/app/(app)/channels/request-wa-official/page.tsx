@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { APICO_ENABLED } from "@/lib/features";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
@@ -14,6 +15,7 @@ export default async function RequestWaOfficialPage({
   searchParams: Promise<{ submitted?: string }>;
 }) {
   const session = await requireSession();
+  if (!APICO_ENABLED) notFound();
   if (!can(session, "channel.connect")) notFound();
   if (!session.tenantId) notFound();
 

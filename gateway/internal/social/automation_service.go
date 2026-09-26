@@ -70,11 +70,14 @@ func (s *Service) ProcessIncomingEvent(ctx context.Context, event IncomingSocial
 		if content == "" {
 			continue
 		}
-		actionID, created, err := s.repo.CreateEventAction(ctx, event.ID, action.ActionType)
+		actionID, created, err := s.repo.CreateEventAction(ctx, event, action.ActionType)
 		if err != nil {
 			return err
 		}
 		if !created {
+			if actionID == "" {
+				continue
+			}
 			// Recover the narrow crash window where the idempotency row was
 			// committed but the corresponding job was not created/enqueued.
 			var actionStatus string
@@ -123,7 +126,7 @@ func (s *Service) ProcessIncomingEvent(ctx context.Context, event IncomingSocial
 	if queued > 0 {
 		return s.repo.SetEventStatus(ctx, event.ID, EventQueued, &rule.ID)
 	}
-	return nil
+	return s.repo.SetEventStatus(ctx, event.ID, EventIgnored, &rule.ID)
 }
 
 func (s *Service) ProcessScan(ctx context.Context, envelope queue.SocialScanEnvelope) error {
@@ -156,14 +159,16 @@ func (s *Service) ProcessScan(ctx context.Context, envelope queue.SocialScanEnve
 		return s.handleAutomationError(ctx, account, err)
 	}
 	if settings.CommentScannerEnabled {
+		account.CommentPostURLs = settings.CommentPostURLs
 		events, err := provider.ScanComments(ctx, account)
-		if err != nil {
-			return s.handleAutomationError(ctx, account, err)
-		}
+		scanErr := err
 		for _, event := range events {
 			if err := s.saveAndProcessEvent(ctx, account, event); err != nil {
 				return err
 			}
+		}
+		if scanErr != nil {
+			return s.handleAutomationError(ctx, account, scanErr)
 		}
 	}
 	if settings.MessageScannerEnabled {
@@ -184,8 +189,11 @@ func (s *Service) saveAndProcessEvent(ctx context.Context, account Account, even
 	event.AccountID = account.ID
 	event.Platform = account.Platform
 	saved, created, err := s.repo.SaveIncomingEvent(ctx, event)
-	if err != nil || !created {
+	if err != nil {
 		return err
+	}
+	if !created && saved.Status != EventNew && saved.Status != EventMatched {
+		return nil
 	}
 	return s.ProcessIncomingEvent(ctx, saved)
 }
@@ -243,6 +251,21 @@ func (s *Service) processAutomationJob(ctx context.Context, jobID string) error 
 		_ = s.failJob(ctx, job, err)
 		return nil
 	}
+	// Settings and rule status can change while a job waits in the queue.
+	if !settings.AutomationEnabled || !actionEnabled(settings, job.Action) {
+		_ = s.failJob(ctx, job, fmt.Errorf("automation action disabled"))
+		return nil
+	}
+	rule, err := s.repo.GetRule(ctx, account.TenantID, valueOrEmpty(job.RuleID))
+	if err != nil || !rule.IsActive {
+		_ = s.failJob(ctx, job, fmt.Errorf("automation rule disabled or deleted"))
+		return nil
+	}
+	account, err = s.repo.GetAccountByID(ctx, account.ID)
+	if err != nil || account.Status != AccountConnected {
+		_ = s.failJob(ctx, job, ErrAccountNotConnected)
+		return nil
+	}
 	cooldown := time.Duration(settings.ReplyCooldownSeconds) * time.Second
 	if s.config.AccountMinActionGap > cooldown {
 		cooldown = s.config.AccountMinActionGap
@@ -253,6 +276,10 @@ func (s *Service) processAutomationJob(ctx context.Context, jobID string) error 
 			_ = s.failJob(ctx, job, err)
 		}
 		return nil
+	}
+	job.Attempts, err = s.repo.MarkJobAttempt(ctx, job.ID)
+	if err != nil {
+		return err
 	}
 	session, err := s.browser.OpenProfile(ctx, account.Platform, account.ID)
 	if err != nil {

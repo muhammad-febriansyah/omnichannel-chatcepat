@@ -51,15 +51,9 @@ func (p *Provider) CheckSession(ctx context.Context, _ social.Account) error {
 }
 
 func (p *Provider) ScanComments(ctx context.Context, account social.Account) ([]social.IncomingSocialEvent, error) {
-	page, err := p.open(ctx, homeURL)
-	if err != nil {
-		return nil, social.ErrNavigationFailed
-	}
-	defer page.Close()
-	if err := social.DetectPlatformWarning(page); err != nil {
-		return nil, err
-	}
-	return scanEvents(page, account, social.EventSourceComment, selectors.CommentNodes), nil
+	return social.ScanCommentPosts(ctx, account, p.open, func(page *rod.Page) []social.IncomingSocialEvent {
+		return scanEvents(page, account, social.EventSourceComment, selectors.CommentNodes)
+	})
 }
 
 func (p *Provider) ScanMessages(ctx context.Context, account social.Account) ([]social.IncomingSocialEvent, error) {
@@ -174,6 +168,9 @@ func scanEvents(page *rod.Page, account social.Account, source string, nodeSelec
 				continue
 			}
 			content, _ := node.Text()
+			if source == social.EventSourceComment {
+				content = social.CommentText(node)
+			}
 			eventTarget := eventURL
 			events = append(events, social.IncomingSocialEvent{
 				Platform: social.PlatformInstagram, AccountID: account.ID, SourceType: source,
@@ -187,6 +184,9 @@ func scanEvents(page *rod.Page, account social.Account, source string, nodeSelec
 }
 
 func pageURLForNode(node *rod.Element, fallback string) string {
+	if post, err := social.CanonicalPostURL(social.PlatformInstagram, fallback); err == nil {
+		return post
+	}
 	current := node
 	for depth := 0; depth < 8 && current != nil; depth++ {
 		for _, selector := range selectors.PostLinks {
@@ -233,10 +233,10 @@ func submitReply(page *rod.Page, inputSelectors, submitSelectors, replySelectors
 		}
 	}
 	if replySelectors != nil {
-		button, err := findFirst(page, replySelectors)
-		if scope != nil {
-			button, err = findFirstIn(scope, replySelectors)
+		if scope == nil {
+			return social.ErrCommentNotFound
 		}
+		button, err := findFirstIn(scope, replySelectors)
 		if err != nil {
 			return social.ErrCommentNotFound
 		}
@@ -245,6 +245,9 @@ func submitReply(page *rod.Page, inputSelectors, submitSelectors, replySelectors
 		}
 	}
 	input, err := findFirst(page, inputSelectors)
+	if scope != nil {
+		input, err = findFirstIn(scope, inputSelectors)
+	}
 	if err != nil {
 		return social.ErrElementNotFound
 	}
@@ -252,6 +255,9 @@ func submitReply(page *rod.Page, inputSelectors, submitSelectors, replySelectors
 		return social.ErrReplyFailed
 	}
 	submit, err := findFirst(page, submitSelectors)
+	if scope != nil {
+		submit, err = findFirstIn(scope, submitSelectors)
+	}
 	if err != nil {
 		return social.ErrElementNotFound
 	}
@@ -265,29 +271,22 @@ func submitReply(page *rod.Page, inputSelectors, submitSelectors, replySelectors
 }
 
 func findFirst(page *rod.Page, candidates []string) (*rod.Element, error) {
-	for _, selector := range candidates {
-		if element, err := page.Element(selector); err == nil {
-			return element, nil
-		}
-	}
-	return nil, social.ErrElementNotFound
+	return social.FindVisibleElement(page, candidates)
 }
 
 func findFirstIn(scope *rod.Element, candidates []string) (*rod.Element, error) {
-	for _, selector := range candidates {
-		if element, err := scope.Element(selector); err == nil {
-			return element, nil
-		}
-	}
-	return nil, social.ErrElementNotFound
+	return social.FindVisibleElement(scope, candidates)
 }
 
 func findEventNode(page *rod.Page, externalID, attribute string) (*rod.Element, error) {
+	if attribute == "data-comment-id" {
+		return social.FindComment(page, externalID)
+	}
 	if strings.TrimSpace(externalID) == "" {
 		return nil, social.ErrElementNotFound
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(externalID)
-	return page.Element(`[${attribute}="` + escaped + `"]`)
+	return social.FindVisibleElement(page, []string{`[` + attribute + `="` + escaped + `"]`})
 }
 
 func firstAttribute(element *rod.Element, names ...string) string {

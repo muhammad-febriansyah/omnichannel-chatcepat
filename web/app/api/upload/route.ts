@@ -14,7 +14,6 @@ const EXT: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
-  "image/svg+xml": "svg",
   "image/gif": "gif",
   "image/x-icon": "ico",
   "image/vnd.microsoft.icon": "ico",
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
   }
   const ext = EXT[file.type];
   if (!ext) {
-    return Response.json({ error: "Format harus PNG, JPG, WebP, SVG, GIF, atau ICO" }, { status: 415 });
+    return Response.json({ error: "Format harus PNG, JPG, WebP, GIF, atau ICO" }, { status: 415 });
   }
   if (file.size > MAX_BYTES) {
     return Response.json({ error: "Ukuran maksimal 2 MB" }, { status: 413 });

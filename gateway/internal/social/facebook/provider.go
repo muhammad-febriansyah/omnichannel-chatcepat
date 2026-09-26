@@ -49,15 +49,9 @@ func (p *Provider) CheckSession(ctx context.Context, _ social.Account) error {
 }
 
 func (p *Provider) ScanComments(ctx context.Context, account social.Account) ([]social.IncomingSocialEvent, error) {
-	page, err := p.open(ctx, homeURL)
-	if err != nil {
-		return nil, social.ErrNavigationFailed
-	}
-	defer page.Close()
-	if err := social.DetectPlatformWarning(page); err != nil {
-		return nil, err
-	}
-	return scanEvents(page, account, social.EventSourceComment, selectors.CommentNodes), nil
+	return social.ScanCommentPosts(ctx, account, p.open, func(page *rod.Page) []social.IncomingSocialEvent {
+		return scanEvents(page, account, social.EventSourceComment, selectors.CommentNodes)
+	})
 }
 
 func (p *Provider) ScanMessages(ctx context.Context, account social.Account) ([]social.IncomingSocialEvent, error) {
@@ -84,7 +78,7 @@ func (p *Provider) ReplyComment(ctx context.Context, _ social.Account, event soc
 	if err := social.DetectPlatformWarning(page); err != nil {
 		return err
 	}
-	return submitReply(page, selectors.CommentInput, selectors.Submit, selectors.Reply, content)
+	return submitCommentReply(page, event.ExternalID, content)
 }
 
 func (p *Provider) SendPrivateReply(ctx context.Context, account social.Account, event social.IncomingSocialEvent, content string) error {
@@ -169,6 +163,9 @@ func scanEvents(page *rod.Page, account social.Account, source string, nodeSelec
 				continue
 			}
 			content, _ := node.Text()
+			if source == social.EventSourceComment {
+				content = social.CommentText(node)
+			}
 			events = append(events, social.IncomingSocialEvent{Platform: social.PlatformFacebook, AccountID: account.ID, SourceType: source, ExternalID: externalID, AuthorExternalID: firstAttribute(node, "data-author-id", "data-user-id"), Content: strings.TrimSpace(content), TargetURL: &eventURL, ReceivedAt: time.Now().UTC()})
 		}
 		return events
@@ -177,6 +174,9 @@ func scanEvents(page *rod.Page, account social.Account, source string, nodeSelec
 }
 
 func pageURLForNode(node *rod.Element, fallback string) string {
+	if post, err := social.CanonicalPostURL(social.PlatformFacebook, fallback); err == nil {
+		return post
+	}
 	current := node
 	for depth := 0; depth < 8 && current != nil; depth++ {
 		for _, selector := range selectors.PostLinks {
@@ -238,30 +238,53 @@ func submitReply(page *rod.Page, inputSelectors, submitSelectors, replySelectors
 	return nil
 }
 
-func findFirst(page *rod.Page, candidates []string) (*rod.Element, error) {
-	for _, selector := range candidates {
-		if element, err := page.Element(selector); err == nil {
-			return element, nil
-		}
+func submitCommentReply(page *rod.Page, externalID, content string) error {
+	node, err := findEventNode(page, externalID, "data-comment-id")
+	if err != nil {
+		return social.ErrCommentNotFound
 	}
-	return nil, social.ErrElementNotFound
+	button, err := findFirstIn(node, selectors.Reply)
+	if err != nil {
+		return social.ErrCommentNotFound
+	}
+	if err := button.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return social.ErrReplyFailed
+	}
+	// The composer must belong to this comment, never the first textbox on the post.
+	input, err := findFirstIn(node, selectors.CommentInput)
+	if err != nil {
+		return social.ErrElementNotFound
+	}
+	if err := input.Input(content); err != nil {
+		return social.ErrReplyFailed
+	}
+	submit, err := findFirstIn(node, selectors.Submit)
+	if err != nil {
+		return social.ErrElementNotFound
+	}
+	if err := submit.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return social.ErrReplyFailed
+	}
+	return nil
+}
+
+func findFirst(page *rod.Page, candidates []string) (*rod.Element, error) {
+	return social.FindVisibleElement(page, candidates)
 }
 
 func findFirstIn(scope *rod.Element, candidates []string) (*rod.Element, error) {
-	for _, selector := range candidates {
-		if element, err := scope.Element(selector); err == nil {
-			return element, nil
-		}
-	}
-	return nil, social.ErrElementNotFound
+	return social.FindVisibleElement(scope, candidates)
 }
 
 func findEventNode(page *rod.Page, externalID, attribute string) (*rod.Element, error) {
+	if attribute == "data-comment-id" {
+		return social.FindComment(page, externalID)
+	}
 	if strings.TrimSpace(externalID) == "" {
 		return nil, social.ErrElementNotFound
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(externalID)
-	return page.Element(`[${attribute}="` + escaped + `"]`)
+	return social.FindVisibleElement(page, []string{`[` + attribute + `="` + escaped + `"]`})
 }
 
 func firstAttribute(element *rod.Element, names ...string) string {

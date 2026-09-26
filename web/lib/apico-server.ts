@@ -1,4 +1,5 @@
 import "server-only";
+import { APICO_ENABLED } from "./features";
 
 // Helper api.co.id (server-only). Dipakai flow connect channel untuk:
 //  1. Validasi: cuma boleh connect akun yang BENAR-BENAR ada di api.co.id (cegah phantom).
@@ -26,6 +27,7 @@ const ENDPOINT: Record<string, string | undefined> = {
 };
 
 export async function listApiCoAccounts(type: string): Promise<ApiCoAccountsResult> {
+	if (!APICO_ENABLED) return { accounts: [], error: "Integrasi provider ini sudah dinonaktifkan" };
   const path = ENDPOINT[type];
   if (!path) return { accounts: [], error: `Tipe channel "${type}" tidak didukung api.co.id` };
   if (!KEY) return { accounts: [], error: "Integrasi WhatsApp belum dikonfigurasi di server" };
@@ -112,6 +114,7 @@ function normalizeTemplate(d: Record<string, unknown>): ApiCoTemplate {
 }
 
 export async function listApiCoTemplates(opts?: { status?: string }): Promise<ApiCoTemplate[]> {
+	if (!APICO_ENABLED) return [];
   if (!KEY) return [];
   const qs = opts?.status ? `?status=${encodeURIComponent(opts.status)}` : "";
   try {
@@ -138,6 +141,7 @@ export type CreateTemplateInput = {
 export async function createApiCoTemplate(
   input: CreateTemplateInput,
 ): Promise<{ id: string; status: string } | { error: string }> {
+	if (!APICO_ENABLED) return { error: "Integrasi provider ini sudah dinonaktifkan" };
   if (!KEY) return { error: "Integrasi WhatsApp belum dikonfigurasi di server" };
   try {
     const res = await fetch(`${BASE}/templates`, {
@@ -163,6 +167,7 @@ export async function createApiCoTemplate(
 
 // POST /templates/:id/submit (kirim ke Meta untuk approval).
 export async function submitApiCoTemplate(id: string): Promise<{ status: string } | { error: string }> {
+	if (!APICO_ENABLED) return { error: "Integrasi provider ini sudah dinonaktifkan" };
   if (!KEY) return { error: "Integrasi WhatsApp belum dikonfigurasi di server" };
   try {
     const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}/submit`, {

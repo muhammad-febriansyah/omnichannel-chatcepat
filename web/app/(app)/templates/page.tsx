@@ -12,6 +12,7 @@ import { ActionLink } from "@/components/app/action-link";
 import { EditButton } from "@/components/app/action-button";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
+import { APICO_ENABLED } from "@/lib/features";
 
 // Status Meta (api.co.id) → tampilan.
 const WA_STATUS_TONE: Record<string, PillTone> = {
@@ -56,7 +57,7 @@ export default async function TemplatesPage() {
       <PageHeader
         icon={FileText}
         title="Template Pesan"
-        description={`${waTemplates.length} template WhatsApp (Meta) · ${quickReplies.length} balasan cepat`}
+        description={`${quickReplies.length} balasan cepat`}
         actions={
           <ActionLink href="/templates/new">
             <Plus className="size-4" /> Template Baru
@@ -70,7 +71,7 @@ export default async function TemplatesPage() {
             <EmptyState
               icon={FileStack}
               title="Belum ada template"
-              description="Buat template WhatsApp (HSM) untuk pesan pertama/broadcast, atau balasan cepat untuk agen."
+              description="Buat balasan cepat untuk membantu agen menjawab pelanggan."
               action={
                 <ActionLink href="/templates/new">
                   <Plus className="size-4" /> Buat template pertama
@@ -80,7 +81,7 @@ export default async function TemplatesPage() {
           ) : (
             <div className="space-y-6">
               {/* WhatsApp HSM — sumber api.co.id (status Meta) */}
-              <section>
+              {APICO_ENABLED && <section>
                 <h2 className="mb-2 text-sm font-semibold text-foreground">Template WhatsApp (Meta)</h2>
                 {waTemplates.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
@@ -117,7 +118,7 @@ export default async function TemplatesPage() {
                     ))}
                   </div>
                 )}
-              </section>
+              </section>}
 
               {/* Balasan cepat — lokal */}
               {quickReplies.length > 0 && (

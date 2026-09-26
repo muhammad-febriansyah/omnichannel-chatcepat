@@ -27,6 +27,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
       headers: {
         "Content-Type": MIME[ext] ?? "application/octet-stream",
         "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

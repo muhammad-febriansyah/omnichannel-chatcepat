@@ -47,10 +47,12 @@ var selectors = struct {
 	},
 	Reply: []string{
 		"button[aria-label*='reply' i]",
-		"button:has-text('Reply')",
+		"[role='button'][aria-label*='reply' i]",
+		"button[aria-label*='balas' i]",
 	},
 	PrivateReply: []string{
 		"button[aria-label*='message' i]",
-		"button:has-text('Message')",
+		"[role='button'][aria-label*='message' i]",
+		"button[aria-label*='pesan' i]",
 	},
 }

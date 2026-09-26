@@ -73,7 +73,9 @@ export function verifyCallbackSignature(p: {
   merchantOrderId: string;
   signature: string;
 }): boolean {
+  if (!duitkuConfigured()) return false;
   if (!p.merchantCode || p.merchantCode !== MERCHANT) return false;
   const expected = md5(MERCHANT + p.amount + p.merchantOrderId + API_KEY);
-  return expected.toLowerCase() === (p.signature || "").toLowerCase();
+  if (!/^[a-f0-9]{32}$/i.test(p.signature)) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(p.signature, "hex"));
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Send, ArrowLeft, Phone, User, Radio, Info } from "lucide-react";
@@ -30,25 +30,20 @@ export function ComposeForm({
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [body, setBody] = useState("");
-  const [msgType, setMsgType] = useState<"text" | "template">("text");
+  const [preferredType, setMsgType] = useState<"text" | "template">("template");
   const [templateName, setTemplateName] = useState(templates[0]?.name ?? "");
 
   const selected = channels.find((c) => c.id === channelId);
   const isWaOfficial = selected?.type === "wa_official";
   const tpl = templates.find((t) => t.name === templateName);
   const hasTemplates = templates.length > 0;
+  const msgType = isWaOfficial ? preferredType : "text";
 
   // WA official: pesan pertama ke nomor baru WAJIB template (api.co.id auto-buat customer).
   // Teks bebas hanya jalan kalau nomor pernah chat <24 jam (customer sudah ada).
   const showTemplateToggle = isWaOfficial && hasTemplates;
   // Tanpa template approved, wa_official tak bisa memulai percakapan baru sama sekali.
   const blockedNoTemplate = isWaOfficial && !hasTemplates;
-
-  // Saat pindah ke channel wa_official, default ke template (cara aman first-contact).
-  useEffect(() => {
-    if (isWaOfficial && hasTemplates) setMsgType("template");
-    else if (!isWaOfficial) setMsgType("text");
-  }, [isWaOfficial, hasTemplates]);
 
   function submit() {
     const digits = phone.replace(/\D/g, "");
@@ -63,7 +58,7 @@ export function ComposeForm({
       try {
         const { conversationId } = await startConversation({
           channelId,
-          phone: digits,
+          phone: phone.trim(),
           name: name.trim() || undefined,
           type: msgType,
           body: msgType === "text" ? body.trim() : undefined,

@@ -41,6 +41,7 @@ async def match_trigger(
     """Cari flow aktif yang trigger-nya cocok dgn pesan (keyword) atau welcome (pesan pertama)."""
     text = (body or "").lower()
     welcome: Flow | None = None
+    fallback: Flow | None = None
     active = await list_active(session, tenant_id)
     if preferred_flow_id is not None:
         preferred = next((f for f in active if f.id == preferred_flow_id), None)
@@ -58,4 +59,6 @@ async def match_trigger(
                 return flow
         elif kind == "welcome" and is_first:
             welcome = welcome or flow
-    return welcome
+        elif kind == "fallback":
+            fallback = fallback or flow
+    return welcome or fallback

@@ -106,6 +106,7 @@ export async function startCheckout(planId: string) {
       tenantId: session.tenantId,
       planId: plan.id,
       planName: plan.name,
+      period: plan.period,
       tier: plan.tier,
       amountIdr: plan.priceIdr,
       merchantOrderId,

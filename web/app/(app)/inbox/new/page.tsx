@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -12,7 +12,7 @@ export default async function NewMessagePage() {
   if (session.tenantId) {
     try {
       const rows = await db.query.channels.findMany({
-        where: and(eq(channels.tenantId, session.tenantId), eq(channels.status, "connected")),
+        where: and(eq(channels.tenantId, session.tenantId), eq(channels.status, "connected"), inArray(channels.type, ["wa_official", "wa_unofficial"]), sql`COALESCE(${channels.meta}->>'provider', '') <> 'apico'`),
         columns: { id: true, name: true, type: true, status: true },
       });
       chans = rows.map((c) => ({ id: c.id, name: c.name, type: c.type, status: c.status }));

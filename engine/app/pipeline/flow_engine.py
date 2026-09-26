@@ -218,7 +218,7 @@ async def run(
     if state is not None:
         expired = state.expires_at is not None and state.expires_at <= _now()
         flow = None if expired else await flows.get(session, state.flow_id, conv.tenant_id)
-        if flow is None or state.current_node_id is None:
+        if flow is None or flow.status != "active" or state.current_node_id is None:
             await states.delete(session, conv.id)
         else:
             # RESUME: simpan jawaban ke save_as lalu lanjut dari node berikutnya.

@@ -321,18 +321,29 @@ func (r *Repository) scanSettings(ctx context.Context, accountID string) (Automa
 	err := r.pool.QueryRow(ctx, `
 		SELECT social_account_id::text, automation_enabled, comment_scanner_enabled, message_scanner_enabled,
 		       comment_reply_enabled, comment_private_reply_enabled, message_reply_enabled,
-		       reply_cooldown_seconds, max_consecutive_errors
+		       reply_cooldown_seconds, max_consecutive_errors, comment_post_urls
 		FROM social_account_settings WHERE social_account_id=$1::uuid
-	`, accountID).Scan(&settings.SocialAccountID, &settings.AutomationEnabled, &settings.CommentScannerEnabled, &settings.MessageScannerEnabled, &settings.CommentReplyEnabled, &settings.CommentPrivateReplyEnabled, &settings.MessageReplyEnabled, &settings.ReplyCooldownSeconds, &settings.MaxConsecutiveErrors)
+	`, accountID).Scan(&settings.SocialAccountID, &settings.AutomationEnabled, &settings.CommentScannerEnabled, &settings.MessageScannerEnabled, &settings.CommentReplyEnabled, &settings.CommentPrivateReplyEnabled, &settings.MessageReplyEnabled, &settings.ReplyCooldownSeconds, &settings.MaxConsecutiveErrors, &settings.CommentPostURLs)
 	return settings, err
 }
 
 func (r *Repository) UpdateSettings(ctx context.Context, tenantID, accountID string, settings AutomationSettings) (AutomationSettings, error) {
+	account, err := r.GetAccount(ctx, tenantID, accountID)
+	if err != nil {
+		return AutomationSettings{}, err
+	}
+	settings.CommentPostURLs, err = NormalizeCommentPostURLs(account.Platform, settings.CommentPostURLs)
+	if err != nil {
+		return AutomationSettings{}, err
+	}
+	if settings.CommentScannerEnabled && len(settings.CommentPostURLs) == 0 {
+		return AutomationSettings{}, fmt.Errorf("isi URL posting yang dipantau sebelum mengaktifkan comment scanner: %w", ErrInvalidTargetURL)
+	}
 	result, err := r.pool.Exec(ctx, `
 		INSERT INTO social_account_settings (social_account_id, automation_enabled, comment_scanner_enabled,
 		message_scanner_enabled, comment_reply_enabled, comment_private_reply_enabled, message_reply_enabled,
-		reply_cooldown_seconds, max_consecutive_errors)
-		SELECT $2::uuid,$3,$4,$5,$6,$7,$8,GREATEST($9,0),GREATEST($10,1)
+		reply_cooldown_seconds, max_consecutive_errors, comment_post_urls)
+		SELECT $2::uuid,$3,$4,$5,$6,$7,$8,GREATEST($9,0),GREATEST($10,1),$11::text[]
 		FROM social_accounts WHERE tenant_id=$1::uuid AND id=$2::uuid
 		ON CONFLICT (social_account_id) DO UPDATE SET automation_enabled=EXCLUDED.automation_enabled,
 		comment_scanner_enabled=EXCLUDED.comment_scanner_enabled,
@@ -341,8 +352,8 @@ func (r *Repository) UpdateSettings(ctx context.Context, tenantID, accountID str
 		comment_private_reply_enabled=EXCLUDED.comment_private_reply_enabled,
 		message_reply_enabled=EXCLUDED.message_reply_enabled,
 		reply_cooldown_seconds=EXCLUDED.reply_cooldown_seconds,
-		max_consecutive_errors=EXCLUDED.max_consecutive_errors, updated_at=now()
-	`, tenantID, accountID, settings.AutomationEnabled, settings.CommentScannerEnabled, settings.MessageScannerEnabled, settings.CommentReplyEnabled, settings.CommentPrivateReplyEnabled, settings.MessageReplyEnabled, settings.ReplyCooldownSeconds, settings.MaxConsecutiveErrors)
+		max_consecutive_errors=EXCLUDED.max_consecutive_errors, comment_post_urls=EXCLUDED.comment_post_urls, updated_at=now()
+	`, tenantID, accountID, settings.AutomationEnabled, settings.CommentScannerEnabled, settings.MessageScannerEnabled, settings.CommentReplyEnabled, settings.CommentPrivateReplyEnabled, settings.MessageReplyEnabled, settings.ReplyCooldownSeconds, settings.MaxConsecutiveErrors, settings.CommentPostURLs)
 	if err != nil {
 		return AutomationSettings{}, err
 	}
@@ -429,11 +440,17 @@ func (r *Repository) SetEventStatus(ctx context.Context, eventID, status string,
 	return err
 }
 
-func (r *Repository) CreateEventAction(ctx context.Context, eventID, actionType string) (string, bool, error) {
+func (r *Repository) CreateEventAction(ctx context.Context, event IncomingSocialEvent, actionType string) (string, bool, error) {
 	var id string
-	err := r.pool.QueryRow(ctx, `INSERT INTO social_event_actions (social_incoming_event_id, action_type) VALUES ($1::uuid,$2) ON CONFLICT (social_incoming_event_id, action_type) DO NOTHING RETURNING id::text`, eventID, actionType).Scan(&id)
+	err := r.pool.QueryRow(ctx, `INSERT INTO social_event_actions (social_incoming_event_id, action_type, dedupe_key) VALUES ($1::uuid,$2,NULLIF($3,'')) ON CONFLICT DO NOTHING RETURNING id::text`, event.ID, actionType, CommentActionKey(event, actionType)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, nil
+		// Same-event retry may recover a pending job. A different comment from
+		// the same author on this post must never enqueue a second action.
+		err = r.pool.QueryRow(ctx, `SELECT id::text FROM social_event_actions WHERE social_incoming_event_id=$1::uuid AND action_type=$2`, event.ID, actionType).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return id, false, err
 	}
 	return id, err == nil, err
 }

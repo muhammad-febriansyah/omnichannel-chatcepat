@@ -6,12 +6,14 @@ import { AlertTriangle, Clock, ArrowRight } from "lucide-react";
 export function PlanExpiryBanner({
   expiresAt,
   expired,
+  now,
 }: {
   expiresAt: string | null;
   expired: boolean;
+  now: number;
 }) {
   if (!expiresAt) return null;
-  const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
+  const daysLeft = Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000);
   if (!expired && daysLeft > 7) return null;
 
   return (

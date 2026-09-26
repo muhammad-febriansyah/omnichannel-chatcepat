@@ -174,6 +174,23 @@ Dashboard `/automation` menyediakan Rules, Incoming, Activity, dan Settings. Aut
 
 Scanner/action berjalan melalui queue `social:scanner` dan `social:jobs`. Private reply hanya dibuat dari incoming comment yang tersimpan; tidak ada endpoint cold DM. Jika selector tidak menemukan target event secara tepat, action gagal aman dan tidak membalas target yang ambigu.
 
+Comment scanner memerlukan URL posting eksplisit di Social Automation → Settings →
+Posting yang dipantau (maksimal 50 URL per akun). Jalankan migrasi
+`0018_social_comment_targets` sebelum menjalankan gateway versi ini. Scanner membuka
+posting tersebut dan memuat komentar berikutnya melalui kontrol “more comments” /
+“komentar lainnya”; batas 100 halaman atau timeout dilaporkan sebagai error, dengan
+komentar yang sudah terbaca tetap diproses. Selector browser tetap perlu diverifikasi
+pada akun live ketika tampilan Instagram/Facebook berubah.
+
+Action baru dideduplikasi per akun, posting, pengguna, dan jenis action. Reply komentar
+dan private reply memiliki kunci terpisah. Komentar dari pengguna berbeda tetap mendapat
+action masing-masing; event tanpa identitas pengguna tetap memakai deduplikasi event.
+Riwayat action sebelum migrasi tidak dihapus atau diubah.
+
+Tes DOM lokal: set `SOCIAL_TEST_BROWSER` ke executable Chromium lalu jalankan
+`go test ./internal/social/...` dari `gateway/`. Tes konkurensi database memakai
+`SOCIAL_TEST_DATABASE_URL` pada PostgreSQL terisolasi dan membuat schema tes sementara.
+
 Selector browser bersifat konservatif dan perlu diverifikasi pada DOM akun uji karena Facebook/Instagram dapat mengubah halaman. Fitur tidak melakukan CAPTCHA/checkpoint bypass, stealth patch, fingerprint spoofing, proxy rotation, credential automation, atau random behavior untuk menghindari deteksi.
 
 Catatan browser manual: `BROWSER_HEADLESS=false` membutuhkan display desktop. Jalankan gateway secara lokal untuk login manual, atau siapkan display/noVNC yang terisolasi pada deployment Docker. Image saat ini tidak mengekspos port debugging Chromium ke jaringan.
@@ -183,6 +200,7 @@ Catatan browser manual: `BROWSER_HEADLESS=false` membutuhkan display desktop. Ja
 Engine memiliki template email ChatCepat dengan logo, header, body, CTA, dan footer untuk:
 
 - welcome email setelah pendaftaran berhasil;
+- reset password sekali pakai (link berlaku 30 menit);
 - reminder H-3 sebelum paket berakhir;
 - pemberitahuan saat paket sudah berakhir.
 
@@ -197,6 +215,11 @@ Set `MAILKETING_API_TOKEN` di `.env` server. Sender `chatcepat.id@gmail.com` har
 - migration gagal → cek `docker compose logs engine` dan pastikan PostgreSQL sudah healthy.
 
 ## Production notes
+
+- Integrasi api.co disembunyikan melalui `web/lib/features.ts`; data historis tidak dihapus. Pengajuan WA official dan template HSM provider lama tidak tersedia di UI.
+- Sebelum menjalankan versi ini, terapkan migrasi engine sampai `0019_order_period` (`alembic upgrade head` dari direktori engine). Migrasi `0018` menambahkan target posting/deduplikasi komentar; `0019` menyimpan periode paket pada order. Cadangkan database sebelum migrasi produksi.
+- Reset password produksi membutuhkan engine, `SERVICE_TOKEN` yang sama, konfigurasi Mailketing, dan `APP_BASE_URL` publik yang benar. Kegagalan pengiriman tidak lagi ditampilkan sebagai sukses.
+- Catatan cakupan audit dan tes: [audit fitur September 2026](docs/feature-audit-2026-09-26.md).
 
 - Set `APP_ENV=production`, `SESSION_ENCRYPTION_KEY` random, `NEXTAUTH_SECRET`, `SERVICE_TOKEN`, database TLS, dan origin/CORS yang spesifik.
 - Tambahkan auth middleware nyata pada `/api`, jangan mengandalkan workspace header dari browser.

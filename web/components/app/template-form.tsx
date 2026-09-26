@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ActionLink } from "@/components/app/action-link";
 import { cn } from "@/lib/utils";
 import { createTemplate, updateTemplate, createWaTemplate } from "@/lib/actions";
+import { APICO_ENABLED } from "@/lib/features";
 
 type Kind = "quick_reply" | "hsm";
 
@@ -102,7 +103,7 @@ export function TemplateForm({
         <Card>
           <CardHeader>
             <CardTitle className="text-xl">{isEdit ? "Edit Template" : "Template Baru"}</CardTitle>
-            <CardDescription>Template WhatsApp (HSM) disubmit ke Meta; balasan cepat untuk agen.</CardDescription>
+            <CardDescription>Simpan balasan cepat untuk membantu agen menjawab pelanggan.</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-5">
@@ -110,7 +111,7 @@ export function TemplateForm({
               <div>
                 <label className="mb-2 block text-sm font-medium text-foreground">Jenis</label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {kinds.map((k) => {
+                  {kinds.filter((k) => APICO_ENABLED || k.value === "quick_reply").map((k) => {
                     const Icon = k.icon;
                     return (
                       <button

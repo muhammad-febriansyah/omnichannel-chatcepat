@@ -34,18 +34,20 @@ func (r ruleRequest) input() RuleInput {
 }
 
 type settingsRequest struct {
-	AutomationEnabled          bool `json:"automation_enabled"`
-	CommentScannerEnabled      bool `json:"comment_scanner_enabled"`
-	MessageScannerEnabled      bool `json:"message_scanner_enabled"`
-	CommentReplyEnabled        bool `json:"comment_reply_enabled"`
-	CommentPrivateReplyEnabled bool `json:"comment_private_reply_enabled"`
-	MessageReplyEnabled        bool `json:"message_reply_enabled"`
-	ReplyCooldownSeconds       int  `json:"reply_cooldown_seconds"`
-	MaxConsecutiveErrors       int  `json:"max_consecutive_errors"`
+	CommentPostURLs            []string `json:"comment_post_urls"`
+	AutomationEnabled          bool     `json:"automation_enabled"`
+	CommentScannerEnabled      bool     `json:"comment_scanner_enabled"`
+	MessageScannerEnabled      bool     `json:"message_scanner_enabled"`
+	CommentReplyEnabled        bool     `json:"comment_reply_enabled"`
+	CommentPrivateReplyEnabled bool     `json:"comment_private_reply_enabled"`
+	MessageReplyEnabled        bool     `json:"message_reply_enabled"`
+	ReplyCooldownSeconds       int      `json:"reply_cooldown_seconds"`
+	MaxConsecutiveErrors       int      `json:"max_consecutive_errors"`
 }
 
 func (r settingsRequest) settings(accountID string) AutomationSettings {
 	return AutomationSettings{
+		CommentPostURLs: r.CommentPostURLs,
 		SocialAccountID: accountID, AutomationEnabled: r.AutomationEnabled,
 		CommentScannerEnabled: r.CommentScannerEnabled, MessageScannerEnabled: r.MessageScannerEnabled,
 		CommentReplyEnabled: r.CommentReplyEnabled, CommentPrivateReplyEnabled: r.CommentPrivateReplyEnabled,

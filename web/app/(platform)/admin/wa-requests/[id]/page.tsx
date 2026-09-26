@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { APICO_ENABLED } from "@/lib/features";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
@@ -8,6 +9,7 @@ import { WaAssignForm } from "@/components/app/wa-assign-form";
 
 export default async function AdminWaRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireSession();
+  if (!APICO_ENABLED) notFound();
   if (!can(session, "tenant.manage")) notFound();
 
   const { id } = await params;
