@@ -35,6 +35,14 @@ export interface InboundMessage {
   type: "text" | "image" | "file" | "interactive";
   body?: string | null;
   media?: Media | null;
+  /**
+   * Payload tombol yang diklik (quick reply template / id balasan interaktif)
+   */
+  payload?: string | null;
+  /**
+   * provider_message_id pesan yang dibalas / tombolnya diklik
+   */
+  reply_to?: string | null;
   provider_message_id: string;
   timestamp: string;
   [k: string]: unknown;
@@ -65,7 +73,7 @@ export interface OutboundCommand {
   idempotency_key: string;
   channel_id: string;
   to: Party;
-  type: "text" | "template" | "media";
+  type: "text" | "template" | "media" | "interactive";
   body?: string | null;
   template?: {
     name?: string;
@@ -74,6 +82,16 @@ export interface OutboundCommand {
     [k: string]: unknown;
   } | null;
   media?: Media | null;
+  /**
+   * type=interactive: <=3 jadi reply button, 4-10 jadi list
+   */
+  buttons?:
+    | {
+        id: string;
+        title: string;
+        [k: string]: unknown;
+      }[]
+    | null;
   conversation_id: string;
   [k: string]: unknown;
 }

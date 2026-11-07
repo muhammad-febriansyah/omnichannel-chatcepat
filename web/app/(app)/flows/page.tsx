@@ -84,7 +84,13 @@ export default async function FlowsPage() {
                 const stepCount = (def?.ui?.nodes ?? def?.nodes ?? []).filter((n) => n?.type !== "trigger").length;
                 const keywords = def?.nodes?.find((n) => n?.type === "trigger")?.trigger?.match ?? [];
                 const triggerLabel =
-                  f.trigger === "welcome" ? "Pesan pertama" : f.trigger === "fallback" ? "Cadangan" : "Keyword";
+                  f.trigger === "welcome"
+                    ? "Pesan pertama"
+                    : f.trigger === "fallback"
+                      ? "Cadangan"
+                      : f.trigger === "button"
+                        ? "Klik tombol"
+                        : "Keyword";
                 return (
                   <Link
                     key={f.id}
@@ -110,9 +116,9 @@ export default async function FlowsPage() {
                           <ListChecks className="size-3 text-brand-blue" /> {stepCount} langkah
                         </span>
                       </div>
-                      {f.trigger === "keyword" && keywords.length > 0 && (
+                      {(f.trigger === "keyword" || f.trigger === "button") && keywords.length > 0 && (
                         <p className="mt-2 truncate text-xs text-muted-foreground">
-                          Keyword: {keywords.slice(0, 4).join(", ")}
+                          {f.trigger === "button" ? "Tombol" : "Keyword"}: {keywords.slice(0, 4).join(", ")}
                           {keywords.length > 4 ? ` +${keywords.length - 4}` : ""}
                         </p>
                       )}

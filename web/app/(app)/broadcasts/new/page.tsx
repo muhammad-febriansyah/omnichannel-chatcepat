@@ -28,11 +28,18 @@ export default async function NewBroadcastPage() {
       });
       tagNames = t.map((x) => x.name);
       // Hanya HSM APPROVED (live dari Meta, per WABA) yang boleh dipakai broadcast WA official.
-      // Template ber-variabel belum bisa dikirim (parameter belum didukung) → disembunyikan.
       const { templates: rows } = await listWaTemplates(session.tenantId, { status: "APPROVED" });
-      tmpls = rows
-        .filter((r) => r.variableCount === 0)
-        .map((r) => ({ name: r.name, body: r.body, language: r.language, channelId: r.channelId }));
+      tmpls = rows.map((r) => ({
+        name: r.name,
+        body: r.body,
+        language: r.language,
+        channelId: r.channelId,
+        variableCount: r.variableCount,
+        headerFormat: r.headerFormat,
+        headerText: r.headerText,
+        footer: r.footer,
+        buttons: r.buttons.map((b) => ({ type: b.type, text: b.text })),
+      }));
     } catch {
       /* kosong */
     }

@@ -17,6 +17,7 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
       const d = payload as NodeDataMap["trigger"];
       if (d.kind === "welcome") return "Pesan pertama dari pelanggan";
       if (d.kind === "fallback") return "Pesan yang tidak cocok flow lain";
+      if (d.kind === "button") return d.keywords.length ? "" : "Belum ada label tombol";
       return d.keywords.length ? "" : "Belum ada keyword";
     }
     case "send_text":
@@ -39,6 +40,10 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
       const keys = (payload as NodeDataMap["set_var"]).pairs.map((p) => p.key).filter(Boolean);
       return keys.length ? keys.map((k) => `{{${k}}}`).join(", ") : "Belum ada variabel";
     }
+    case "add_tag": {
+      const tags = (payload as NodeDataMap["add_tag"]).tags;
+      return tags.length ? "" : "Belum ada tag";
+    }
     case "ai_agent":
       return "Jawab dari knowledge base & katalog";
     case "handoff":
@@ -52,8 +57,15 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
   const handles = outputHandles({ id, type: data.kind, position: { x: 0, y: 0 }, data: data.payload } as GraphNode);
   const branching = handles.length > 1 || (handles[0] && handles[0].label);
   const hasIssue = data.issues.length > 0;
-  const keywords = data.kind === "trigger" ? (data.payload as NodeDataMap["trigger"]).keywords : [];
-  const isKeyword = data.kind === "trigger" && (data.payload as NodeDataMap["trigger"]).kind === "keyword";
+  const trig = data.kind === "trigger" ? (data.payload as NodeDataMap["trigger"]) : null;
+  const keywords = trig ? trig.keywords : data.kind === "add_tag" ? (data.payload as NodeDataMap["add_tag"]).tags : [];
+  const isKeyword = (trig !== null && (trig.kind === "keyword" || trig.kind === "button")) || data.kind === "add_tag";
+  const chipCls =
+    data.kind === "add_tag"
+      ? "bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300"
+      : trig?.kind === "button"
+        ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300"
+        : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
   const text = summary(data.kind, data.payload);
 
   return (
@@ -94,7 +106,8 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
         {isKeyword && keywords.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {keywords.slice(0, 6).map((k) => (
-              <span key={k} className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+              <span key={k} className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium", chipCls)}>
+                {trig?.kind === "button" ? "🔘 " : data.kind === "add_tag" ? "#" : ""}
                 {k}
               </span>
             ))}

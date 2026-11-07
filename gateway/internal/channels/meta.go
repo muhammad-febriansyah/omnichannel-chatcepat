@@ -63,15 +63,7 @@ func ParseWhatsAppCloud(body []byte) ([]ParsedInbound, error) {
 							Name string `json:"name"`
 						} `json:"profile"`
 					} `json:"contacts"`
-					Messages []struct {
-						From      string `json:"from"`
-						ID        string `json:"id"`
-						Timestamp string `json:"timestamp"`
-						Type      string `json:"type"`
-						Text      struct {
-							Body string `json:"body"`
-						} `json:"text"`
-					} `json:"messages"`
+					Messages []waCloudMessage `json:"messages"`
 				} `json:"value"`
 			} `json:"changes"`
 		} `json:"entry"`
@@ -84,28 +76,33 @@ func ParseWhatsAppCloud(body []byte) ([]ParsedInbound, error) {
 	for _, e := range payload.Entry {
 		for _, c := range e.Changes {
 			v := c.Value
-			name := ""
-			if len(v.Contacts) > 0 {
-				name = v.Contacts[0].Profile.Name
+			names := map[string]string{}
+			for _, ct := range v.Contacts {
+				names[ct.WaID] = ct.Profile.Name
 			}
 			for _, m := range v.Messages {
-				if m.Type != "text" {
-					continue // TODO: image/file/interactive
+				typ, bodyText, payloadStr, ok := normalizeWaMessage(m)
+				if !ok {
+					continue // unsupported / system message
 				}
 				phone := "+" + m.From
-				bodyText := m.Text.Body
-				namePtr := optStr(name)
+				name := names[m.From]
+				if name == "" && len(v.Contacts) == 1 {
+					name = v.Contacts[0].Profile.Name
+				}
 				inb := contracts.InboundMessage{
 					ChannelType:       contracts.ChannelTypeWaOfficial,
 					ProviderMessageId: m.ID,
 					From: contracts.Party{
 						ExternalId: m.From,
 						Phone:      &phone,
-						Name:       namePtr,
+						Name:       optStr(name),
 					},
-					Type:      contracts.InboundMessageTypeText,
-					Body:      &bodyText,
-					Timestamp: time.Now().UTC(),
+					Type:      typ,
+					Body:      optStr(bodyText),
+					Payload:   contracts.InboundMessagePayload(optStr(payloadStr)),
+					ReplyTo:   contracts.InboundMessageReplyTo(optStr(m.Context.ID)),
+					Timestamp: waTimestamp(m.Timestamp),
 				}
 				out = append(out, ParsedInbound{PhoneNumberID: v.Metadata.PhoneNumberID, Inbound: inb})
 			}
@@ -173,7 +170,7 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 		Entry  []struct {
 			ID        string `json:"id"`
 			Messaging []struct {
-				Sender    struct {
+				Sender struct {
 					ID string `json:"id"`
 				} `json:"sender"`
 				Timestamp int64 `json:"timestamp"`
@@ -259,9 +256,62 @@ func waMessagePayload(cmd contracts.OutboundCommand, to string) (map[string]any,
 	if cmd.Body != nil {
 		body = *cmd.Body
 	}
-	payload["type"] = "text"
-	payload["text"] = map[string]any{"body": body}
+	switch {
+	case cmd.Type == contracts.OutboundCommandTypeInteractive && cmd.Buttons != nil && len(*cmd.Buttons) > 0:
+		inter, err := waInteractive(body, *cmd.Buttons)
+		if err != nil {
+			return nil, err
+		}
+		payload["type"] = "interactive"
+		payload["interactive"] = inter
+	case cmd.Type == contracts.OutboundCommandTypeMedia && outboundMedia(cmd) != nil:
+		media := outboundMedia(cmd)
+		kind := waMediaKind(media.Mime)
+		obj := map[string]any{"link": media.Url}
+		if body != "" && kind != "audio" {
+			obj["caption"] = body
+		}
+		if kind == "document" && media.Filename != nil && *media.Filename != "" {
+			obj["filename"] = *media.Filename
+		}
+		payload["type"] = kind
+		payload[kind] = obj
+	default:
+		payload["type"] = "text"
+		payload["text"] = map[string]any{"body": body}
+	}
 	return payload, nil
+}
+
+// outboundMedia decodes the loosely-typed media field (oneOf Media|null) of a command.
+func outboundMedia(cmd contracts.OutboundCommand) *contracts.Media {
+	if cmd.Media == nil {
+		return nil
+	}
+	raw, err := json.Marshal(cmd.Media)
+	if err != nil {
+		return nil
+	}
+	var m contracts.Media
+	if json.Unmarshal(raw, &m) != nil || m.Url == "" {
+		return nil
+	}
+	return &m
+}
+
+// waMediaKind maps a MIME type to the WA Cloud media message type.
+func waMediaKind(mime string) string {
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		return "image"
+	case strings.HasPrefix(mime, "video/"):
+		return "video"
+	case strings.HasPrefix(mime, "audio/"):
+		return "audio"
+	case mime == "":
+		return "image"
+	}
+	return "document"
 }
 
 func (m *MetaSender) Send(ctx context.Context, cmd contracts.OutboundCommand, creds Credentials) (string, error) {

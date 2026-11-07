@@ -99,6 +99,69 @@ def _daily_cap(channel: Channel, now: datetime) -> int:
     return warmup.daily_cap(channel, now)
 
 
+def _param_value(spec: dict, contact: Contact) -> str:
+    """Isi variabel template: nilai tetap, atau dari data kontak (dengan cadangan)."""
+    source = spec.get("source", "static")
+    if source == "contact_name":
+        value = (contact.name or "").strip()
+    elif source == "contact_phone":
+        value = (contact.phone or "").strip()
+    else:
+        value = str(spec.get("value", ""))
+    # Meta menolak parameter kosong → pakai cadangan.
+    return value or str(spec.get("fallback") or "-")
+
+
+def template_components(broadcast_id, params: dict, contact: Contact) -> list[dict]:
+    """Snapshot broadcast.template_params → komponen template WA Cloud per penerima.
+
+    params = {
+      "header": {"format": "IMAGE"|"VIDEO"|"DOCUMENT"|"TEXT", "link": url, "text": [spec]},
+      "body": [spec, ...],                       # urut {{1}}, {{2}}, ...
+      "buttons": [{"index": 0, "type": "QUICK_REPLY"} | {"index": 1, "type": "URL", "param": spec}],
+    }
+    Tombol quick reply membawa payload "bc:<broadcast_id>:<index>" supaya klik bisa
+    dilacak ke broadcast + tombolnya.
+    """
+    components: list[dict] = []
+    header = params.get("header") or {}
+    fmt = str(header.get("format") or "").upper()
+    if fmt in ("IMAGE", "VIDEO", "DOCUMENT") and header.get("link"):
+        kind = fmt.lower()
+        media: dict = {"link": header["link"]}
+        if kind == "document" and header.get("filename"):
+            media["filename"] = header["filename"]
+        components.append({"type": "header", "parameters": [{"type": kind, kind: media}]})
+    elif fmt == "TEXT" and header.get("text"):
+        components.append({
+            "type": "header",
+            "parameters": [{"type": "text", "text": _param_value(s, contact)} for s in header["text"]],
+        })
+    body = params.get("body") or []
+    if body:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": _param_value(s, contact)} for s in body],
+        })
+    for btn in params.get("buttons") or []:
+        idx = str(int(btn.get("index", 0)))
+        if btn.get("type") == "QUICK_REPLY":
+            components.append({
+                "type": "button",
+                "sub_type": "quick_reply",
+                "index": idx,
+                "parameters": [{"type": "payload", "payload": f"bc:{broadcast_id}:{idx}"}],
+            })
+        elif btn.get("type") == "URL" and btn.get("param"):
+            components.append({
+                "type": "button",
+                "sub_type": "url",
+                "index": idx,
+                "parameters": [{"type": "text", "text": _param_value(btn["param"], contact)}],
+            })
+    return components
+
+
 def _build_command(
     b: Broadcast, channel: Channel | None, contact: Contact, conv_id, idem: str
 ) -> OutboundCommand:
@@ -110,7 +173,11 @@ def _build_command(
             channel_id=b.channel_id,
             to=Party(external_id=contact.external_id or contact.phone or "", phone=contact.phone),
             type=OutboundType.template,
-            template=Template(name=b.template_id, lang="id", components=[]),
+            template=Template(
+                name=b.template_id,
+                lang=b.template_lang or "id",
+                components=template_components(b.id, b.template_params or {}, contact),
+            ),
             conversation_id=conv_id,
         )
     return OutboundCommand(

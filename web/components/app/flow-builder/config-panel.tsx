@@ -46,10 +46,23 @@ function VarInput({ value, onChange, placeholder }: { value: string; onChange: (
   );
 }
 
-function KeywordInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+function KeywordInput({
+  value,
+  onChange,
+  placeholder = "mis. harga, promo",
+  lowercase = true,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+  lowercase?: boolean;
+}) {
   const [draft, setDraft] = useState("");
   const add = () => {
-    const parts = draft.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const parts = draft
+      .split(",")
+      .map((s) => (lowercase ? s.trim().toLowerCase() : s.trim()))
+      .filter(Boolean);
     if (parts.length) onChange([...new Set([...value, ...parts])]);
     setDraft("");
   };
@@ -76,7 +89,7 @@ function KeywordInput({ value, onChange }: { value: string[]; onChange: (v: stri
             }
           }}
           onBlur={add}
-          placeholder={value.length ? "" : "mis. harga, promo"}
+          placeholder={value.length ? "" : placeholder}
           className="h-7 min-w-[100px] flex-1 bg-transparent px-1 text-sm outline-none"
         />
       </div>
@@ -113,9 +126,10 @@ export function ConfigPanel({
       body = (
         <>
           <Field label="Jenis pemicu">
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {([
                 ["keyword", "Keyword"],
+                ["button", "Klik tombol"],
                 ["welcome", "Pesan pertama"],
                 ["fallback", "Cadangan"],
               ] as [TriggerKind, string][]).map(([k, label]) => (
@@ -134,6 +148,7 @@ export function ConfigPanel({
             </div>
             <p className={hintCls}>
               {d.kind === "keyword" && "Flow mulai saat pesan pelanggan mengandung salah satu keyword."}
+              {d.kind === "button" && "Flow mulai saat pelanggan mengklik tombol dengan label ini — dari template broadcast atau pesan interaktif."}
               {d.kind === "welcome" && "Flow mulai saat pelanggan mengirim pesan pertama kali."}
               {d.kind === "fallback" && "Flow mulai saat pesan tidak cocok dengan flow lain."}
             </p>
@@ -141,6 +156,16 @@ export function ConfigPanel({
           {d.kind === "keyword" && (
             <Field label="Keyword" hint="Tekan Enter atau koma untuk menambah. Tidak membedakan huruf besar/kecil.">
               <KeywordInput value={d.keywords} onChange={(keywords) => set<"trigger">({ keywords })} />
+            </Field>
+          )}
+          {d.kind === "button" && (
+            <Field label="Label tombol" hint="Tulis persis seperti teks tombol di template, mis. Mau Daftar Offline. Huruf besar/kecil diabaikan.">
+              <KeywordInput
+                value={d.keywords}
+                onChange={(keywords) => set<"trigger">({ keywords })}
+                placeholder="mis. Mau Daftar Offline"
+                lowercase={false}
+              />
             </Field>
           )}
         </>
@@ -287,7 +312,7 @@ export function ConfigPanel({
           <Field label="Pesan menu">
             <WaMessageEditor value={d.prompt} onChange={(prompt) => set<"menu">({ prompt })} variables={waVars} rows={5} />
           </Field>
-          <Field label="Pilihan" hint="Pelanggan boleh membalas kode (A) atau labelnya (Informasi). Tiap pilihan punya sambungan sendiri di kanvas.">
+          <Field label="Pilihan" hint="Di WhatsApp Official tampil sebagai tombol (≤3) atau list (≤10). Di channel lain, pelanggan membalas kode atau labelnya.">
             <div className="space-y-2">
               {d.options.map((o, i) => (
                 <div key={o.id} className="flex items-center gap-2">
@@ -300,6 +325,7 @@ export function ConfigPanel({
                   />
                   <input
                     value={o.label}
+                    maxLength={24}
                     onChange={(e) => update(d.options.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
                     placeholder="Label pilihan"
                     className={inputCls}
@@ -328,6 +354,15 @@ export function ConfigPanel({
             <WaMessageEditor value={d.invalidText} onChange={(invalidText) => set<"menu">({ invalidText })} rows={2} />
           </Field>
         </>
+      );
+      break;
+    }
+    case "add_tag": {
+      const d = node.data as NodeDataMap["add_tag"];
+      body = (
+        <Field label="Tag" hint="Tag ditambahkan ke kontak. Pakai untuk filter broadcast lanjutan, mis. daftar-offline.">
+          <KeywordInput value={d.tags} onChange={(tags) => set<"add_tag">({ tags })} placeholder="mis. daftar-offline" />
+        </Field>
       );
       break;
     }

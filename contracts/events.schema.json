@@ -38,6 +38,8 @@
         "type": { "type": "string", "enum": ["text", "image", "file", "interactive"] },
         "body": { "type": ["string", "null"] },
         "media": { "oneOf": [{ "$ref": "#/definitions/Media" }, { "type": "null" }] },
+        "payload": { "type": ["string", "null"], "description": "Payload tombol yang diklik (quick reply template / id balasan interaktif)" },
+        "reply_to": { "type": ["string", "null"], "description": "provider_message_id pesan yang dibalas / tombolnya diklik" },
         "provider_message_id": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       },
@@ -52,7 +54,7 @@
         "idempotency_key": { "type": "string", "description": "gateway skip kalau sudah kirim" },
         "channel_id": { "type": "string", "format": "uuid" },
         "to": { "$ref": "#/definitions/Party" },
-        "type": { "type": "string", "enum": ["text", "template", "media"] },
+        "type": { "type": "string", "enum": ["text", "template", "media", "interactive"] },
         "body": { "type": ["string", "null"] },
         "template": {
           "type": ["object", "null"],
@@ -63,6 +65,11 @@
           }
         },
         "media": { "oneOf": [{ "$ref": "#/definitions/Media" }, { "type": "null" }] },
+        "buttons": {
+          "type": ["array", "null"],
+          "description": "type=interactive: <=3 jadi reply button, 4-10 jadi list",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } }, "required": ["id", "title"] }
+        },
         "conversation_id": { "type": "string", "format": "uuid" }
       },
       "required": ["event_id", "idempotency_key", "channel_id", "to", "type", "conversation_id"]

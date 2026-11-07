@@ -9,7 +9,7 @@ export const autoReplyMode = pgEnum("auto_reply_mode", ['menu', 'ai', 'hybrid'])
 export const conversationHandler = pgEnum("conversation_handler", ['bot', 'agent', 'idle'])
 export const conversationStatus = pgEnum("conversation_status", ['open', 'pending', 'resolved', 'snoozed'])
 export const flowStatus = pgEnum("flow_status", ['draft', 'active'])
-export const flowTrigger = pgEnum("flow_trigger", ['keyword', 'welcome', 'fallback'])
+export const flowTrigger = pgEnum("flow_trigger", ['keyword', 'welcome', 'fallback', 'button'])
 export const knowledgeSourceType = pgEnum("knowledge_source_type", ['file', 'url', 'faq', 'manual'])
 export const knowledgeStatus = pgEnum("knowledge_status", ['processing', 'ready'])
 export const messageDirection = pgEnum("message_direction", ['inbound', 'outbound'])
@@ -311,6 +311,8 @@ export const broadcasts = pgTable("broadcasts", {
 	name: text().notNull(),
 	templateId: text("template_id"),
 	bodySnapshot: text("body_snapshot"),
+	templateLang: text("template_lang"),
+	templateParams: jsonb("template_params").default({}).notNull(),
 	status: broadcastStatus().default('draft').notNull(),
 	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
 	audienceFilter: jsonb("audience_filter").default({}).notNull(),
@@ -339,9 +341,13 @@ export const broadcastRecipients = pgTable("broadcast_recipients", {
 	status: broadcastRecipientStatus().default('pending').notNull(),
 	messageId: uuid("message_id"),
 	error: text(),
+	clickedButton: text("clicked_button"),
+	clickedAt: timestamp("clicked_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	index("idx_bcast_recip_click").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.broadcastId.asc().nullsLast().op("uuid_ops"), table.clickedButton.asc().nullsLast().op("text_ops")),
+	index("idx_bcast_recip_contact").using("btree", table.broadcastId.asc().nullsLast().op("uuid_ops"), table.contactId.asc().nullsLast().op("uuid_ops")),
 	index("idx_bcast_recip").using("btree", table.broadcastId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
 			columns: [table.tenantId],

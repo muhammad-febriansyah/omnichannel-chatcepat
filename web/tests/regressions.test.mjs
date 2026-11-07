@@ -209,3 +209,33 @@ test("flow graph compiles menu/condition to engine nodes and validates wiring", 
   assert.equal(again.find((n) => n.id === "x").branches[0].next, "y");
   assert.equal(fg.validateRuntimeNodes([{ id: "a", type: "trigger", next: "missing" }]), "Sambungan ke langkah yang tidak ada (a)");
 });
+
+test("flow graph: button trigger, tag step and menu buttons compile for the engine", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "button", keywords: ["Mau Daftar Offline"] } },
+      { id: "g", type: "add_tag", position: { x: 0, y: 0 }, data: { tags: ["daftar-offline"] } },
+      { id: "m", type: "menu", position: { x: 0, y: 0 }, data: {
+        prompt: "Pilih sesi", saveAs: "sesi", invalidText: "Ulangi",
+        options: [{ id: "a", code: "A", label: "Pagi" }, { id: "b", code: "B", label: "Siang" }] } },
+      { id: "h", type: "handoff", position: { x: 0, y: 0 }, data: {} },
+    ],
+    edges: [
+      { id: "1", source: "t", sourceHandle: "out", target: "g" },
+      { id: "2", source: "g", sourceHandle: "out", target: "m" },
+      { id: "3", source: "m", sourceHandle: "opt:a", target: "h" },
+      { id: "4", source: "m", sourceHandle: "opt:b", target: "h" },
+    ],
+  };
+  assert.deepEqual(fg.validateGraph(graph), []);
+  const { nodes, trigger } = fg.compileGraph(graph);
+  assert.equal(trigger, "button");
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  assert.deepEqual(byId.t.trigger, { kind: "button", match: ["Mau Daftar Offline"] });
+  assert.deepEqual(byId.g, { id: "g", type: "add_tag", tags: ["daftar-offline"], next: "m" });
+  assert.deepEqual(byId.m.buttons, [{ id: "A", title: "Pagi" }, { id: "B", title: "Siang" }]);
+  assert.equal(fg.validateRuntimeNodes(nodes), null);
+  const empty = { ...graph, nodes: graph.nodes.map((n) => (n.id === "g" ? { ...n, data: { tags: [] } } : n)) };
+  assert.ok(fg.validateGraph(empty).some((i) => i.nodeId === "g"));
+});

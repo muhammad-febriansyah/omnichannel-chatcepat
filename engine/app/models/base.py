@@ -74,7 +74,7 @@ message_status = pg_enum(
     "queued", "sent", "delivered", "read", "failed", name="message_status"
 )
 flow_status = pg_enum("draft", "active", name="flow_status")
-flow_trigger = pg_enum("keyword", "welcome", "fallback", name="flow_trigger")
+flow_trigger = pg_enum("keyword", "welcome", "fallback", "button", name="flow_trigger")
 knowledge_source_type = pg_enum("file", "url", "faq", "manual", name="knowledge_source_type")
 knowledge_status = pg_enum("processing", "ready", name="knowledge_status")
 broadcast_status = pg_enum(

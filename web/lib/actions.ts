@@ -20,13 +20,13 @@ import { requireSession, type Session } from "./session";
 import { normalizePhone } from "./phone";
 import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
-import { createWaTemplateOnMeta, listWaChannelCreds, type CreateWaTemplateInput } from "./wa-templates";
+import { createWaTemplateOnMeta, listWaChannelCreds, listWaTemplates, uploadTemplateSample, type CreateWaTemplateInput } from "./wa-templates";
 import { getConversation } from "./queries";
 import { compileGraph, starterGraph, validateRuntimeNodes } from "./flow-graph";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
-import { deleteUpload } from "./uploads";
+import { deleteUpload, saveImage } from "./uploads";
 import { writeAudit } from "./audit";
 import {
   FB_OAUTH_COOKIE,
@@ -691,6 +691,10 @@ export async function createAndRunBroadcast(input: {
   body: string;
   tags: string[];
   templateId?: string; // nama template HSM (WA official, di luar window 24 jam)
+  templateLang?: string;
+  // Cara mengisi template: media header (URL publik) + nilai {{1}}, {{2}}, ...
+  headerMediaUrl?: string;
+  bodyParams?: { source: "static" | "contact_name" | "contact_phone"; value?: string; fallback?: string }[];
 }) {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
@@ -709,6 +713,38 @@ export async function createAndRunBroadcast(input: {
   if (channel.type === "wa_official" && !input.templateId?.trim()) throw new Error("Pilih template WhatsApp official");
   if (channel.type === "wa_unofficial" && !input.body.trim()) throw new Error("Isi broadcast tidak boleh kosong");
 
+  // WA Official: cek template ke Meta (harus APPROVED di WABA channel ini) lalu snapshot
+  // cara pengisiannya. Engine membangun komponen per penerima dari snapshot ini.
+  let templateLang: string | null = null;
+  let templateParams: Record<string, unknown> = {};
+  if (channel.type === "wa_official") {
+    const { templates: approved } = await listWaTemplates(session.tenantId, {
+      status: "APPROVED",
+      channelId: channel.id,
+    });
+    const tpl = approved.find(
+      (t) => t.name === input.templateId?.trim() && (!input.templateLang || t.language === input.templateLang),
+    );
+    if (!tpl) throw new Error("Template belum disetujui Meta atau bukan milik channel ini");
+    const params = input.bodyParams ?? [];
+    if (params.length !== tpl.variableCount) throw new Error(`Template butuh ${tpl.variableCount} nilai variabel`);
+    for (const [i, p] of params.entries()) {
+      if (!["static", "contact_name", "contact_phone"].includes(p.source)) throw new Error("Sumber variabel tidak valid");
+      if (p.source === "static" && !p.value?.trim()) throw new Error(`Isi nilai variabel {{${i + 1}}}`);
+    }
+    const media = ["IMAGE", "VIDEO", "DOCUMENT"].includes(tpl.headerFormat);
+    if (media && !/^https:\/\//.test(input.headerMediaUrl ?? "")) {
+      throw new Error("Template ini butuh media header (URL https)");
+    }
+    templateLang = tpl.language;
+    templateParams = {
+      header: media ? { format: tpl.headerFormat, link: input.headerMediaUrl } : undefined,
+      body: params.map((p) => ({ source: p.source, value: p.value?.trim() ?? "", fallback: p.fallback?.trim() || "Kak" })),
+      // Hanya tombol quick reply yang butuh payload; link/telepon statis.
+      buttons: tpl.buttons.flatMap((b, index) => (b.type === "QUICK_REPLY" ? [{ index, type: "QUICK_REPLY", text: b.text }] : [])),
+    };
+  }
+
   const [row] = await db
     .insert(broadcasts)
     .values({
@@ -717,6 +753,8 @@ export async function createAndRunBroadcast(input: {
       name: input.name.trim(),
       bodySnapshot: input.body,
       templateId: input.templateId?.trim() || null,
+      templateLang,
+      templateParams,
       status: "draft",
       audienceFilter: input.tags.length ? { tags: input.tags } : {},
     })
@@ -933,7 +971,7 @@ export async function saveFlow(
   input: {
     name: string;
     status: "draft" | "active";
-    trigger: "keyword" | "welcome" | "fallback";
+    trigger: "keyword" | "button" | "welcome" | "fallback";
     definition: unknown;
   },
 ) {
@@ -942,7 +980,7 @@ export async function saveFlow(
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.name.trim()) throw new Error("Nama flow wajib diisi");
   if (!["draft", "active"].includes(input.status)) throw new Error("Status flow tidak valid");
-  if (!["keyword", "welcome", "fallback"].includes(input.trigger)) throw new Error("Jenis pemicu tidak valid");
+  if (!["keyword", "button", "welcome", "fallback"].includes(input.trigger)) throw new Error("Jenis pemicu tidak valid");
   const definition = input.definition as {
     nodes?: unknown;
     menu?: { prompt?: unknown; saveAs?: unknown; invalidText?: unknown; options?: unknown[] };
@@ -1446,11 +1484,49 @@ export async function createWaTemplate(input: CreateWaTemplateInput): Promise<{ 
   // Channel diambil dari DB dengan filter tenant sesi (cegah pakai WABA tenant lain).
   const [ch] = await listWaChannelCreds(session.tenantId, input.channelId);
   if (!ch) throw new Error("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
+  const buttons = input.buttons ?? [];
+  if (buttons.length > 10) throw new Error("Maksimal 10 tombol");
+  if (buttons.filter((b) => b.type === "URL").length > 2) throw new Error("Maksimal 2 tombol link");
+  if (buttons.filter((b) => b.type === "PHONE_NUMBER").length > 1) throw new Error("Maksimal 1 tombol telepon");
+  for (const b of buttons) {
+    if (!b.text.trim() || b.text.length > 25) throw new Error("Teks tombol wajib diisi, maksimal 25 karakter");
+    if (b.type === "URL" && !/^https:\/\//.test(b.url)) throw new Error("Link tombol harus diawali https://");
+    if (b.type === "PHONE_NUMBER" && !/^\+?\d{8,15}$/.test(b.phone.replace(/[\s-]/g, "")))
+      throw new Error("Nomor telepon tombol tidak valid");
+  }
   const { channelId: _channelId, ...rest } = input;
   void _channelId;
   const created = await createWaTemplateOnMeta(ch, rest);
   revalidatePath("/templates");
   return { status: created.status };
+}
+
+// Upload contoh media header (gambar/video/dokumen) ke Meta untuk review template.
+// Balikkan handle yang disertakan saat submit template.
+export async function uploadWaTemplateSample(channelId: string, form: FormData): Promise<{ handle: string }> {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file terlebih dulu");
+  const allowed = ["image/jpeg", "image/png", "video/mp4", "application/pdf"];
+  if (!allowed.includes(file.type)) throw new Error("Format harus JPG, PNG, MP4, atau PDF");
+  if (file.size > 16 * 1024 * 1024) throw new Error("Ukuran maksimal 16 MB");
+  const [ch] = await listWaChannelCreds(session.tenantId, channelId);
+  if (!ch) throw new Error("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
+  return { handle: await uploadTemplateSample(ch.token, file) };
+}
+
+// Upload gambar header broadcast → URL publik yang diambil Meta saat kirim.
+export async function uploadBroadcastMedia(form: FormData): Promise<{ url: string }> {
+  const session = await requireSession();
+  requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih gambar terlebih dulu");
+  const rel = await saveImage(file, `broadcast/${session.tenantId}`);
+  const base = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
+  return { url: `${base}${rel}` };
 }
 
 export async function deleteTemplate(id: string) {

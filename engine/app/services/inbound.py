@@ -14,13 +14,13 @@ from urllib.parse import urljoin
 
 from ..bus import publish_outbound, publish_realtime
 from ..config import APP_BASE_URL, OPT_OUT_KEYWORDS, SERVICE_WINDOW_HOURS
-from ..contracts.events import InboundMessage, Media, OutboundCommand, Party
+from ..contracts.events import Button, InboundMessage, Media, OutboundCommand, Party
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..models import Channel, Contact, Conversation, Message
 from ..pipeline.decision import decide
-from ..pipeline.reply import Reply
-from ..repositories import channels, contacts, conversations, messages
+from ..pipeline.reply import Reply, options_as_text
+from ..repositories import broadcasts, channels, contacts, conversations, messages
 from . import warmup
 
 log = logging.getLogger("engine.inbound")
@@ -89,6 +89,17 @@ async def _publish_outbound(
     channel: Channel, contact: Contact, conv: Conversation, reply: Reply, idem: str
 ) -> None:
     is_media = bool(reply.media_url)
+    # Real WA buttons only exist on the Cloud API; elsewhere options go into the text.
+    interactive = bool(reply.buttons) and not is_media and channel.type == "wa_official"
+    body = reply.text
+    if reply.buttons and not interactive:
+        body = options_as_text(reply.text, reply.buttons)
+    if is_media:
+        out_type = OutboundType.media
+    elif interactive:
+        out_type = OutboundType.interactive
+    else:
+        out_type = OutboundType.text
     cmd = OutboundCommand(
         event_id=uuid4().hex,
         idempotency_key=idem,
@@ -97,9 +108,10 @@ async def _publish_outbound(
             external_id=contact.external_id or contact.phone or "",
             phone=contact.phone,
         ),
-        type=OutboundType.media if is_media else OutboundType.text,
-        body=reply.text,
+        type=out_type,
+        body=body,
         media=Media(url=urljoin(APP_BASE_URL + "/", reply.media_url), mime=_guess_mime(reply.media_url)) if is_media else None,
+        buttons=[Button(id=i, title=t) for i, t in reply.buttons] if interactive else None,
         conversation_id=conv.id,
     )
     await publish_outbound(cmd.model_dump_json(by_alias=True))
@@ -154,6 +166,13 @@ async def handle(inbound: InboundMessage) -> None:
             # Opt-out otomatis (07): kontak balas STOP/BERHENTI → opted_out.
             if _is_opt_out(inbound.body):
                 contact.opt_in_status = "opted_out"
+
+            # Klik tombol broadcast → catat untuk laporan (terlepas dari balas otomatis).
+            click = broadcasts.parse_click_payload(inbound.payload)
+            if click is not None:
+                await broadcasts.record_click(
+                    session, tenant_id, click[0], contact.id, inbound.body or "", now
+                )
 
         tenant_str = str(tenant_id)
         await _publish_message_new(tenant_str, conv.id, inbound_msg, "contact")

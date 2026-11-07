@@ -7,7 +7,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export type TriggerKind = "keyword" | "welcome" | "fallback";
+export type TriggerKind = "keyword" | "button" | "welcome" | "fallback";
 export type ConditionOp = "equals" | "not_equals" | "contains" | "starts_with" | "is_empty" | "not_empty";
 
 export type MenuOption = { id: string; code: string; label: string };
@@ -23,6 +23,7 @@ export type NodeDataMap = {
   wait_reply: { saveAs: string };
   condition: { variable: string; rules: ConditionRule[] };
   set_var: { pairs: VarPair[] };
+  add_tag: { tags: string[] };
   ai_agent: Record<string, never>;
   handoff: Record<string, never>;
 };
@@ -61,6 +62,7 @@ export const KNOWN_RUNTIME_TYPES = new Set([
   "send_media",
   "send_catalog",
   "set_var",
+  "add_tag",
   "condition",
   "ai_agent",
   "wait_reply",
@@ -92,6 +94,7 @@ export function defaultData<K extends NodeKind>(kind: K): NodeDataMap[K] {
     wait_reply: { saveAs: "jawaban" },
     condition: { variable: "pesan", rules: [{ id: newId("r"), op: "contains", value: "" }] },
     set_var: { pairs: [{ id: newId("v"), key: "", value: "" }] },
+    add_tag: { tags: [] },
     ai_agent: {},
     handoff: {},
   };
@@ -154,7 +157,7 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         out.push({
           id: node.id,
           type: "trigger",
-          trigger: { kind: d.kind, match: d.kind === "keyword" ? d.keywords : [] },
+          trigger: { kind: d.kind, match: d.kind === "keyword" || d.kind === "button" ? d.keywords : [] },
           next,
         });
         break;
@@ -180,6 +183,9 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
       }
       case "wait_reply":
         out.push({ id: node.id, type: "wait_reply", save_as: (node.data as NodeDataMap["wait_reply"]).saveAs, next });
+        break;
+      case "add_tag":
+        out.push({ id: node.id, type: "add_tag", tags: (node.data as NodeDataMap["add_tag"]).tags, next });
         break;
       case "set_var": {
         const d = node.data as NodeDataMap["set_var"];
@@ -208,7 +214,15 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         const waitId = `${node.id}__wait`;
         const branchId = `${node.id}__branch`;
         const invalidId = `${node.id}__invalid`;
-        out.push({ id: node.id, type: "send_text", text: d.prompt, next: waitId });
+        // Options travel as real WA buttons/list on the Cloud API (id = code, so a tap
+        // matches the code alias); other channels get them appended as numbered text.
+        out.push({
+          id: node.id,
+          type: "send_text",
+          text: d.prompt,
+          buttons: d.options.map((o) => ({ id: o.code.trim(), title: o.label.trim() })),
+          next: waitId,
+        });
         out.push({ id: waitId, type: "wait_reply", save_as: d.saveAs, normalize: "choice", next: branchId });
         out.push({
           id: branchId,
@@ -250,6 +264,7 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       case "trigger": {
         const d = node.data as NodeDataMap["trigger"];
         if (d.kind === "keyword" && d.keywords.length === 0) add(node.id, "Tambahkan minimal satu keyword");
+        if (d.kind === "button" && d.keywords.length === 0) add(node.id, "Tambahkan label tombol yang memicu flow");
         if (!hasEdge(node.id, "out")) add(node.id, "Sambungkan Pemicu ke langkah pertama");
         break;
       }
@@ -259,6 +274,9 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       case "send_media":
         if (!/^https?:\/\//.test((node.data as NodeDataMap["send_media"]).url.trim()))
           add(node.id, "URL media harus diawali http(s)://");
+        break;
+      case "add_tag":
+        if ((node.data as NodeDataMap["add_tag"]).tags.length === 0) add(node.id, "Tambahkan minimal satu tag");
         break;
       case "wait_reply":
         if (!VAR_RE.test((node.data as NodeDataMap["wait_reply"]).saveAs))
@@ -465,6 +483,10 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         break;
       case "wait_reply":
         gNodes.push({ id: n.id, type: "wait_reply", position: at, data: { saveAs: String(n.save_as ?? "jawaban") } });
+        edges.push(...edge(n.id, "out", n.next));
+        break;
+      case "add_tag":
+        gNodes.push({ id: n.id, type: "add_tag", position: at, data: { tags: Array.isArray(n.tags) ? n.tags.map(String) : [] } });
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "set_var":

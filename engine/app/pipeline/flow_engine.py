@@ -10,12 +10,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import agent as ai
 from ..config import DEFAULT_FALLBACK_MESSAGE, FLOW_STATE_TTL_HOURS
 from ..contracts.events import InboundMessage
-from ..models import Channel, Contact, Conversation
+from ..models import Channel, Contact, Conversation, Tag
 from ..repositories import flows, messages, products, states
 from .reply import Reply
 
@@ -109,6 +110,22 @@ def eval_expr(expr: str, ctx: dict) -> bool:
     return False
 
 
+async def _add_tags(session: AsyncSession, contact: Contact, tags: list) -> None:
+    """Node Beri Tag: tambah tag ke kontak + daftarkan di master tag tenant."""
+    clean = [str(t).strip().lower() for t in tags if str(t).strip()]
+    if not clean:
+        return
+    contact.tags = sorted(set(contact.tags or []) | set(clean))
+    existing = set(
+        await session.scalars(
+            select(Tag.name).where(Tag.tenant_id == contact.tenant_id, Tag.name.in_(clean))
+        )
+    )
+    for name in clean:
+        if name not in existing:
+            session.add(Tag(tenant_id=contact.tenant_id, name=name))
+
+
 def _nodes(flow) -> dict[str, dict]:
     return {n["id"]: n for n in (flow.definition or {}).get("nodes", [])}
 
@@ -137,7 +154,15 @@ async def _walk(
         if ntype == "trigger":
             node_id = node.get("next")
         elif ntype == "send_text":
-            outcome.replies.append(Reply(text=render(node.get("text", ""), ctx)))
+            buttons = [
+                (str(b.get("id", "")), render(str(b.get("title", "")), ctx))
+                for b in node.get("buttons") or []
+                if b.get("id") and b.get("title")
+            ]
+            outcome.replies.append(Reply(text=render(node.get("text", ""), ctx), buttons=buttons))
+            node_id = node.get("next")
+        elif ntype == "add_tag":
+            await _add_tags(session, contact, node.get("tags") or [])
             node_id = node.get("next")
         elif ntype == "send_media":
             url = render(node.get("url") or node.get("media_url") or "", ctx)
@@ -252,9 +277,16 @@ async def run(
 ) -> FlowOutcome | None:
     """Lanjut flow aktif atau mulai flow baru via trigger. None = tak ada flow (→ AI/fallback)."""
     body = inbound.body or ""
+    payload = getattr(inbound, "payload", None) or ""
+    is_button = inbound.type.value == "interactive"
+    # A tap on a broadcast button starts its own flow, even mid-conversation.
+    broadcast_click = payload.startswith("bc:")
     outcome = FlowOutcome()
 
     state = await states.get(session, conv.id)
+    if state is not None and broadcast_click:
+        await states.delete(session, conv.id)
+        state = None
     if state is not None:
         expired = state.expires_at is not None and state.expires_at <= _now()
         flow = None if expired else await flows.get(session, state.flow_id, conv.tenant_id)
@@ -266,7 +298,8 @@ async def run(
             ctx["pesan"] = body.strip()  # pesan terakhir pelanggan (dipakai node Kondisi)
             wait_node = _nodes(flow).get(state.current_node_id)
             if wait_node and wait_node.get("save_as"):
-                value = body.strip()
+                # Tapped a menu button → its id (= option code) is the most reliable answer.
+                value = (payload if payload and not broadcast_click else body).strip()
                 if wait_node.get("normalize") == "choice":
                     value = " ".join(value.casefold().split())
                 ctx[wait_node["save_as"]] = value
@@ -285,6 +318,7 @@ async def run(
         body,
         is_first,
         preferred_flow_id=preferred_flow_id,
+        button_text=body if is_button else None,
     )
     if flow is None:
         return None

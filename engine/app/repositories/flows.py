@@ -37,9 +37,12 @@ async def match_trigger(
     body: str,
     is_first: bool,
     preferred_flow_id: uuid.UUID | None = None,
+    button_text: str | None = None,
 ) -> Flow | None:
-    """Cari flow aktif yang trigger-nya cocok dgn pesan (keyword) atau welcome (pesan pertama)."""
+    """Cari flow aktif yang trigger-nya cocok. Urutan: klik tombol (label persis) →
+    keyword (substring) → welcome (pesan pertama) → fallback."""
     text = (body or "").lower()
+    clicked = " ".join((button_text or "").casefold().split())
     welcome: Flow | None = None
     fallback: Flow | None = None
     active = await list_active(session, tenant_id)
@@ -47,6 +50,14 @@ async def match_trigger(
         preferred = next((f for f in active if f.id == preferred_flow_id), None)
         if preferred is not None:
             active = [preferred] + [f for f in active if f.id != preferred.id]
+    if clicked:
+        for flow in active:
+            node = _trigger_node(flow) or {}
+            trig = node.get("trigger", {})
+            if (trig.get("kind") or flow.trigger) == "button":
+                labels = {" ".join(str(w).casefold().split()) for w in trig.get("match", [])}
+                if clicked in labels:
+                    return flow
     for flow in active:
         node = _trigger_node(flow)
         if node is None:

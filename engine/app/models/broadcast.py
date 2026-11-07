@@ -33,6 +33,11 @@ class Broadcast(UUIDPkMixin, TimestampMixin, Base):
     template_id: Mapped[str | None] = mapped_column(sa.Text)  # official only
     # Snapshot isi pesan saat dibuat — jangan join ke template yg bisa berubah.
     body_snapshot: Mapped[str | None] = mapped_column(sa.Text)
+    # Snapshot of how the WA template is filled: {"header": {...}, "body": [...]}.
+    template_lang: Mapped[str | None] = mapped_column(sa.Text)
+    template_params: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
     status: Mapped[str] = mapped_column(
         broadcast_status, nullable=False, server_default="draft"
     )
@@ -68,6 +73,8 @@ class BroadcastRecipient(UUIDPkMixin, TimestampMixin, Base):
         sa.Uuid, sa.ForeignKey("messages.id", ondelete="SET NULL")
     )
     error: Mapped[str | None] = mapped_column(sa.Text)
+    clicked_button: Mapped[str | None] = mapped_column(sa.Text)
+    clicked_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
 
     broadcast: Mapped["Broadcast"] = relationship(back_populates="recipients")
     contact: Mapped["Contact"] = relationship()

@@ -96,3 +96,39 @@ async def running_broadcasts(session: AsyncSession, limit: int = 20) -> list[Bro
         select(Broadcast).where(Broadcast.status == "running").limit(limit)
     )
     return list(res)
+
+
+def parse_click_payload(payload: str | None) -> tuple[uuid.UUID, int] | None:
+    """Payload tombol broadcast = "bc:<broadcast_id>:<button_index>"."""
+    if not payload or not payload.startswith("bc:"):
+        return None
+    parts = payload.split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        return uuid.UUID(parts[1]), int(parts[2])
+    except ValueError:
+        return None
+
+
+async def record_click(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    broadcast_id: uuid.UUID,
+    contact_id: uuid.UUID,
+    label: str,
+    at,
+) -> bool:
+    """Simpan tombol pertama yang diklik penerima. Klik ulang tidak menimpa (laporan
+    menghitung keputusan awal). Return True bila ada baris yang tercatat."""
+    res = await session.execute(
+        update(BroadcastRecipient)
+        .where(
+            BroadcastRecipient.tenant_id == tenant_id,
+            BroadcastRecipient.broadcast_id == broadcast_id,
+            BroadcastRecipient.contact_id == contact_id,
+            BroadcastRecipient.clicked_button.is_(None),
+        )
+        .values(clicked_button=label[:200], clicked_at=at)
+    )
+    return (res.rowcount or 0) > 0

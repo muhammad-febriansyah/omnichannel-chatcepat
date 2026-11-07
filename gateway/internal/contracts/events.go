@@ -82,8 +82,14 @@ type InboundMessage struct {
 	// Media corresponds to the JSON schema field "media".
 	Media interface{} `json:"media,omitempty,omitzero" yaml:"media,omitempty" mapstructure:"media,omitempty"`
 
+	// Payload tombol yang diklik (quick reply template / id balasan interaktif)
+	Payload InboundMessagePayload `json:"payload,omitempty,omitzero" yaml:"payload,omitempty" mapstructure:"payload,omitempty"`
+
 	// ProviderMessageId corresponds to the JSON schema field "provider_message_id".
 	ProviderMessageId string `json:"provider_message_id" yaml:"provider_message_id" mapstructure:"provider_message_id"`
+
+	// provider_message_id pesan yang dibalas / tombolnya diklik
+	ReplyTo InboundMessageReplyTo `json:"reply_to,omitempty,omitzero" yaml:"reply_to,omitempty" mapstructure:"reply_to,omitempty"`
 
 	// Timestamp corresponds to the JSON schema field "timestamp".
 	Timestamp time.Time `json:"timestamp" yaml:"timestamp" mapstructure:"timestamp"`
@@ -93,6 +99,12 @@ type InboundMessage struct {
 }
 
 type InboundMessageBody *string
+
+// Payload tombol yang diklik (quick reply template / id balasan interaktif)
+type InboundMessagePayload *string
+
+// provider_message_id pesan yang dibalas / tombolnya diklik
+type InboundMessageReplyTo *string
 
 type InboundMessageType string
 
@@ -284,6 +296,9 @@ type OutboundCommand struct {
 	// Body corresponds to the JSON schema field "body".
 	Body OutboundCommandBody `json:"body,omitempty,omitzero" yaml:"body,omitempty" mapstructure:"body,omitempty"`
 
+	// type=interactive: <=3 jadi reply button, 4-10 jadi list
+	Buttons *OutboundCommandButtons `json:"buttons,omitempty,omitzero" yaml:"buttons,omitempty" mapstructure:"buttons,omitempty"`
+
 	// ChannelId corresponds to the JSON schema field "channel_id".
 	ChannelId string `json:"channel_id" yaml:"channel_id" mapstructure:"channel_id"`
 
@@ -311,6 +326,15 @@ type OutboundCommand struct {
 
 type OutboundCommandBody *string
 
+// type=interactive: <=3 jadi reply button, 4-10 jadi list
+type OutboundCommandButtons []struct {
+	// Id corresponds to the JSON schema field "id".
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Title corresponds to the JSON schema field "title".
+	Title string `json:"title" yaml:"title" mapstructure:"title"`
+}
+
 type OutboundCommandTemplate struct {
 	// Components corresponds to the JSON schema field "components".
 	Components []interface{} `json:"components,omitempty,omitzero" yaml:"components,omitempty" mapstructure:"components,omitempty"`
@@ -324,6 +348,7 @@ type OutboundCommandTemplate struct {
 
 type OutboundCommandType string
 
+const OutboundCommandTypeInteractive OutboundCommandType = "interactive"
 const OutboundCommandTypeMedia OutboundCommandType = "media"
 const OutboundCommandTypeTemplate OutboundCommandType = "template"
 const OutboundCommandTypeText OutboundCommandType = "text"
@@ -332,6 +357,7 @@ var enumValues_OutboundCommandType = []interface{}{
 	"text",
 	"template",
 	"media",
+	"interactive",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
