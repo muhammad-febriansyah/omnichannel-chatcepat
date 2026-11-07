@@ -1,8 +1,8 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, tags as tagsTable } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { listApiCoTemplates } from "@/lib/apico-server";
+import { listWaTemplates } from "@/lib/wa-templates";
 import { BroadcastWizard, type TemplateOpt } from "@/components/app/broadcast-wizard";
 
 export default async function NewBroadcastPage() {
@@ -18,7 +18,6 @@ export default async function NewBroadcastPage() {
         where: and(
           eq(channels.tenantId, session.tenantId),
           eq(channels.status, "connected"),
-          sql`COALESCE(${channels.meta}->>'provider', '') <> 'apico'`,
           inArray(channels.type, ["wa_official", "wa_unofficial"]),
         ),
         columns: { id: true, name: true, type: true },
@@ -28,9 +27,12 @@ export default async function NewBroadcastPage() {
         columns: { name: true },
       });
       tagNames = t.map((x) => x.name);
-      // Hanya HSM APPROVED (live api.co.id) yang boleh dipakai broadcast WA official.
-      const rows = await listApiCoTemplates({ status: "APPROVED" });
-      tmpls = rows.map((r) => ({ name: r.name, body: r.body, language: r.language }));
+      // Hanya HSM APPROVED (live dari Meta, per WABA) yang boleh dipakai broadcast WA official.
+      // Template ber-variabel belum bisa dikirim (parameter belum didukung) → disembunyikan.
+      const { templates: rows } = await listWaTemplates(session.tenantId, { status: "APPROVED" });
+      tmpls = rows
+        .filter((r) => r.variableCount === 0)
+        .map((r) => ({ name: r.name, body: r.body, language: r.language, channelId: r.channelId }));
     } catch {
       /* kosong */
     }

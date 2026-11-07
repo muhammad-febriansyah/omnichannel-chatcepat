@@ -53,18 +53,58 @@ def render(text: str, ctx: dict) -> str:
     return _VAR.sub(lambda m: str(ctx.get(m.group(1), "")), text or "")
 
 
+# Operator kata (dipakai node Kondisi di flow builder). Case-insensitive + trim.
+_WORD_OP = re.compile(
+    r"^\s*([a-zA-Z0-9_]+)\s+(equals|not_equals|contains|starts_with|is_empty|not_empty)\b\s*(.*)$",
+    re.S,
+)
+
+
+def _operand(raw: str, ctx: dict) -> str:
+    """Literal ber-kutip ('x' / "x") → isinya; selain itu dianggap nama variabel."""
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+        return raw[1:-1]
+    return str(ctx.get(raw, ""))
+
+
+def _fold(value: str) -> str:
+    return " ".join(str(value).casefold().split())
+
+
 def eval_expr(expr: str, ctx: dict) -> bool:
-    """Evaluator aman: dukung `lhs == rhs` / `lhs != rhs`. lhs = var; rhs = literal/var."""
+    """Evaluator aman (tanpa eval). Sintaks:
+
+    - `var == 'x'` / `var != 'x'` — banding persis (kompatibel flow lama).
+    - `var equals 'x'`, `not_equals`, `contains`, `starts_with` — case-insensitive,
+      spasi dirapikan.
+    - `var is_empty` / `var not_empty` — tanpa operand kanan.
+    rhs tanpa kutip = nama variabel lain.
+    """
+    expr = expr or ""
+    m = _WORD_OP.match(expr)
+    if m:
+        lhs, op, rhs = m.group(1), m.group(2), m.group(3)
+        left = _fold(ctx.get(lhs, ""))
+        if op == "is_empty":
+            return left == ""
+        if op == "not_empty":
+            return left != ""
+        right = _fold(_operand(rhs, ctx))
+        if op == "equals":
+            return left == right
+        if op == "not_equals":
+            return left != right
+        if op == "contains":
+            return right != "" and right in left
+        if op == "starts_with":
+            return right != "" and left.startswith(right)
+        return False
     for op in ("==", "!="):
         if op in expr:
             lhs, rhs = (s.strip() for s in expr.split(op, 1))
             left = str(ctx.get(lhs, ""))
-            if (rhs.startswith("'") and rhs.endswith("'")) or (
-                rhs.startswith('"') and rhs.endswith('"')
-            ):
-                right = rhs[1:-1]
-            else:
-                right = str(ctx.get(rhs, ""))
+            right = _operand(rhs, ctx)
             return left == right if op == "==" else left != right
     return False
 
@@ -223,6 +263,7 @@ async def run(
         else:
             # RESUME: simpan jawaban ke save_as lalu lanjut dari node berikutnya.
             ctx = dict(state.context or {})
+            ctx["pesan"] = body.strip()  # pesan terakhir pelanggan (dipakai node Kondisi)
             wait_node = _nodes(flow).get(state.current_node_id)
             if wait_node and wait_node.get("save_as"):
                 value = body.strip()
@@ -251,7 +292,7 @@ async def run(
     nodes = _nodes(flow)
     trigger = next((n for n in nodes.values() if n.get("type") == "trigger"), None)
     start_id = trigger.get("next") if trigger else None
-    ctx: dict = {"nama": contact.name or ""}
+    ctx: dict = {"nama": contact.name or "", "pesan": body.strip()}
     wait, _ended = await _walk(
         session, conv, channel, contact, inbound, flow, start_id, ctx, outcome
     )

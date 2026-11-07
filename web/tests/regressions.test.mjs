@@ -40,15 +40,39 @@ test("contact normalization retains explicit international country codes", () =>
   assert.equal(normalizePhone("0081 9012345678"), "819012345678");
 });
 
-test("deprecated api.co never fetches accounts or templates", async () => {
+test("WA templates are read from each WABA via Graph and tagged per channel", async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = () => { throw new Error("provider must remain unused"); };
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), auth: init?.headers?.Authorization });
+    return new Response(JSON.stringify({
+      data: [
+        { id: "1", name: "hello", language: "id", status: "APPROVED", category: "UTILITY",
+          components: [{ type: "BODY", text: "Halo {{1}}, pesanan {{2}} {{1}}" }] },
+        { id: "2", name: "promo", language: "id", status: "PENDING", category: "MARKETING",
+          components: [{ type: "BODY", text: "Promo" }] },
+      ],
+    }), { status: 200 });
+  };
   try {
-    const api = loadTS("lib/apico-server.ts");
-    assert.deepEqual(await api.listApiCoTemplates(), []);
-    assert.deepEqual((await api.listApiCoAccounts("instagram")).accounts, []);
-    assert.ok((await api.createApiCoTemplate({})).error);
-    assert.ok((await api.submitApiCoTemplate("old" )).error);
+    const wa = loadTS("lib/wa-templates.ts", {
+      "./db": { db: { query: { channels: { findMany: async () => [
+        { id: "ch1", name: "Toko", credentials: { waba_id: "W1", access_token: "T1" } },
+        { id: "ch2", name: "Tanpa WABA", credentials: { phone_number_id: "P2" } },
+      ] } } } },
+      "./db/schema": { channels: {} },
+      "drizzle-orm": { and: () => null, eq: () => null },
+      "./channel-crypto": { decryptCreds: (c) => c },
+    });
+    const res = await wa.listWaTemplates("tenant", { status: "approved" });
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.templates.length, 1);
+    assert.equal(res.templates[0].name, "hello");
+    assert.equal(res.templates[0].channelId, "ch1");
+    assert.equal(res.templates[0].variableCount, 2);
+    assert.equal(calls.length, 1, "channel without WABA credentials must be skipped");
+    assert.match(calls[0].url, /\/W1\/message_templates/);
+    assert.equal(calls[0].auth, "Bearer T1");
   } finally { globalThis.fetch = original; }
 });
 
@@ -132,4 +156,56 @@ test("parallel callbacks activate annual plan once and preserve both renewals", 
     await admin.unsafe(`DROP SCHEMA ${schema} CASCADE`);
     await admin.end();
   }
+});
+
+test("flow graph compiles menu/condition to engine nodes and validates wiring", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "keyword", keywords: ["halo"] } },
+      { id: "m", type: "menu", position: { x: 0, y: 0 }, data: {
+        prompt: "Pilih", saveAs: "pilihan", invalidText: "Ulangi",
+        options: [{ id: "a", code: "A", label: "Info" }, { id: "b", code: "B", label: "Agen" }] } },
+      { id: "c", type: "condition", position: { x: 0, y: 0 }, data: { variable: "pesan", rules: [{ id: "r1", op: "contains", value: "it's" }] } },
+      { id: "s", type: "send_text", position: { x: 0, y: 0 }, data: { text: "Info" } },
+      { id: "h", type: "handoff", position: { x: 0, y: 0 }, data: {} },
+    ],
+    edges: [
+      { id: "1", source: "t", sourceHandle: "out", target: "m" },
+      { id: "2", source: "m", sourceHandle: "opt:a", target: "c" },
+      { id: "3", source: "m", sourceHandle: "opt:b", target: "h" },
+      { id: "4", source: "c", sourceHandle: "rule:r1", target: "s" },
+    ],
+  };
+  assert.deepEqual(fg.validateGraph(graph), []);
+  const { nodes, trigger } = fg.compileGraph(graph);
+  assert.equal(trigger, "keyword");
+  assert.equal(fg.validateRuntimeNodes(nodes), null);
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  assert.deepEqual(byId.t.trigger, { kind: "keyword", match: ["halo"] });
+  assert.equal(byId.m.next, "m__wait");
+  assert.equal(byId["m__wait"].normalize, "choice");
+  assert.deepEqual(byId["m__branch"].branches.map((b) => [b.if, b.next]), [
+    ["pilihan == 'a'", "c"], ["pilihan == 'info'", "c"], ["pilihan == 'b'", "h"], ["pilihan == 'agen'", "h"],
+  ]);
+  assert.equal(byId["m__invalid"].next, "m", "unconnected 'invalid' loops back to the menu");
+  assert.equal(byId.c.branches[0].if, "pesan contains 'its'", "quotes are stripped from literals");
+  assert.equal(byId.c.else, null);
+
+  // Unconnected option + orphan node are reported on the right nodes.
+  const broken = { ...graph, edges: graph.edges.filter((e) => e.id !== "3" && e.id !== "4") };
+  const issues = fg.validateGraph(broken);
+  assert.ok(issues.some((i) => i.nodeId === "m" && /disambungkan/.test(i.message)));
+  assert.ok(issues.some((i) => i.nodeId === "h" && /tidak tersambung/.test(i.message)));
+
+  // Round trip: runtime → graph → runtime keeps behaviour for legacy flows.
+  const legacy = fg.loadGraph({ nodes: [
+    { id: "start", type: "trigger", trigger: { kind: "welcome", match: [] }, next: "x" },
+    { id: "x", type: "condition", branches: [{ if: "pesan == 'harga'", next: "y" }], else: null },
+    { id: "y", type: "send_text", text: "Harga mulai 10rb" },
+  ] });
+  const again = fg.compileGraph(legacy).nodes;
+  assert.equal(fg.validateRuntimeNodes(again), null);
+  assert.equal(again.find((n) => n.id === "x").branches[0].next, "y");
+  assert.equal(fg.validateRuntimeNodes([{ id: "a", type: "trigger", next: "missing" }]), "Sambungan ke langkah yang tidak ada (a)");
 });

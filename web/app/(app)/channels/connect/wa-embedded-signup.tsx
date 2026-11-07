@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Script from "next/script";
 import { unstable_rethrow } from "next/navigation";
-import { Loader2, ShieldCheck, MessageCircle } from "lucide-react";
+import { Loader2, ShieldCheck, MessageCircle, KeyRound } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { connectWhatsAppEmbedded } from "@/lib/actions";
 import { ChannelIcon } from "@/components/app/channel-icon";
@@ -21,18 +21,34 @@ declare global {
 
 const APP_ID = process.env.NEXT_PUBLIC_FB_APP_ID ?? "";
 const CONFIG_ID = process.env.NEXT_PUBLIC_WA_CONFIG_ID ?? "";
+const GRAPH_VERSION = process.env.NEXT_PUBLIC_META_GRAPH_VERSION || "v23.0";
+
+// Event FINISH (sessionInfo) bisa tiba sesudah callback FB.login → tunggu sebentar.
+async function waitForSession(
+  ref: { current: { wabaId?: string; phoneNumberId?: string } },
+  ms = 4000,
+): Promise<{ wabaId?: string; phoneNumberId?: string }> {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (ref.current.wabaId && ref.current.phoneNumberId) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return ref.current;
+}
 
 export function WaEmbeddedSignup() {
   const [ready, setReady] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [pending, start] = useTransition();
+  // PIN verifikasi dua langkah (6 digit). Wajib bila nomor belum ter-register di Cloud API.
+  const [pin, setPin] = useState("");
   // sessionInfo (waba_id, phone_number_id) datang via window 'message' event, terpisah dari code.
   const session = useRef<{ wabaId?: string; phoneNumberId?: string }>({});
 
   // Init FB SDK setelah script load.
   const initSdk = useCallback(() => {
     if (!window.FB || !APP_ID) return;
-    window.FB.init({ appId: APP_ID, autoLogAppEvents: true, xfbml: false, version: "v23.0" });
+    window.FB.init({ appId: APP_ID, autoLogAppEvents: true, xfbml: false, version: GRAPH_VERSION });
     setReady(true);
   }, []);
 
@@ -80,24 +96,28 @@ export function WaEmbeddedSignup() {
       gooeyToast.error("Konfigurasi WhatsApp belum di-set (NEXT_PUBLIC_WA_CONFIG_ID)");
       return;
     }
+    if (pin && !/^\d{6}$/.test(pin)) {
+      gooeyToast.error("PIN harus 6 digit angka");
+      return;
+    }
     setLaunching(true);
     session.current = {};
     window.FB.login(
       (resp) => {
         setLaunching(false);
         const code = resp?.authResponse?.code;
-        const { wabaId, phoneNumberId } = session.current;
         if (!code) {
           gooeyToast.error("Login WhatsApp dibatalkan");
           return;
         }
-        if (!wabaId || !phoneNumberId) {
-          gooeyToast.error("Nomor/WABA belum terpilih. Ulangi dan selesaikan langkahnya.");
-          return;
-        }
         start(async () => {
+          const { wabaId, phoneNumberId } = await waitForSession(session);
+          if (!wabaId || !phoneNumberId) {
+            gooeyToast.error("Nomor/WABA belum terpilih. Ulangi dan selesaikan langkahnya.");
+            return;
+          }
           try {
-            await connectWhatsAppEmbedded({ code, wabaId, phoneNumberId });
+            await connectWhatsAppEmbedded({ code, wabaId, phoneNumberId, pin: pin || undefined });
             gooeyToast.success("WhatsApp terhubung");
             window.location.href = "/channels?connected=1";
           } catch (e) {
@@ -141,6 +161,26 @@ export function WaEmbeddedSignup() {
           </li>
         ))}
       </ol>
+
+      <div>
+        <label htmlFor="wa-pin" className="mb-1.5 block text-sm font-medium">
+          PIN verifikasi dua langkah <span className="text-muted-foreground">(untuk nomor baru)</span>
+        </label>
+        <div className="relative">
+          <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            id="wa-pin"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            placeholder="6 digit"
+            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 font-mono text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Nomor yang belum aktif di Cloud API akan didaftarkan dengan PIN ini. Kalau nomor sudah punya PIN, isi PIN yang sama.
+        </p>
+      </div>
 
       <button
         onClick={launch}

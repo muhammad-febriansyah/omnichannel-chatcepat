@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { deleteTemplate } from "@/lib/actions";
-import { listApiCoTemplates, type ApiCoTemplate } from "@/lib/apico-server";
+import { listWaTemplates, type WaTemplatesResult } from "@/lib/wa-templates";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { DeleteButton } from "@/components/app/delete-button";
@@ -12,9 +12,8 @@ import { ActionLink } from "@/components/app/action-link";
 import { EditButton } from "@/components/app/action-button";
 import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
-import { APICO_ENABLED } from "@/lib/features";
 
-// Status Meta (api.co.id) → tampilan.
+// Status review Meta → tampilan.
 const WA_STATUS_TONE: Record<string, PillTone> = {
   APPROVED: "emerald",
   PENDING: "amber",
@@ -43,10 +42,19 @@ async function loadQuickReplies(tenantId: string | null) {
   }
 }
 
+async function loadWaTemplates(tenantId: string | null): Promise<WaTemplatesResult> {
+  if (!tenantId) return { templates: [], errors: [] };
+  try {
+    return await listWaTemplates(tenantId);
+  } catch (e) {
+    return { templates: [], errors: [e instanceof Error ? e.message : "Gagal memuat template WhatsApp"] };
+  }
+}
+
 export default async function TemplatesPage() {
   const session = await requirePageAbility("broadcast.manage");
-  const [waTemplates, quickReplies] = await Promise.all([
-    listApiCoTemplates(),
+  const [{ templates: waTemplates, errors: waErrors }, quickReplies] = await Promise.all([
+    loadWaTemplates(session.tenantId),
     loadQuickReplies(session.tenantId),
   ]);
 
@@ -57,7 +65,7 @@ export default async function TemplatesPage() {
       <PageHeader
         icon={FileText}
         title="Template Pesan"
-        description={`${quickReplies.length} balasan cepat`}
+        description={`${waTemplates.length} template WhatsApp · ${quickReplies.length} balasan cepat`}
         actions={
           <ActionLink href="/templates/new">
             <Plus className="size-4" /> Template Baru
@@ -67,7 +75,7 @@ export default async function TemplatesPage() {
 
       <Card>
         <CardContent className="pt-6">
-          {total === 0 ? (
+          {total === 0 && waErrors.length === 0 ? (
             <EmptyState
               icon={FileStack}
               title="Belum ada template"
@@ -80,18 +88,23 @@ export default async function TemplatesPage() {
             />
           ) : (
             <div className="space-y-6">
-              {/* WhatsApp HSM — sumber api.co.id (status Meta) */}
-              {APICO_ENABLED && <section>
+              {/* WhatsApp HSM — dibaca langsung dari WABA tiap channel WA Official (status Meta) */}
+              <section>
                 <h2 className="mb-2 text-sm font-semibold text-foreground">Template WhatsApp (Meta)</h2>
+                {waErrors.length > 0 && (
+                  <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    Sebagian template gagal dimuat dari Meta: {waErrors.join("; ")}
+                  </p>
+                )}
                 {waTemplates.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
                     Belum ada template WhatsApp. Buat lewat “Template Baru” → jenis WhatsApp (HSM).
                   </p>
                 ) : (
                   <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {waTemplates.map((t: ApiCoTemplate, i) => (
+                    {waTemplates.map((t, i) => (
                       <div
-                        key={t.id || t.name}
+                        key={`${t.channelId}:${t.id || t.name}:${t.language}`}
                         className={`flex items-center gap-4 px-4 py-3 ${i > 0 ? "border-t border-border" : ""}`}
                       >
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300">
@@ -111,6 +124,9 @@ export default async function TemplatesPage() {
                             <StatusPill tone={WA_STATUS_TONE[t.status] ?? "slate"} className="shrink-0">
                               {WA_STATUS_LABEL[t.status] ?? t.status}
                             </StatusPill>
+                            <StatusPill tone="slate" className="shrink-0">
+                              {t.channelName}
+                            </StatusPill>
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.body}</p>
                         </div>
@@ -118,7 +134,7 @@ export default async function TemplatesPage() {
                     ))}
                   </div>
                 )}
-              </section>}
+              </section>
 
               {/* Balasan cepat — lokal */}
               {quickReplies.length > 0 && (

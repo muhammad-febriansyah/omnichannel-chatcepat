@@ -1,0 +1,458 @@
+"use client";
+
+import "@xyflow/react/dist/style.css";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { useTheme } from "next-themes";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  MarkerType,
+  useReactFlow,
+  useNodesState,
+  useEdgesState,
+  type Connection,
+  type Edge,
+  type OnBeforeDelete,
+} from "@xyflow/react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertTriangle, PanelLeft, LayoutGrid, MousePointerClick } from "lucide-react";
+import { gooeyToast } from "@/components/ui/goey-toaster";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { saveFlow } from "@/lib/actions";
+import {
+  autoLayout,
+  compileGraph,
+  defaultData,
+  flowVariables,
+  loadGraph,
+  newId,
+  validateGraph,
+  type FlowGraph,
+  type GraphNode,
+  type NodeKind,
+} from "@/lib/flow-graph";
+import { FlowNode, type FlowRFNode } from "./flow-node";
+import { ConfigPanel } from "./config-panel";
+import { COMING_SOON, DRAG_MIME, NODE_META, PALETTE_GROUPS } from "./meta";
+
+const nodeTypes = Object.fromEntries(Object.keys(NODE_META).map((k) => [k, FlowNode]));
+
+const edgeDefaults = {
+  type: "smoothstep",
+  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+  style: { strokeWidth: 2 },
+};
+
+function toRF(graph: FlowGraph): { nodes: FlowRFNode[]; edges: Edge[] } {
+  return {
+    nodes: graph.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      deletable: n.type !== "trigger",
+      data: { kind: n.type, payload: n.data, issues: [] },
+    })),
+    edges: graph.edges.map((e) => ({ ...edgeDefaults, id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target })),
+  };
+}
+
+function fromRF(nodes: FlowRFNode[], edges: Edge[]): FlowGraph {
+  return {
+    nodes: nodes.map((n) => ({ id: n.id, type: n.data.kind, position: n.position, data: n.data.payload }) as GraphNode),
+    edges: edges.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? "out", target: e.target })),
+  };
+}
+
+type Props = {
+  id: string;
+  name: string;
+  status: "draft" | "active";
+  definition: unknown;
+};
+
+function Builder({ id, name: initialName, status: initialStatus, definition }: Props) {
+  const initial = useMemo(() => toRF(loadGraph(definition)), [definition]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowRFNode>(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
+  const [name, setName] = useState(initialName);
+  const [status, setStatus] = useState(initialStatus);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [saving, startSave] = useTransition();
+  const wrapper = useRef<HTMLDivElement>(null);
+  const rf = useReactFlow();
+  const { resolvedTheme } = useTheme();
+
+  const graph = useMemo(() => fromRF(nodes, edges), [nodes, edges]);
+  const variables = useMemo(() => flowVariables(graph), [graph]);
+  const selected = nodes.find((n) => n.id === selectedId) ?? null;
+
+  const markDirty = useCallback(() => setDirty(true), []);
+
+  // Warn before leaving with unsaved changes.
+  useEffect(() => {
+    if (!dirty) return;
+    const h = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [dirty]);
+
+  const updatePayload = useCallback(
+    (nodeId: string, payload: GraphNode["data"]) => {
+      setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, payload, issues: [] } } : n)));
+      markDirty();
+    },
+    [setNodes, markDirty],
+  );
+
+  // One connection per output handle: a new edge replaces the old one.
+  const onConnect = useCallback(
+    (c: Connection) => {
+      if (!c.source || !c.target || c.source === c.target) return;
+      const handle = c.sourceHandle ?? "out";
+      setEdges((es) => [
+        ...es.filter((e) => !(e.source === c.source && (e.sourceHandle ?? "out") === handle)),
+        { ...edgeDefaults, id: newId("e"), source: c.source, sourceHandle: handle, target: c.target },
+      ]);
+      markDirty();
+    },
+    [setEdges, markDirty],
+  );
+
+  const onBeforeDelete: OnBeforeDelete<FlowRFNode, Edge> = useCallback(async ({ nodes: ns, edges: es }) => {
+    const keep = ns.filter((n) => n.data.kind !== "trigger");
+    if (keep.length !== ns.length) gooeyToast.error("Pemicu tidak bisa dihapus");
+    return { nodes: keep, edges: es };
+  }, []);
+
+  const addNode = useCallback(
+    (kind: NodeKind, position?: { x: number; y: number }) => {
+      let pos = position;
+      if (!pos) {
+        const rect = wrapper.current?.getBoundingClientRect();
+        const center = rf.screenToFlowPosition({
+          x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2,
+          y: (rect?.top ?? 0) + (rect?.height ?? 600) / 2,
+        });
+        pos = { x: center.x - 130, y: center.y - 60 };
+        // Shift right until the new card doesn't sit on top of an existing one.
+        const overlaps = (p: { x: number; y: number }) =>
+          rf.getNodes().some((n) => Math.abs(n.position.x - p.x) < 280 && Math.abs(n.position.y - p.y) < 150);
+        for (let i = 0; i < 12 && overlaps(pos); i++) pos = { x: pos.x + 300, y: pos.y };
+      }
+      const nodeId = newId();
+      setNodes((ns) => [
+        ...ns.map((n) => ({ ...n, selected: false })),
+        { id: nodeId, type: kind, position: pos!, selected: true, data: { kind, payload: defaultData(kind), issues: [] } },
+      ]);
+      setSelectedId(nodeId);
+      markDirty();
+    },
+    [rf, setNodes, markDirty],
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const kind = e.dataTransfer.getData(DRAG_MIME) as NodeKind;
+      if (!kind || !NODE_META[kind]) return;
+      const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      addNode(kind, { x: p.x - 130, y: p.y - 30 });
+    },
+    [rf, addNode],
+  );
+
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((ns) => ns.filter((n) => n.id !== nodeId));
+      setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      setSelectedId(null);
+      markDirty();
+    },
+    [setNodes, setEdges, markDirty],
+  );
+
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      const src = nodes.find((n) => n.id === nodeId);
+      if (!src) return;
+      const copyId = newId();
+      setNodes((ns) => [
+        ...ns.map((n) => ({ ...n, selected: false })),
+        {
+          ...src,
+          id: copyId,
+          selected: true,
+          position: { x: src.position.x + 40, y: src.position.y + 40 },
+          data: { ...src.data, payload: structuredClone(src.data.payload), issues: [] },
+        },
+      ]);
+      setSelectedId(copyId);
+      markDirty();
+    },
+    [nodes, setNodes, markDirty],
+  );
+
+  const tidy = useCallback(() => {
+    const laid = autoLayout(graph);
+    const pos = new Map(laid.nodes.map((n) => [n.id, n.position]));
+    setNodes((ns) => ns.map((n) => ({ ...n, position: pos.get(n.id) ?? n.position })));
+    markDirty();
+    requestAnimationFrame(() => rf.fitView({ padding: 0.2, duration: 300 }));
+  }, [graph, setNodes, rf, markDirty]);
+
+  const save = useCallback(() => {
+    if (!name.trim()) return gooeyToast.error("Nama flow wajib diisi");
+    const issues = validateGraph(graph);
+    const byNode = new Map<string, string[]>();
+    for (const i of issues) if (i.nodeId) byNode.set(i.nodeId, [...(byNode.get(i.nodeId) ?? []), i.message]);
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, issues: [...new Set(byNode.get(n.id) ?? [])] } })));
+    if (issues.length) {
+      const first = issues[0];
+      const where = first.nodeId ? nodes.find((n) => n.id === first.nodeId) : null;
+      gooeyToast.error(`${issues.length} masalah perlu diperbaiki`, {
+        description: `${where ? NODE_META[where.data.kind].label + ": " : ""}${first.message}`,
+      });
+      if (first.nodeId) {
+        setSelectedId(first.nodeId);
+        const n = rf.getNode(first.nodeId);
+        if (n) rf.setCenter(n.position.x + 130, n.position.y + 60, { zoom: 1, duration: 300 });
+      }
+      return;
+    }
+    const compiled = compileGraph(graph);
+    startSave(async () => {
+      try {
+        await saveFlow(id, {
+          name: name.trim(),
+          status,
+          trigger: compiled.trigger,
+          definition: { nodes: compiled.nodes, ui: { nodes: graph.nodes, edges: graph.edges } },
+        });
+        setDirty(false);
+        gooeyToast.success(status === "active" ? "Flow disimpan & aktif" : "Flow disimpan sebagai draft");
+      } catch (e) {
+        gooeyToast.error(e instanceof Error ? e.message : "Gagal menyimpan flow");
+      }
+    });
+  }, [name, graph, nodes, rf, setNodes, id, status]);
+
+  // Ctrl/Cmd + S
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [save]);
+
+  const issueCount = nodes.reduce((acc, n) => acc + n.data.issues.length, 0);
+
+  return (
+    <div className="flex h-full min-h-[560px] flex-col bg-background">
+      {/* Top bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+        <Link href="/flows" aria-label="Kembali ke daftar flow" className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ArrowLeft className="size-4" />
+        </Link>
+        <input
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            markDirty();
+          }}
+          aria-label="Nama flow"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 text-base font-semibold outline-none hover:border-border focus:border-brand-blue focus:bg-background sm:max-w-sm"
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <span className={cn("hidden items-center gap-1.5 text-xs sm:flex", dirty ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+            {dirty ? <AlertTriangle className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
+            {dirty ? "Belum disimpan" : "Tersimpan"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus((s) => (s === "active" ? "draft" : "active"));
+              markDirty();
+            }}
+            aria-pressed={status === "active"}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors",
+              status === "active"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                : "border-border text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <span className={cn("size-2 rounded-full", status === "active" ? "bg-emerald-500" : "bg-slate-400")} />
+            {status === "active" ? "Aktif" : "Draft"}
+          </button>
+          <Button onClick={save} disabled={saving} size="sm" className="h-9 px-4">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Simpan
+          </Button>
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1">
+        {/* Palette */}
+        <aside
+          className={cn(
+            "z-10 flex w-60 shrink-0 flex-col border-r border-border bg-card transition-[margin] duration-200",
+            "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl",
+            !paletteOpen && "-ml-60",
+          )}
+        >
+          <div className="flex items-center justify-between px-4 pb-2 pt-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Langkah</span>
+            <button type="button" aria-label="Sembunyikan palet" onClick={() => setPaletteOpen(false)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted">
+              <PanelLeft className="size-4" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
+            {PALETTE_GROUPS.map(({ group, kinds }) => (
+              <div key={group}>
+                <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">{group}</div>
+                <div className="space-y-1">
+                  {kinds.map((kind) => {
+                    const m = NODE_META[kind];
+                    const Icon = m.icon;
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(DRAG_MIME, kind);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onClick={() => addNode(kind)}
+                        title={m.desc}
+                        className="flex w-full cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-muted/60 active:cursor-grabbing"
+                      >
+                        <span className="grid size-7 shrink-0 place-items-center rounded-md text-white" style={{ background: m.color }}>
+                          <Icon className="size-3.5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-medium">{m.label}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground">{m.desc}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div>
+              <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">Segera hadir</div>
+              {COMING_SOON.map(({ label, icon: Icon }) => (
+                <div key={label} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 opacity-50">
+                  <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
+                    <Icon className="size-3.5" />
+                  </span>
+                  <span className="text-[13px] font-medium">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+            <MousePointerClick className="mb-1 size-3.5" />
+            Seret langkah ke kanvas, lalu tarik titik bulat untuk menyambungkan.
+          </div>
+        </aside>
+
+        {/* Canvas */}
+        <div ref={wrapper} className="relative min-w-0 flex-1" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+          <ReactFlow<FlowRFNode, Edge>
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={(c) => {
+              onNodesChange(c);
+              if (c.some((x) => x.type !== "select" && x.type !== "dimensions")) markDirty();
+            }}
+            onEdgesChange={(c) => {
+              onEdgesChange(c);
+              if (c.some((x) => x.type === "remove")) markDirty();
+            }}
+            onConnect={onConnect}
+            onBeforeDelete={onBeforeDelete}
+            onNodeClick={(_, n) => setSelectedId(n.id)}
+            onPaneClick={() => setSelectedId(null)}
+            onNodesDelete={(ns) => ns.some((n) => n.id === selectedId) && setSelectedId(null)}
+            defaultEdgeOptions={edgeDefaults}
+            colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+            snapToGrid
+            snapGrid={[20, 20]}
+            fitView
+            fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+            minZoom={0.25}
+            maxZoom={1.75}
+            deleteKeyCode={["Backspace", "Delete"]}
+            proOptions={{ hideAttribution: true }}
+            className="!bg-muted/30"
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
+            <Controls showInteractive={false} className="!rounded-lg !border !border-border !shadow-sm" />
+            <MiniMap
+              pannable
+              zoomable
+              className="!rounded-lg !border !border-border max-md:!hidden"
+              nodeColor={(n) => NODE_META[(n as FlowRFNode).data.kind]?.color ?? "#94a3b8"}
+              nodeStrokeWidth={0}
+              nodeBorderRadius={6}
+            />
+          </ReactFlow>
+
+          <div className="pointer-events-none absolute left-3 top-3 flex gap-2">
+            {!paletteOpen && (
+              <Button type="button" variant="outline" size="sm" className="pointer-events-auto bg-card shadow-sm" onClick={() => setPaletteOpen(true)}>
+                <PanelLeft className="size-3.5" /> Langkah
+              </Button>
+            )}
+            <Button type="button" variant="outline" size="sm" className="pointer-events-auto bg-card shadow-sm" onClick={tidy}>
+              <LayoutGrid className="size-3.5" /> Rapikan
+            </Button>
+            {issueCount > 0 && (
+              <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                <AlertTriangle className="size-3.5" /> {issueCount} masalah
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Config panel */}
+        {selected && (
+          <aside className="z-10 w-[340px] shrink-0 border-l border-border bg-card max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:shadow-xl max-sm:w-full">
+            <ConfigPanel
+              key={selected.id}
+              node={{ id: selected.id, type: selected.data.kind, position: selected.position, data: selected.data.payload } as GraphNode}
+              issues={selected.data.issues}
+              variables={variables}
+              onChange={(payload) => updatePayload(selected.id, payload)}
+              onDelete={() => deleteNode(selected.id)}
+              onDuplicate={() => duplicateNode(selected.id)}
+              onClose={() => setSelectedId(null)}
+            />
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function FlowBuilder(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <Builder {...props} />
+    </ReactFlowProvider>
+  );
+}

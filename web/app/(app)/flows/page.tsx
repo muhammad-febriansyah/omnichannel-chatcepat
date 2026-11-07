@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Workflow, Zap, ArrowRight, ListChecks } from "lucide-react";
+import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock } from "lucide-react";
+import { timeAgo } from "@/lib/format";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -18,7 +19,7 @@ async function load(tenantId: string | null) {
   try {
     return await db.query.flows.findMany({
       where: eq(flows.tenantId, tenantId),
-      orderBy: [desc(flows.createdAt)],
+      orderBy: [desc(flows.updatedAt)],
     });
   } catch {
     return [];
@@ -75,8 +76,15 @@ export default async function FlowsPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {rows.map((f) => {
                 const isActive = f.status === "active";
-                const nodes = (f.definition as { nodes?: unknown[] })?.nodes ?? [];
-                const stepCount = nodes.filter((n) => (n as { type?: string })?.type !== "trigger").length;
+                const def = f.definition as {
+                  nodes?: { type?: string; trigger?: { match?: string[] } }[];
+                  ui?: { nodes?: { type?: string }[] };
+                };
+                // Canvas nodes = what the user built; runtime nodes include menu internals.
+                const stepCount = (def?.ui?.nodes ?? def?.nodes ?? []).filter((n) => n?.type !== "trigger").length;
+                const keywords = def?.nodes?.find((n) => n?.type === "trigger")?.trigger?.match ?? [];
+                const triggerLabel =
+                  f.trigger === "welcome" ? "Pesan pertama" : f.trigger === "fallback" ? "Cadangan" : "Keyword";
                 return (
                   <Link
                     key={f.id}
@@ -96,15 +104,26 @@ export default async function FlowsPage() {
                       <div className="truncate font-semibold">{f.name}</div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          <Zap className="size-3 text-amber-500" /> {f.trigger}
+                          <Zap className="size-3 text-amber-500" /> {triggerLabel}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                           <ListChecks className="size-3 text-brand-blue" /> {stepCount} langkah
                         </span>
                       </div>
+                      {f.trigger === "keyword" && keywords.length > 0 && (
+                        <p className="mt-2 truncate text-xs text-muted-foreground">
+                          Keyword: {keywords.slice(0, 4).join(", ")}
+                          {keywords.length > 4 ? ` +${keywords.length - 4}` : ""}
+                        </p>
+                      )}
                     </div>
-                    <div className="mt-auto flex items-center gap-1 text-xs font-medium text-brand-blue">
-                      Edit flow <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                    <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3 text-xs">
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                        <Clock className="size-3" /> Diperbarui {timeAgo(f.updatedAt)}{timeAgo(f.updatedAt) === "baru saja" ? "" : " lalu"}
+                      </span>
+                      <span className="inline-flex items-center gap-1 font-medium text-brand-blue">
+                        Buka editor <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                      </span>
                     </div>
                   </Link>
                 );

@@ -10,6 +10,10 @@ config = context.config
 
 # URL sync dari env (alembic pakai driver sync, bukan asyncpg).
 db_url = os.environ.get("DATABASE_URL_SYNC", "")
+# DATABASE_URL_SYNC is shared with Go (lib/pq), so it stays a plain `postgresql://` URL.
+# Newer SQLAlchemy maps that scheme to psycopg v3, but only psycopg2 is installed.
+if db_url.startswith("postgresql://"):
+    db_url = "postgresql+psycopg2://" + db_url[len("postgresql://") :]
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 

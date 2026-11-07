@@ -19,10 +19,17 @@ import { CHANNEL_META, ChannelType } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChannelIcon } from "@/components/app/channel-icon";
+import { WaEmbeddedSignup } from "./wa-embedded-signup";
 
 type Tag = { label: string; tone: "green" | "blue" | "amber" | "slate" };
 
 const TYPES: { value: ChannelType; label: string; desc: string; tag: Tag }[] = [
+  {
+    value: "wa_official",
+    label: "WhatsApp Official",
+    desc: "WhatsApp Cloud API resmi dari Meta",
+    tag: { label: "Resmi", tone: "green" },
+  },
   {
     value: "telegram",
     label: "Telegram",
@@ -59,7 +66,7 @@ const TAG_CLS: Record<Tag["tone"], string> = {
 
 const FIELDS: Record<
   ChannelType,
-  { key: string; label: string; placeholder: string; hint?: string }[]
+  { key: string; label: string; placeholder: string; hint?: string; optional?: boolean }[]
 > = {
   telegram: [
     {
@@ -76,7 +83,14 @@ const FIELDS: Record<
       key: "access_token",
       label: "Access Token",
       placeholder: "EAAG…",
-      hint: "Permanent token dari Meta Business.",
+      hint: "Token permanen System User dengan izin whatsapp_business_messaging & whatsapp_business_management.",
+    },
+    {
+      key: "pin",
+      label: "PIN 2 Langkah",
+      placeholder: "6 digit",
+      hint: "Hanya bila nomor belum terdaftar di Cloud API.",
+      optional: true,
     },
   ],
   instagram: [
@@ -92,7 +106,9 @@ const FIELDS: Record<
 
 export default function ConnectChannelPage() {
   const router = useRouter();
-  const [type, setType] = useState<ChannelType>("telegram");
+  const [type, setType] = useState<ChannelType>("wa_official");
+  // WA Official: Embedded Signup (disarankan) atau input manual ID + token.
+  const [waMode, setWaMode] = useState<"embedded" | "manual">("embedded");
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
@@ -104,7 +120,7 @@ export default function ConnectChannelPage() {
       return;
     }
     for (const field of fields) {
-      if (!creds[field.key]?.trim()) {
+      if (!field.optional && !creds[field.key]?.trim()) {
         gooeyToast.error(`${field.label} wajib diisi`);
         return;
       }
@@ -244,6 +260,31 @@ export default function ConnectChannelPage() {
               </div>
             </div>
 
+            {type === "wa_official" && (
+              <div className="flex gap-2 px-5 pt-5">
+                {(["embedded", "manual"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setWaMode(m)}
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                      waMode === m
+                        ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10"
+                        : "border-border text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    {m === "embedded" ? "Login Meta" : "Input Manual"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {type === "wa_official" && waMode === "embedded" ? (
+              <div className="p-5">
+                <WaEmbeddedSignup />
+              </div>
+            ) : (
             <div className="space-y-4 p-5">
               <div>
                 <label className="mb-1.5 block text-sm font-medium">
@@ -318,6 +359,7 @@ export default function ConnectChannelPage() {
                 Kredensial dienkripsi at-rest (AES-256-GCM).
               </div>
             </div>
+            )}
           </div>
         </div>
       </div>

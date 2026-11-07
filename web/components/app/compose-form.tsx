@@ -12,14 +12,15 @@ import { CHANNEL_META, type ChannelType } from "@/lib/format";
 import { startConversation } from "@/lib/actions";
 
 export type ComposeChannel = { id: string; name: string; type: string; status: string };
-export type ComposeTemplate = { name: string; body: string; language: string };
+// channelId = channel (WABA) pemilik template; template hanya valid untuk channel itu.
+export type ComposeTemplate = { name: string; body: string; language: string; channelId: string };
 
 const inputCls =
   "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
 
 export function ComposeForm({
   channels,
-  templates,
+  templates: allTemplates,
 }: {
   channels: ComposeChannel[];
   templates: ComposeTemplate[];
@@ -31,15 +32,19 @@ export function ComposeForm({
   const [name, setName] = useState("");
   const [body, setBody] = useState("");
   const [preferredType, setMsgType] = useState<"text" | "template">("template");
-  const [templateName, setTemplateName] = useState(templates[0]?.name ?? "");
+  const [pickedTemplate, setTemplateName] = useState("");
 
   const selected = channels.find((c) => c.id === channelId);
+  const templates = allTemplates.filter((t) => t.channelId === channelId);
+  const templateName = templates.some((t) => t.name === pickedTemplate)
+    ? pickedTemplate
+    : (templates[0]?.name ?? "");
   const isWaOfficial = selected?.type === "wa_official";
   const tpl = templates.find((t) => t.name === templateName);
   const hasTemplates = templates.length > 0;
   const msgType = isWaOfficial ? preferredType : "text";
 
-  // WA official: pesan pertama ke nomor baru WAJIB template (api.co.id auto-buat customer).
+  // WA official: pesan pertama ke nomor baru WAJIB template (aturan Meta, di luar window 24 jam).
   // Teks bebas hanya jalan kalau nomor pernah chat <24 jam (customer sudah ada).
   const showTemplateToggle = isWaOfficial && hasTemplates;
   // Tanpa template approved, wa_official tak bisa memulai percakapan baru sama sekali.
@@ -158,8 +163,8 @@ export function ComposeForm({
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                   <Info className="mt-0.5 size-4 shrink-0" />
                   <span>
-                    WhatsApp resmi butuh <b>template (HSM) approved</b> untuk pesan pertama ke nomor baru
-                    (api.co.id membuat customer otomatis lewat template). Buat dulu di menu{" "}
+                    WhatsApp resmi butuh <b>template (HSM) approved</b> tanpa variabel untuk pesan pertama
+                    ke nomor baru. Buat dulu di menu{" "}
                     <b>Template Pesan</b>, atau pakai channel <b>WhatsApp unofficial</b> untuk teks bebas.
                   </span>
                 </div>

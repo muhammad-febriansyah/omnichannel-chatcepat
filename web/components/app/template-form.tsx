@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { ActionLink } from "@/components/app/action-link";
 import { cn } from "@/lib/utils";
 import { createTemplate, updateTemplate, createWaTemplate } from "@/lib/actions";
-import { APICO_ENABLED } from "@/lib/features";
 
 type Kind = "quick_reply" | "hsm";
 
@@ -20,15 +19,19 @@ export function TemplateForm({
   mode,
   templateId,
   initial,
+  waChannels = [],
 }: {
   mode: "create" | "edit";
   templateId?: string;
   initial?: { name: string; kind: Kind; category: string; language: string; body: string };
+  // Channel WA Official terhubung — template HSM dibuat di WABA channel terpilih.
+  waChannels?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const isEdit = mode === "edit";
-  // HSM baru dikelola di api.co.id (immutable di Meta) → tidak bisa di-edit; edit hanya quick_reply lokal.
+  // HSM dikelola di Meta (immutable setelah submit) → tidak bisa di-edit; edit hanya quick_reply lokal.
   const [kind, setKind] = useState<Kind>(initial?.kind ?? "quick_reply");
+  const [waChannelId, setWaChannelId] = useState(waChannels[0]?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category || HSM_CATEGORIES[1]);
   const [language, setLanguage] = useState(initial?.language || "id");
@@ -37,7 +40,7 @@ export function TemplateForm({
   const [vars, setVars] = useState<Record<number, string>>({});
   const [pending, start] = useTransition();
 
-  // Jumlah placeholder {{n}} di body → minta contoh nilai (syarat api.co.id/Meta).
+  // Jumlah placeholder {{n}} di body → minta contoh nilai (syarat review Meta).
   const placeholders = useMemo(() => {
     const nums = new Set<number>();
     for (const m of body.matchAll(/\{\{(\d+)\}\}/g)) nums.add(Number(m[1]));
@@ -53,12 +56,14 @@ export function TemplateForm({
       // Validasi: nama HSM Meta = huruf kecil/angka/underscore.
       if (!/^[a-z0-9_]+$/.test(name.trim()))
         return gooeyToast.error("Nama HSM hanya huruf kecil, angka, underscore (mis. order_update)");
+      if (!waChannelId) return gooeyToast.error("Pilih channel WhatsApp Official");
       const missing = placeholders.filter((n) => !(vars[n] && vars[n].trim()));
       if (missing.length) return gooeyToast.error(`Isi contoh nilai untuk variabel {{${missing[0]}}}`);
       const variables = placeholders.map((n) => vars[n].trim());
       start(async () => {
         try {
           const res = await createWaTemplate({
+            channelId: waChannelId,
             templateName: name.trim(),
             category,
             language: language.trim() || "id",
@@ -111,7 +116,7 @@ export function TemplateForm({
               <div>
                 <label className="mb-2 block text-sm font-medium text-foreground">Jenis</label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {kinds.filter((k) => APICO_ENABLED || k.value === "quick_reply").map((k) => {
+                  {kinds.filter((k) => waChannels.length > 0 || k.value === "quick_reply").map((k) => {
                     const Icon = k.icon;
                     return (
                       <button
@@ -153,6 +158,25 @@ export function TemplateForm({
                 <p className="mt-1.5 text-xs text-muted-foreground">Huruf kecil, angka, underscore. Unik per bahasa.</p>
               )}
             </div>
+
+            {kind === "hsm" && !isEdit && (
+              <div>
+                <label htmlFor="waChannel" className="mb-1.5 block text-sm font-medium text-foreground">
+                  Channel WhatsApp Official
+                </label>
+                <select
+                  id="waChannel"
+                  value={waChannelId}
+                  onChange={(e) => setWaChannelId(e.target.value)}
+                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+                >
+                  {waChannels.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-muted-foreground">Template disimpan di akun WhatsApp Business (WABA) channel ini.</p>
+              </div>
+            )}
 
             {kind === "hsm" && (
               <div className="grid grid-cols-2 gap-3">

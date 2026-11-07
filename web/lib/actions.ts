@@ -20,14 +20,9 @@ import { requireSession, type Session } from "./session";
 import { normalizePhone } from "./phone";
 import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
-import {
-  listApiCoAccounts as fetchApiCoAccounts,
-  type ApiCoAccountsResult,
-  createApiCoTemplate,
-  submitApiCoTemplate,
-  type CreateTemplateInput,
-} from "./apico-server";
+import { createWaTemplateOnMeta, listWaChannelCreds, type CreateWaTemplateInput } from "./wa-templates";
 import { getConversation } from "./queries";
+import { compileGraph, starterGraph, validateRuntimeNodes } from "./flow-graph";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
@@ -42,9 +37,8 @@ import {
   verifyOAuthSession,
 } from "./facebook";
 import {
+  ensureWaPhoneRegistered,
   exchangeWaCode,
-  getWaPhoneInfo,
-  registerWaPhone,
   subscribeWabaToApp,
 } from "./whatsapp";
 
@@ -361,8 +355,6 @@ export async function createChannel(input: {
   name: string;
   credentials: Record<string, string>;
   externalId?: string;
-  // Transport provider: undefined = integrasi langsung (Meta/Telegram), "apico" = via api.co.id.
-  provider?: "apico";
 }) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
@@ -370,25 +362,19 @@ export async function createChannel(input: {
   if (!input.name.trim()) throw new Error("Nama channel wajib");
   await assertCanAddChannel(session); // lock: batas channel per paket (admin bypass)
 
-  // Cegah channel phantom: provider apico HANYA boleh untuk akun yang benar-benar
-  // terhubung di api.co.id. Validasi external_id ke daftar resmi + ambil nilai dari
-  // sumber tepercaya (jangan percaya input mentah). Tanpa ini channel "Terhubung" palsu
-  // → tak ada resource di api.co.id → pesan masuk tak pernah datang.
-  if (input.provider === "apico") {
-    const { accounts, error } = await fetchApiCoAccounts(input.type);
-    // Bedakan gagal-menghubungi dari kosong-beneran: dulu keduanya jadi "Belum ada
-    // akun" yang menyesatkan saat penyebab asli key salah/endpoint/network.
-    if (error) {
-      throw new Error(`Gagal menghubungi penyedia WhatsApp: ${error}`);
+  // WA Official (input manual): validasi token ke Graph, pastikan nomor ter-register,
+  // subscribe app ke WABA (tanpa ini webhook tak pernah datang), dan pakai
+  // phone_number_id sebagai external_id (kunci resolver webhook di gateway).
+  if (input.type === "wa_official") {
+    const phoneNumberId = input.credentials.phone_number_id?.trim() ?? "";
+    const wabaId = input.credentials.waba_id?.trim() ?? "";
+    const token = input.credentials.access_token?.trim() ?? "";
+    if (!phoneNumberId || !wabaId || !token) {
+      throw new Error("Phone Number ID, WABA ID, dan Access Token wajib diisi");
     }
-    if (accounts.length === 0) {
-      throw new Error("Belum ada akun untuk tipe ini. Hubungkan dulu akun kamu.");
-    }
-    const match = accounts.find((a) => a.externalId === input.externalId);
-    if (!match) {
-      throw new Error("Akun tidak ditemukan. Pilih dari daftar yang tersedia.");
-    }
-    input.externalId = match.externalId;
+    await prepareWaOfficial({ phoneNumberId, wabaId, token, pin: input.credentials.pin?.trim() });
+    input.credentials = { phone_number_id: phoneNumberId, waba_id: wabaId, access_token: token };
+    input.externalId = phoneNumberId;
   }
 
   // unofficial butuh scan QR (gateway) → pending; lainnya langsung connected kalau creds ada.
@@ -402,8 +388,6 @@ export async function createChannel(input: {
       status,
       credentials: encryptCreds(input.credentials), // AES-256-GCM at-rest
       externalId: input.externalId || null,
-      // meta.provider dibaca gateway untuk pilih adapter transport (apico vs Meta langsung).
-      meta: input.provider ? { provider: input.provider } : {},
       // Balas otomatis: unofficial default OFF (nomor pribadi rawan banned bila
       // auto-reply) — harus di-ON-kan sadar risiko. Channel resmi default ON.
       autoReplyEnabled: input.type !== "wa_unofficial",
@@ -418,7 +402,7 @@ export async function createChannel(input: {
     const base = process.env.TELEGRAM_WEBHOOK_BASE;
     if (!base) {
       // Tanpa webhook, Telegram tak tahu ke mana kirim update → inbound tak pernah
-      // datang. Jangan tandai "connected" palsu (mirip phantom apico); set pending.
+      // datang. Jangan tandai "connected" palsu; set pending.
       await db
         .update(channels)
         .set({ status: "pending" })
@@ -451,12 +435,25 @@ export async function createChannel(input: {
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
 }
 
-// Daftar akun api.co.id yang ASLI terhubung (utk picker connect channel). Tenant-scoped
-// via session + butuh ability channel.connect. Mengembalikan [] kalau key/akun kosong.
-export async function listApiCoAccounts(type: ChannelType): Promise<ApiCoAccountsResult> {
-  const session = await requireSession();
-  requireAbility(session, "channel.connect");
-  return fetchApiCoAccounts(type);
+// Validasi + siapkan nomor WA Official sebelum disimpan sebagai channel:
+//  1. phone_number_id belum dipakai channel lain (resolver webhook butuh external_id unik).
+//  2. token valid + nomor ter-register Cloud API (register pakai PIN bila belum).
+//  3. app ter-subscribe ke WABA supaya webhook pesan masuk aktif.
+async function prepareWaOfficial(input: {
+  phoneNumberId: string;
+  wabaId: string;
+  token: string;
+  pin?: string;
+}): Promise<{ name: string }> {
+  const dup = await db.query.channels.findFirst({
+    where: and(eq(channels.type, "wa_official"), eq(channels.externalId, input.phoneNumberId)),
+    columns: { id: true },
+  });
+  if (dup) throw new Error("Nomor WhatsApp ini sudah terhubung sebagai channel");
+
+  const info = await ensureWaPhoneRegistered(input.phoneNumberId, input.token, input.pin);
+  await subscribeWabaToApp(input.wabaId, input.token);
+  return { name: info.verifiedName || info.displayPhoneNumber || "WhatsApp" };
 }
 
 // --- Toggle balas otomatis (flow + AI) per-channel. Engine baca kolom ini di
@@ -564,6 +561,7 @@ export async function connectWhatsAppEmbedded(input: {
   code: string;
   wabaId: string;
   phoneNumberId: string;
+  pin?: string;
 }): Promise<void> {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
@@ -571,28 +569,18 @@ export async function connectWhatsAppEmbedded(input: {
   if (!input.code || !input.wabaId || !input.phoneNumberId) {
     throw new Error("Data Embedded Signup tidak lengkap");
   }
+  await assertCanAddChannel(session);
 
   // 1. Tukar code → business token (non-expiring).
   const token = await exchangeWaCode(input.code);
 
-  // 2. Subscribe app ke WABA → webhook pesan aktif.
-  await subscribeWabaToApp(input.wabaId, token);
-
-  // 3. Register nomor ke Cloud API (best-effort — bisa sudah ter-register).
-  try {
-    await registerWaPhone(input.phoneNumberId, token, "000000");
-  } catch {
-    /* sudah register / butuh PIN custom → tetap lanjut simpan channel */
-  }
-
-  // 4. Nama channel dari display number.
-  let name = "WhatsApp";
-  try {
-    const info = await getWaPhoneInfo(input.phoneNumberId, token);
-    name = info.verifiedName || info.displayPhoneNumber || name;
-  } catch {
-    /* abaikan — pakai default */
-  }
+  // 2. Cek duplikat, register nomor (PIN bila belum), subscribe app ke WABA.
+  const { name } = await prepareWaOfficial({
+    phoneNumberId: input.phoneNumberId,
+    wabaId: input.wabaId,
+    token,
+    pin: input.pin,
+  });
 
   // external_id = phone_number_id (resolver gateway WA). credentials utk kirim balasan.
   await db.insert(channels).values({
@@ -712,10 +700,9 @@ export async function createAndRunBroadcast(input: {
   // Channel WAJIB milik tenant ini — cegah broadcast lewat channel tenant lain.
   const channel = await db.query.channels.findFirst({
     where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
-    columns: { id: true, type: true, status: true, meta: true },
+    columns: { id: true, type: true, status: true },
   });
   if (!channel) throw new Error("Channel tidak ditemukan");
-  if ((channel.meta as { provider?: string })?.provider === "apico") throw new Error("Integrasi provider ini sudah dinonaktifkan");
   if (channel.status !== "connected") throw new Error("Channel belum terhubung");
   if (!["wa_official", "wa_unofficial"].includes(channel.type)) throw new Error("Broadcast hanya untuk WhatsApp");
   if (!input.name.trim()) throw new Error("Nama broadcast wajib diisi");
@@ -791,10 +778,9 @@ export async function startConversation(input: {
   // Channel wajib milik tenant (cegah IDOR lintas-tenant).
   const ch = await db.query.channels.findFirst({
     where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
-    columns: { id: true, status: true, meta: true },
+    columns: { id: true, status: true },
   });
   if (!ch) throw new Error("Channel tidak ditemukan");
-  if ((ch.meta as { provider?: string })?.provider === "apico") throw new Error("Integrasi provider ini sudah dinonaktifkan");
   if (ch.status !== "connected") throw new Error("Channel belum terhubung");
 
   const res = await fetch(`${ENGINE}/conversations/start`, {
@@ -932,26 +918,11 @@ export async function createFlow() {
       name: "Flow Baru",
       status: "draft",
       trigger: "welcome",
-      definition: {
-        nodes: [
-          { id: "start", type: "trigger", trigger: { kind: "welcome", match: [] }, next: "menu" },
-          { id: "menu", type: "send_text", text: "Halo 👋 silakan pilih:\nA. Informasi\nB. Hubungi agen", next: "menu_wait" },
-          { id: "menu_wait", type: "wait_reply", save_as: "pilihan", normalize: "choice", next: "menu_branch" },
-          { id: "menu_branch", type: "condition", branches: [{ if: "pilihan == 'a'", next: "info" }, { if: "pilihan == 'b'", next: "agent" }], else: "menu" },
-          { id: "info", type: "send_text", text: "Informasi akan kami kirimkan segera." },
-          { id: "agent", type: "handoff", to: "agent" },
-        ],
-        menu: {
-          type: "choice_menu",
-          prompt: "Halo 👋 silakan pilih:\nA. Informasi\nB. Hubungi agen",
-          saveAs: "pilihan",
-          invalidText: "Pilihan belum dikenali. Balas A atau B.",
-          options: [
-            { code: "A", label: "Informasi", response: "Informasi akan kami kirimkan segera." },
-            { code: "B", label: "Hubungi agen", response: "Baik, kami alihkan ke agen." },
-          ],
-        },
-      },
+      // New flows open on the canvas: trigger (pesan pertama) → greeting.
+      definition: (() => {
+        const graph = starterGraph();
+        return { nodes: compileGraph(graph).nodes, ui: graph };
+      })(),
     })
     .returning({ id: flows.id });
   redirect(`/flows/${row.id}`);
@@ -970,9 +941,15 @@ export async function saveFlow(
   requireAbility(session, "flow.manage");
   if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.name.trim()) throw new Error("Nama flow wajib diisi");
+  if (!["draft", "active"].includes(input.status)) throw new Error("Status flow tidak valid");
+  if (!["keyword", "welcome", "fallback"].includes(input.trigger)) throw new Error("Jenis pemicu tidak valid");
   const definition = input.definition as {
+    nodes?: unknown;
     menu?: { prompt?: unknown; saveAs?: unknown; invalidText?: unknown; options?: unknown[] };
   };
+  // Runtime nodes are what the engine executes — reject broken wiring server-side.
+  const runtimeError = validateRuntimeNodes(definition?.nodes);
+  if (runtimeError) throw new Error(runtimeError);
   if (definition?.menu) {
     const menu = definition.menu;
     if (typeof menu.prompt !== "string" || !menu.prompt.trim()) throw new Error("Pesan menu wajib diisi");
@@ -1007,6 +984,7 @@ export async function saveFlow(
       status: input.status,
       trigger: input.trigger,
       definition: input.definition as object,
+      updatedAt: sql`now()`,
     })
     .where(and(eq(flows.id, id), eq(flows.tenantId, session.tenantId)));
   revalidatePath(`/flows/${id}`);
@@ -1457,20 +1435,22 @@ export async function updateTemplate(id: string, input: TemplateInput) {
   redirect("/templates");
 }
 
-// Buat template WhatsApp (HSM) lewat api.co.id: create draft → submit ke Meta.
-// HSM = sumber kebenaran di api.co.id (status disinkron Meta), bukan tabel lokal.
-export async function createWaTemplate(input: CreateTemplateInput): Promise<{ status: string }> {
+// Buat template WhatsApp (HSM) langsung di WABA channel terpilih lewat Graph API.
+// Meta = sumber kebenaran (status review), bukan tabel lokal.
+export async function createWaTemplate(input: CreateWaTemplateInput): Promise<{ status: string }> {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
+  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
   if (!input.templateName.trim()) throw new Error("Nama template wajib diisi");
   if (!input.body.trim()) throw new Error("Isi template wajib diisi");
-  const created = await createApiCoTemplate(input);
-  if ("error" in created) throw new Error(`Gagal membuat template: ${created.error}`);
-  const submitted = await submitApiCoTemplate(created.id);
-  if ("error" in submitted)
-    throw new Error(`Template dibuat tapi gagal submit ke Meta: ${submitted.error}`);
+  // Channel diambil dari DB dengan filter tenant sesi (cegah pakai WABA tenant lain).
+  const [ch] = await listWaChannelCreds(session.tenantId, input.channelId);
+  if (!ch) throw new Error("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
+  const { channelId: _channelId, ...rest } = input;
+  void _channelId;
+  const created = await createWaTemplateOnMeta(ch, rest);
   revalidatePath("/templates");
-  return { status: submitted.status };
+  return { status: created.status };
 }
 
 export async function deleteTemplate(id: string) {

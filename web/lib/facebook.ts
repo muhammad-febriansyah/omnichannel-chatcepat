@@ -38,13 +38,13 @@ export interface FbPage {
 }
 
 function appId(): string {
-  const v = process.env.FB_APP_ID ?? process.env.META_APP_ID;
+  const v = process.env.FB_APP_ID || process.env.META_APP_ID;
   if (!v) throw new Error("FB_APP_ID belum di-set");
   return v;
 }
 
 function appSecret(): string {
-  const v = process.env.FB_APP_SECRET ?? process.env.META_APP_SECRET;
+  const v = process.env.FB_APP_SECRET || process.env.META_APP_SECRET;
   if (!v) throw new Error("FB_APP_SECRET belum di-set");
   return v;
 }

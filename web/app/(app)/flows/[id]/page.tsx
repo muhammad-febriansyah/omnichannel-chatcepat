@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { FlowEditor } from "@/components/app/flow-editor";
+import { FlowBuilder } from "@/components/app/flow-builder/flow-builder";
 
 export default async function FlowEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,11 +15,11 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
   if (!flow) notFound();
 
   return (
-    <FlowEditor
+    <FlowBuilder
       id={flow.id}
       name={flow.name}
       status={flow.status as "draft" | "active"}
-      definition={(flow.definition as { nodes?: unknown[] }) ?? { nodes: [] }}
+      definition={flow.definition ?? { nodes: [] }}
     />
   );
 }

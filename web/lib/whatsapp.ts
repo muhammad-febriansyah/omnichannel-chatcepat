@@ -6,21 +6,22 @@
 //
 // ENV (server): FB_APP_ID/META_APP_ID, FB_APP_SECRET/META_APP_SECRET.
 
-const GRAPH_VERSION = "v23.0";
-const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+// Satu sumber versi Graph API untuk semua helper WA di web. Bisa di-override via env.
+export const GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v23.0";
+export const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 function appId(): string {
-  const v = process.env.FB_APP_ID ?? process.env.META_APP_ID;
+  const v = process.env.FB_APP_ID || process.env.META_APP_ID;
   if (!v) throw new Error("FB_APP_ID belum di-set");
   return v;
 }
 function appSecret(): string {
-  const v = process.env.FB_APP_SECRET ?? process.env.META_APP_SECRET;
+  const v = process.env.FB_APP_SECRET || process.env.META_APP_SECRET;
   if (!v) throw new Error("FB_APP_SECRET belum di-set");
   return v;
 }
 
-async function graphError(res: Response): Promise<never> {
+export async function graphError(res: Response): Promise<never> {
   let msg = `${res.status}`;
   try {
     const j = await res.json();
@@ -52,31 +53,52 @@ export async function subscribeWabaToApp(wabaId: string, token: string): Promise
   if (!res.ok) await graphError(res);
 }
 
-// Register nomor ke Cloud API (wajib supaya bisa kirim). PIN = two-step verification.
-// Best-effort: kalau nomor sudah ter-register, Graph balas error → diabaikan pemanggil.
+// Register nomor ke Cloud API (wajib supaya bisa kirim). PIN = two-step verification
+// 6 digit: untuk nomor baru, PIN ini yang di-set; untuk nomor yang sudah punya 2FA,
+// harus sama dengan PIN lama.
 export async function registerWaPhone(phoneNumberId: string, token: string, pin: string): Promise<void> {
   const res = await fetch(`${GRAPH}/${phoneNumberId}/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ messaging_product: "whatsapp", pin }),
     cache: "no-store",
   });
   if (!res.ok) await graphError(res);
 }
 
-// Info nomor utk nama channel (display number + verified name).
-export async function getWaPhoneInfo(
-  phoneNumberId: string,
-  token: string,
-): Promise<{ displayPhoneNumber: string; verifiedName: string }> {
+// Info nomor: nama channel (display number + verified name) + status registrasi Cloud API.
+// Sekaligus validasi token: token salah / bukan pemilik nomor → Graph error.
+export type WaPhoneInfo = {
+  displayPhoneNumber: string;
+  verifiedName: string;
+  platformType: string; // CLOUD_API bila sudah ter-register ke Cloud API
+};
+
+export async function getWaPhoneInfo(phoneNumberId: string, token: string): Promise<WaPhoneInfo> {
   const url = new URL(`${GRAPH}/${phoneNumberId}`);
-  url.searchParams.set("fields", "display_phone_number,verified_name");
-  url.searchParams.set("access_token", token);
-  const res = await fetch(url, { cache: "no-store" });
+  url.searchParams.set("fields", "display_phone_number,verified_name,platform_type");
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!res.ok) await graphError(res);
-  const j = (await res.json()) as { display_phone_number?: string; verified_name?: string };
+  const j = (await res.json()) as { display_phone_number?: string; verified_name?: string; platform_type?: string };
   return {
     displayPhoneNumber: j.display_phone_number ?? "",
     verifiedName: j.verified_name ?? "",
+    platformType: j.platform_type ?? "",
   };
+}
+
+// Pastikan nomor siap kirim: kalau belum ter-register ke Cloud API, register pakai PIN.
+// Nomor yang sudah CLOUD_API dilewati (register ulang tak perlu dan bisa gagal karena PIN).
+export async function ensureWaPhoneRegistered(
+  phoneNumberId: string,
+  token: string,
+  pin: string | undefined,
+): Promise<WaPhoneInfo> {
+  const info = await getWaPhoneInfo(phoneNumberId, token);
+  if (info.platformType === "CLOUD_API") return info;
+  if (!pin || !/^\d{6}$/.test(pin)) {
+    throw new Error("Nomor belum terdaftar di Cloud API. Isi PIN verifikasi dua langkah (6 digit).");
+  }
+  await registerWaPhone(phoneNumberId, token, pin);
+  return { ...info, platformType: "CLOUD_API" };
 }

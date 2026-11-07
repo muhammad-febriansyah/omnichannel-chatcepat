@@ -12,7 +12,8 @@ import { CHANNEL_META, ChannelType, cleanIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Channel = { id: string; name: string; type: string };
-export type TemplateOpt = { name: string; body: string; language: string };
+// channelId = channel (WABA) pemilik template; template hanya valid untuk channel itu.
+export type TemplateOpt = { name: string; body: string; language: string; channelId: string };
 
 const STEPS = ["Audience", "Pesan", "Konfirmasi"];
 const STEP_DESC = [
@@ -24,7 +25,7 @@ const STEP_DESC = [
 export function BroadcastWizard({
   channels,
   tags,
-  templates = [],
+  templates: allTemplates = [],
 }: {
   channels: Channel[];
   tags: string[];
@@ -40,6 +41,7 @@ export function BroadcastWizard({
   const [pending, start] = useTransition();
 
   const channel = channels.find((c) => c.id === channelId);
+  const templates = allTemplates.filter((t) => t.channelId === channelId);
   const isUnofficial = channel?.type === "wa_unofficial";
   const isOfficial = channel?.type === "wa_official";
   const useTemplate = isOfficial && !!templateName;
