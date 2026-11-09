@@ -9,6 +9,11 @@ import { userError } from "@/lib/action-error";
 //   FB_APP_SECRET    — App Secret Meta (fallback META_APP_SECRET)
 //   APP_BASE_URL     — origin publik web (mis. https://www.chatcepat.id)
 //   NEXTAUTH_SECRET  — dipakai menandatangani state OAuth (anti-CSRF)
+//
+// ENV opsional (Facebook Login for Business / Unified login):
+//   FB_LOGIN_CONFIG_ID — Configuration ID (token type: User access token). Bila diisi,
+//                        dialog login memakai config_id, bukan daftar scope.
+//   IG_LOGIN_CONFIG_ID — config khusus Instagram (default: FB_LOGIN_CONFIG_ID).
 
 import { SignJWT, jwtVerify } from "jose";
 
@@ -131,12 +136,23 @@ export async function verifyOAuthSession(
 
 // --- OAuth dialog ---
 
+// Configuration ID from App Dashboard → Facebook Login for Business → Configurations.
+// It must use "User access token": the callback lists the user's Pages (/me/accounts).
+export function loginConfigId(platform: MetaPlatform): string | null {
+  const v = (platform === "instagram" ? process.env.IG_LOGIN_CONFIG_ID : undefined) || process.env.FB_LOGIN_CONFIG_ID;
+  return v?.trim() || null;
+}
+
 export function authDialogUrl(state: string, platform: MetaPlatform): string {
   const u = new URL(`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`);
   u.searchParams.set("client_id", appId());
   u.searchParams.set("redirect_uri", redirectUri());
   u.searchParams.set("state", state);
-  u.searchParams.set("scope", SCOPES[platform]);
+  // Facebook Login for Business takes its permissions from the configuration;
+  // without one, fall back to the classic scope list.
+  const configId = loginConfigId(platform);
+  if (configId) u.searchParams.set("config_id", configId);
+  else u.searchParams.set("scope", SCOPES[platform]);
   u.searchParams.set("response_type", "code");
   return u.toString();
 }
