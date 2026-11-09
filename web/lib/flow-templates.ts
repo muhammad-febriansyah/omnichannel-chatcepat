@@ -2,7 +2,7 @@
 // normal canvas graph, so everything stays editable after it is created.
 // Pure module: used by the template gallery, createFlowFromTemplate and tests.
 
-import { DEFAULT_AI_CONFIG, type AiConfig } from "./ai-agent-options";
+import { DEFAULT_AI_CONFIG, PROMPT_TEMPLATES, type AiConfig } from "./ai-agent-options";
 import { autoLayout, newId, type FlowGraph, type GraphEdge, type GraphNode, type NodeDataMap, type NodeKind } from "./flow-graph";
 
 export type TemplateCategory = "chat" | "broadcast" | "komentar" | "ai" | "penjualan";
@@ -11,7 +11,7 @@ export const TEMPLATE_CATEGORIES: { value: TemplateCategory; label: string }[] =
   { value: "chat", label: "Chat & Menu" },
   { value: "broadcast", label: "Broadcast" },
   { value: "komentar", label: "Komentar FB/IG" },
-  { value: "ai", label: "Asisten AI" },
+  { value: "ai", label: "AI Agent" },
   { value: "penjualan", label: "Penjualan & Leads" },
 ];
 
@@ -75,8 +75,8 @@ class G {
 
 // AI step with its own settings (only this step answers this way).
 const ai = (patch: Partial<AiConfig>): NodeDataMap["ai_agent"] => ({ ai: { ...DEFAULT_AI_CONFIG, ...patch }, mode: "custom" });
-// AI step that answers with the channel's assistant (menu Asisten AI) — one flow, many accounts.
-const assistant = (): NodeDataMap["ai_agent"] => ({ ai: DEFAULT_AI_CONFIG, mode: "channel" });
+// Friendly customer-service AI step (identity & business info are filled in on the step).
+const assistant = (): NodeDataMap["ai_agent"] => ai({ role: "cs", tone: "ramah", emoji: "sedikit", instructions: PROMPT_TEMPLATES.cs });
 // "Awal percakapan": first message, and again when a customer returns after 12 quiet hours.
 const welcome = (): NodeDataMap["trigger"] => ({ kind: "welcome", keywords: [], idleHours: 12 });
 
@@ -291,8 +291,8 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Buat asisten di menu Asisten AI (nama, prompt, info bisnis)", "Jadikan asisten itu default", "Unggah dokumen pengetahuan (FAQ, harga, kebijakan)"],
-    steps: ["Pesan tak dikenali", "Asisten AI default", "Perlu CS → Alihkan"],
+    setup: ["Di langkah AI Agent: isi nama asisten, nama bisnis & info bisnis", "Sesuaikan prompt CS bila perlu", "Unggah dokumen pengetahuan (FAQ, harga, kebijakan)"],
+    steps: ["Pesan tak dikenali", "AI Agent (CS ramah)", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
       const t = g.add("trigger", { kind: "fallback", keywords: [] });
@@ -432,7 +432,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "chat",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Ubah variasi sapaan di Kirim Teks", "Atur asisten default di menu Asisten AI"],
+    setup: ["Ubah variasi sapaan di Kirim Teks", "Isi nama & info bisnis di langkah AI Agent"],
     steps: ["Awal percakapan", "Sapaan (4 variasi)", "Tunggu pertanyaan", "AI menjawab", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
@@ -460,7 +460,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Menengah",
-    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Atur asisten default di menu Asisten AI"],
+    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Isi nama & info bisnis di langkah AI Agent"],
     steps: ["Awal percakapan", "Menu 4 pilihan", "Katalog / promo / AI / CS"],
     build() {
       const g = new G();

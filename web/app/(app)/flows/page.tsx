@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock, LayoutTemplate, GraduationCap, Megaphone, ShieldCheck, Settings2 } from "lucide-react";
-import { loadAgents, loadBroadcastHistory } from "@/lib/automation-data";
+import { loadBroadcastHistory } from "@/lib/automation-data";
 import { ReplySettings } from "@/components/app/reply-settings";
 import type { FallbackAction } from "@/lib/actions";
 import { BroadcastsTable } from "@/components/app/broadcasts-table";
@@ -38,22 +38,17 @@ async function load(tenantId: string | null) {
 
 // Automation → Pengaturan Balasan: per-account auto-reply + what happens when no flow matches.
 async function replySettings(tenantId: string) {
-  const [accounts, agents] = await Promise.all([
-    db.query.channels.findMany({
-      where: eq(channels.tenantId, tenantId),
-      orderBy: [desc(channels.createdAt)],
-      columns: { id: true, name: true, type: true, status: true, autoReplyEnabled: true, fallbackAction: true, fallbackMessage: true },
-    }),
-    loadAgents(tenantId),
-  ]);
+  const accounts = await db.query.channels.findMany({
+    where: eq(channels.tenantId, tenantId),
+    orderBy: [desc(channels.createdAt)],
+    columns: { id: true, name: true, type: true, status: true, autoReplyEnabled: true, fallbackAction: true, fallbackMessage: true },
+  });
   const first = accounts[0];
-  const def = agents.find((a) => a.isDefault && a.isActive);
   return (
     <ReplySettings
       accounts={accounts.map((c) => ({ id: c.id, name: c.name, type: c.type, status: c.status, autoReply: c.autoReplyEnabled }))}
       fallbackAction={(first?.fallbackAction ?? "message") as FallbackAction}
       fallbackMessage={first?.fallbackMessage ?? ""}
-      defaultAgent={def ? { id: def.id, name: def.name } : null}
     />
   );
 }

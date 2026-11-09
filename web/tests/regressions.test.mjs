@@ -277,6 +277,7 @@ test("flow AI node modes: channel assistant, chosen assistant, or own settings",
     edges: [{ id: "1", source: "t", sourceHandle: "out", target: "a" }],
   });
   const ai = fg.defaultData("ai_agent").ai;
+  assert.equal(fg.defaultData("ai_agent").mode, "custom", "new AI steps are configured on the step itself");
 
   // channel: no ai, no agent_id → engine uses channel.ai_agent_id / tenant default
   const ch = fg.compileGraph(mk({ ai, mode: "channel" })).nodes;
@@ -374,9 +375,13 @@ test("every flow template builds a valid, compilable graph", () => {
     const trig = fg.compileGraph(tpl.findTemplate(id).build()).nodes.find((n) => n.type === "trigger");
     assert.equal(trig.trigger.idle_hours, 12, `${id} idle hours`);
   }
+  // AI steps carry their own friendly-CS settings (no separate assistant menu needed).
   for (const id of ["ai-faq", "natural-greeting-ai", "menu-ai-hybrid"]) {
     const bot = fg.compileGraph(tpl.findTemplate(id).build()).nodes.find((n) => n.type === "ai_agent");
-    assert.ok(bot && bot.ai === undefined && bot.agent_id === undefined, `${id} uses the channel assistant`);
+    assert.ok(bot?.ai, `${id} has its own AI settings`);
+    assert.equal(bot.ai.role, "cs");
+    assert.equal(bot.ai.tone, "ramah");
+    assert.match(bot.ai.instructions, /Customer Service/);
   }
   assert.ok(fg.compileGraph(tpl.findTemplate("ai-complaint").build()).nodes.find((n) => n.type === "ai_agent").ai, "complaint keeps its own style");
   const c2d = tpl.findTemplate("comment-to-dm").build();

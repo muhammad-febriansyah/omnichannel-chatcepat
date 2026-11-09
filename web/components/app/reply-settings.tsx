@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Bot, Loader2, MessageSquareOff, MessageSquareText, Save, Sparkles, Star } from "lucide-react";
+import { ArrowRight, Bot, Loader2, MessageSquareOff, MessageSquareText, Save, Sparkles } from "lucide-react";
 import { errorMessage } from "@/lib/action-error";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,12 @@ export type ReplyAccount = { id: string; name: string; type: string; status: str
 
 const DEFAULT_TEXT = "Terima kasih, pesan Anda kami terima. Agen kami akan segera membalas.";
 
+// AI answers are built as a flow (trigger Cadangan + AI Agent step). "ai" is only shown
+// for workspaces that picked it before, so the saved state stays visible.
 const FALLBACKS: { value: FallbackAction; label: string; hint: string; icon: React.ElementType }[] = [
-  { value: "ai", label: "Dijawab AI", hint: "Asisten default menjawab pertanyaan apa pun.", icon: Sparkles },
-  { value: "message", label: "Pesan tetap", hint: "Kirim satu pesan, lalu CS melanjutkan.", icon: MessageSquareText },
+  { value: "message", label: "Pesan tetap", hint: "Kirim satu pesan (sekali per percakapan), lalu CS melanjutkan.", icon: MessageSquareText },
   { value: "silent", label: "Diam", hint: "Tidak dibalas, tunggu CS di Inbox.", icon: MessageSquareOff },
+  { value: "ai", label: "Dijawab AI (lama)", hint: "Pengaturan lama. Sebaiknya pakai flow Cadangan + AI Agent.", icon: Sparkles },
 ];
 
 function AccountRow({ account }: { account: ReplyAccount }) {
@@ -68,12 +70,10 @@ export function ReplySettings({
   accounts,
   fallbackAction,
   fallbackMessage,
-  defaultAgent,
 }: {
   accounts: ReplyAccount[];
   fallbackAction: FallbackAction;
   fallbackMessage: string;
-  defaultAgent: { id: string; name: string } | null;
 }) {
   const [action, setAction] = useState<FallbackAction>(fallbackAction);
   const [message, setMessage] = useState(fallbackMessage);
@@ -120,8 +120,12 @@ export function ReplySettings({
       <section className="rounded-[20px] border border-border bg-card p-5 shadow-sm">
         <h2 className="text-[15px] font-semibold">Kalau tidak ada flow yang cocok</h2>
         <p className="mt-1 text-sm text-muted-foreground">Berlaku untuk semua akun di workspace ini.</p>
-        <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Kalau tidak ada flow yang cocok">
-          {FALLBACKS.map((f) => {
+        <div
+          className={cn("mt-3 grid gap-2", saved.action === "ai" ? "grid-cols-3" : "grid-cols-2")}
+          role="radiogroup"
+          aria-label="Kalau tidak ada flow yang cocok"
+        >
+          {FALLBACKS.filter((f) => f.value !== "ai" || saved.action === "ai").map((f) => {
             const Icon = f.icon;
             const on = action === f.value;
             return (
@@ -144,23 +148,16 @@ export function ReplySettings({
         </div>
         <p className="mt-2 text-xs text-muted-foreground">{FALLBACKS.find((f) => f.value === action)?.hint}</p>
 
-        {action === "ai" && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 p-3 text-xs text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
-            <Star className="size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1">
-              {defaultAgent ? (
-                <>
-                  Dijawab <b>{defaultAgent.name}</b> (asisten default).
-                </>
-              ) : (
-                "Belum ada asisten — AI memakai gaya bawaan."
-              )}
-            </span>
-            <Link href={defaultAgent ? `/ai-agent/${defaultAgent.id}` : "/ai-agent/new"} className="shrink-0 font-medium text-brand-blue hover:underline">
-              {defaultAgent ? "Ubah" : "Buat asisten"}
-            </Link>
-          </div>
-        )}
+        <Link
+          href="/flows?tab=template&kat=ai"
+          className="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 p-3 text-xs text-violet-900 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200"
+        >
+          <Sparkles className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            Ingin semua pertanyaan dijawab AI? Buat flow dari template <b>CS AI 24 Jam</b> (pemicu Cadangan + AI Agent).
+          </span>
+          <ArrowRight className="size-3.5 shrink-0" />
+        </Link>
 
         {action !== "silent" && (
           <label className="mt-3 block space-y-1.5">

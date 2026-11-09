@@ -10,7 +10,7 @@ const NODE_DOCS: NodeDoc[] = [
     kind: "trigger",
     what: "Titik awal flow. Pilih jenisnya: Keyword (pesan mengandung kata tertentu), Komentar FB/IG, Broadcast terjadwal, Klik tombol, Awal percakapan (pesan pertama, atau kembali setelah sekian jam tidak aktif), atau Cadangan (pesan yang tidak cocok flow lain).",
     when: "Setiap flow wajib punya tepat satu Pemicu. Atur juga “Berlaku untuk akun” bila flow hanya untuk akun tertentu, mis. Instagram toko A.",
-    tips: "Flow keyword dicek lebih dulu, lalu Awal percakapan, lalu Cadangan. Kalau tidak ada flow yang cocok, tab Pengaturan Balasan menentukan: dijawab Asisten AI, pesan tetap, atau diam.",
+    tips: "Flow keyword dicek lebih dulu, lalu Awal percakapan, lalu Cadangan. Kalau tidak ada flow yang cocok, tab Pengaturan Balasan menentukan: pesan tetap atau diam. Supaya dijawab AI, buat flow Cadangan + AI Agent.",
   },
   {
     kind: "broadcast_message",

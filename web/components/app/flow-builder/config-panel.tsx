@@ -4,8 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
-import Link from "next/link";
-import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical, Star, Bot, Settings2, ExternalLink } from "lucide-react";
+import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WaMessageEditor } from "@/components/app/wa-message-editor";
@@ -13,7 +12,6 @@ import {
   CONDITION_OPS,
   aiNodeMode,
   newId,
-  type AiNodeMode,
   type ConditionOp,
   type GraphNode,
   type NodeDataMap,
@@ -111,12 +109,6 @@ function KeywordInput({
 
 export type ChannelOption = { id: string; name: string; type: string; autoReply?: boolean };
 export type AgentOption = { id: string; name: string; isActive: boolean; isDefault: boolean };
-
-const AI_MODES: { value: AiNodeMode; label: string; desc: string; icon: React.ElementType }[] = [
-  { value: "channel", label: "Asisten default", desc: "Pakai asisten default dari menu Asisten AI.", icon: Star },
-  { value: "agent", label: "Pilih asisten", desc: "Pakai satu asisten dari menu Asisten AI.", icon: Bot },
-  { value: "custom", label: "Atur khusus", desc: "Prompt & gaya khusus untuk langkah ini saja.", icon: Settings2 },
-];
 
 const IDLE_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: "Hanya pesan pertama" },
@@ -226,12 +218,10 @@ export function ConfigPanel({
   docs = [],
   promos = [],
   channels = [],
-  agents = [],
   tags = [],
   templates = [],
   broadcastChannelId = null,
 }: {
-  agents?: AgentOption[];
   docs?: DocOption[];
   promos?: PromoItem[];
   channels?: ChannelOption[];
@@ -634,90 +624,17 @@ export function ConfigPanel({
       const data = node.data as NodeDataMap["ai_agent"];
       const ai = normalizeAiConfig(data?.ai);
       const mode = aiNodeMode(data);
-      const chosen = agents.find((a) => a.id === data?.agentId);
-      const modePicker = (
-        <Field label="Siapa yang menjawab">
-          <div className="space-y-1.5" role="radiogroup" aria-label="Siapa yang menjawab">
-            {AI_MODES.map((m) => {
-              const MIcon = m.icon;
-              const on = mode === m.value;
-              return (
-                <button
-                  key={m.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => set<"ai_agent">({ mode: m.value })}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition",
-                    on ? "border-brand-blue bg-blue-50 ring-2 ring-brand-blue/10 dark:bg-blue-500/10" : "border-border hover:bg-muted/50",
-                  )}
-                >
-                  <MIcon className={cn("size-4 shrink-0", on ? "text-brand-blue" : "text-muted-foreground")} />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-semibold">{m.label}</span>
-                    <span className="block text-[11px] text-muted-foreground">{m.desc}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-      );
-      const agentPicker =
-        mode === "agent" ? (
-          <Field label="Asisten">
-            {agents.length === 0 ? (
-              <p className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-                Belum ada asisten.{" "}
-                <Link href="/ai-agent/new" target="_blank" className="font-medium text-brand-blue hover:underline">
-                  Buat di menu Asisten AI
-                </Link>
-                .
-              </p>
-            ) : (
-              <NativeSelect
-                value={data?.agentId ?? ""}
-                onChange={(e) => {
-                  const a = agents.find((x) => x.id === e.target.value);
-                  set<"ai_agent">({ agentId: a?.id, agentName: a?.name });
-                }}
-                className={inputCls}
-              >
-                <NativeSelectOption value="">Pilih asisten…</NativeSelectOption>
-                {agents.map((a) => (
-                  <NativeSelectOption key={a.id} value={a.id}>
-                    {a.name}
-                    {a.isDefault ? " (default)" : ""}
-                    {a.isActive ? "" : " (nonaktif)"}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            )}
-            {chosen && !chosen.isActive && (
-              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">Asisten ini nonaktif — yang menjawab asisten default.</p>
-            )}
-          </Field>
-        ) : null;
-      const linkOut = (
-        <Link
-          href={mode === "agent" && chosen ? `/ai-agent/${chosen.id}` : "/ai-agent"}
-          target="_blank"
-          className="inline-flex items-center gap-1 text-xs font-medium text-brand-blue hover:underline"
-        >
-          <ExternalLink className="size-3.5" /> {mode === "agent" && chosen ? "Ubah & uji asisten ini" : "Kelola Asisten AI"}
-        </Link>
-      );
+      // Older steps answered with a saved assistant; one click moves them to settings
+      // on the step itself (where all AI options now live).
       body = mode !== "custom" ? (
-        <div className="space-y-4">
-          {modePicker}
-          {agentPicker}
-          {mode === "channel" && (
-            <p className="rounded-lg bg-violet-50 p-3 text-[11.5px] leading-relaxed text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
-              Menjawab dengan asisten yang diberi bintang default di menu Asisten AI. Ganti default kapan saja tanpa mengubah flow.
-            </p>
-          )}
-          {linkOut}
+        <div className="space-y-3">
+          <p className="rounded-lg bg-violet-50 p-3 text-[12px] leading-relaxed text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
+            Langkah ini masih memakai {mode === "agent" ? <b>asisten {data?.agentName ?? "tersimpan"}</b> : <b>asisten default</b>} dari
+            pengaturan lama. Atur prompt, gaya, dan info bisnis langsung di langkah ini.
+          </p>
+          <Button type="button" className="w-full" onClick={() => set<"ai_agent">({ mode: "custom", agentId: undefined, agentName: undefined })}>
+            <SlidersHorizontal className="size-4" /> Atur di langkah ini
+          </Button>
         </div>
       ) : (
         <Tabs defaultValue="atur" className="gap-4">
@@ -730,7 +647,6 @@ export function ConfigPanel({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="atur" className="space-y-3">
-            {modePicker}
             <AiConfigEditor value={ai} onChange={(next) => set<"ai_agent">({ ai: next })} docs={docs} promos={promos} />
             <div className="rounded-xl border border-dashed border-border p-3 text-[11.5px] leading-relaxed text-muted-foreground">
               <div className="mb-1.5 font-semibold text-foreground">Dua jalur keluar</div>

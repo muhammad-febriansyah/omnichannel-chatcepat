@@ -636,7 +636,6 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
               docs={docs}
               promos={promos}
               channels={channels}
-              agents={agents}
               tags={tags}
               templates={templates}
               broadcastChannelId={triggerData?.kind === "broadcast" ? (triggerData.channels?.[0] ?? null) : null}

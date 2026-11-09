@@ -142,7 +142,7 @@ export function defaultData<K extends NodeKind>(kind: K): NodeDataMap[K] {
     condition: { variable: "pesan", rules: [{ id: newId("r"), op: "contains", value: "" }] },
     set_var: { pairs: [{ id: newId("v"), key: "", value: "" }] },
     add_tag: { tags: [] },
-    ai_agent: { ai: DEFAULT_AI_CONFIG, mode: "channel" },
+    ai_agent: { ai: DEFAULT_AI_CONFIG, mode: "custom" },
     handoff: {},
     reply_comment: { texts: ["Terima kasih kak {{nama}}! Info lengkapnya sudah kami kirim lewat DM ya 🙏"] },
     private_reply: { text: "Halo kak {{nama}}, terima kasih sudah berkomentar! Ini info yang kakak tanyakan:" },
