@@ -464,6 +464,14 @@ test("comment reply nodes only make sense under a comment trigger", () => {
   assert.equal(trig.trigger.posts, undefined, "post filter only for comment triggers");
 });
 
+test("stale page after a deploy gets a reload hint instead of the raw Next.js error", () => {
+  const { errorMessage, isStaleDeploy, STALE_DEPLOY_MESSAGE } = loadTS("lib/action-error.ts");
+  const e = new Error('Server Action "60ba30c41d4c35ae9927a1ac944bc6a13c6b8602c9" was not found on the server. Read more: https://nextjs.org/docs/messages/failed-to-find-server-action');
+  assert.equal(isStaleDeploy(e), true);
+  assert.equal(errorMessage(e), STALE_DEPLOY_MESSAGE);
+  assert.equal(isStaleDeploy(new Error("Nama flow wajib diisi")), false);
+});
+
 test("server action errors stay readable in production (digest round trip)", () => {
   const { userError, errorMessage } = loadTS("lib/action-error.ts");
   const err = userError("Email sudah terdaftar");

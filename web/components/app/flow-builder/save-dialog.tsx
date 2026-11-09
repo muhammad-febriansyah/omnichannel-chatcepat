@@ -1,8 +1,8 @@
 "use client";
 
-import { errorMessage } from "@/lib/action-error";
+import { errorMessage, isStaleDeploy } from "@/lib/action-error";
 import { useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, Check, CheckCircle2, CircleDashed, FileClock, Loader2, Megaphone, Rocket, Save, Users, X, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CheckCircle2, CircleDashed, FileClock, Loader2, Megaphone, RefreshCw, Rocket, Save, Users, X, XCircle, Zap } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -78,7 +78,10 @@ export function SaveFlowDialog({
   summary,
   initialActivate,
   onSave,
+  onReload,
 }: {
+  // Page is older than the server (new deploy): keep the draft and reload.
+  onReload?: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   summary: SaveSummary;
@@ -90,6 +93,7 @@ export function SaveFlowDialog({
   const [activate, setActivate] = useState(initialActivate);
   const [steps, setSteps] = useState<StepState[]>(["wait", "wait", "wait"]);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState(false);
   const [clashes, setClashes] = useState<FlowClash[] | null>(null);
   const [bc, setBc] = useState<FlowBroadcastInfo | null>(null);
   const [result, setResult] = useState<FlowBroadcastResult | null>(null);
@@ -142,6 +146,7 @@ export function SaveFlowDialog({
       onOpenChange(false);
     } catch (e) {
       setSteps(["ok", "fail", "wait"]);
+      setStale(isStaleDeploy(e));
       setError(errorMessage(e) ?? "Gagal menyimpan flow");
       setPhase("error");
     }
@@ -331,9 +336,15 @@ export function SaveFlowDialog({
                 <Button variant="outline" onClick={() => onOpenChange(false)}>
                   <X className="size-4" /> Tutup
                 </Button>
-                <Button onClick={run}>
-                  <Save className="size-4" /> Coba lagi
-                </Button>
+                {stale && onReload ? (
+                  <Button onClick={onReload}>
+                    <RefreshCw className="size-4" /> Muat ulang (draf aman)
+                  </Button>
+                ) : (
+                  <Button onClick={run}>
+                    <Save className="size-4" /> Coba lagi
+                  </Button>
+                )}
               </AlertDialogFooter>
             )}
           </>

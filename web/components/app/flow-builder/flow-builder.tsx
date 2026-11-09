@@ -127,10 +127,59 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
 
   const markDirty = useCallback(() => setDirty(true), []);
 
+  // After a deploy the open page can't save (stale Server Action ids). The draft is kept
+  // in sessionStorage across the reload and restored here, so no work is lost.
+  const draftKey = `flow-draft:${id}`;
+  const reloading = useRef(false);
+  useEffect(() => {
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem(draftKey);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    const draftJson = raw;
+    // Applied after mount (external storage → state), cancelled on re-run.
+    const t = window.setTimeout(() => {
+      try {
+        sessionStorage.removeItem(draftKey);
+        const draft = JSON.parse(draftJson) as { name: string; definition: unknown };
+        const restored = toRF(loadGraph(draft.definition), agents);
+        setNodes(restored.nodes);
+        setEdges(restored.edges);
+        setName(draft.name);
+        setDirty(true);
+        gooeyToast.success("Draf dipulihkan", { description: "Klik Simpan untuk menyimpan perubahan Anda." });
+      } catch {
+        // Corrupt draft: keep the saved version.
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+    // Restore once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const reloadKeepingDraft = useCallback(() => {
+    const compiled = compileGraph(graph);
+    try {
+      sessionStorage.setItem(
+        draftKey,
+        JSON.stringify({ name, definition: { nodes: compiled.nodes, ui: { nodes: graph.nodes, edges: graph.edges } } }),
+      );
+    } catch {
+      // Storage blocked: reload anyway (the user chose to).
+    }
+    reloading.current = true;
+    window.location.reload();
+  }, [draftKey, graph, name]);
+
   // Warn before leaving with unsaved changes.
   useEffect(() => {
     if (!dirty) return;
-    const h = (e: BeforeUnloadEvent) => e.preventDefault();
+    const h = (e: BeforeUnloadEvent) => {
+      if (!reloading.current) e.preventDefault();
+    };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [dirty]);
@@ -607,6 +656,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
         summary={summary}
         initialActivate={lastActivate}
         onSave={persist}
+        onReload={reloadKeepingDraft}
       />
     </div>
   );
