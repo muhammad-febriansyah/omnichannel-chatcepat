@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { Plus, Package, PackageOpen, ImageOff } from "lucide-react";
+import { Plus, Package, PackageOpen, ImageOff, FileSpreadsheet } from "lucide-react";
 import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
@@ -52,9 +52,14 @@ export default async function ProductsPage() {
         title="Produk"
         description={`${rows.length} produk · dikirim otomatis saat pelanggan minta katalog`}
         actions={
-          <ActionLink href="/products/new">
-            <Plus className="size-4" /> Produk Baru
-          </ActionLink>
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/products/import" variant="outline">
+              <FileSpreadsheet className="size-4" /> Import Excel
+            </ActionLink>
+            <ActionLink href="/products/new">
+              <Plus className="size-4" /> Produk Baru
+            </ActionLink>
+          </div>
         }
       />
 

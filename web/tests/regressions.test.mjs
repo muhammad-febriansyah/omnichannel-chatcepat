@@ -390,6 +390,32 @@ test("every flow template builds a valid, compilable graph", () => {
   assert.ok(trig.trigger.match.includes("info"));
 });
 
+test("Excel/CSV import maps columns and rupiah prices", () => {
+  const ti = loadTS("lib/table-import.ts");
+  for (const [raw, want] of [["Rp150.000", 150000], ["150,000", 150000], ["1.250.000", 1250000], ["150000", 150000], ["150000.0", 150000], ["Rp 99.000", 99000], ["", NaN], ["gratis", NaN]]) {
+    assert.ok(Object.is(ti.parseRupiah(raw), want) || ti.parseRupiah(raw) === want, `${raw} → ${ti.parseRupiah(raw)}`);
+  }
+  const p = ti.rowsToProducts(
+    ["Nama Produk", "Harga (Rp)", "Stok", "Kode", "Kategori", "Keterangan"],
+    [["Susu Bebelac", "Rp150.000", "12", "SUS-1", "Susu", "0-6 bulan"], ["", "1000", "", "", "", ""], ["Popok", "mahal", "1", "", "", ""], ["Baju", "50.000", "", "", "", ""]],
+  );
+  assert.deepEqual(p.missing, []);
+  assert.deepEqual(p.items[0], { name: "Susu Bebelac", priceIdr: 150000, stock: 12, sku: "SUS-1", category: "Susu", description: "0-6 bulan" });
+  assert.equal(p.items[1].stock, 0, "empty stock = 0");
+  assert.deepEqual(p.errors.map((e) => e.row), [3, 4], "row numbers match the spreadsheet (header = row 1)");
+  assert.deepEqual(ti.rowsToProducts(["Judul", "Nilai"], [["a", "b"]]).missing, ["Nama", "Harga"]);
+
+  const f = ti.rowsToFaqs(["Pertanyaan", "Jawaban"], [["Bisa COD?", "Bisa"], ["ok", "x"], ["Jam buka?", ""]]);
+  assert.equal(f.items.length, 1);
+  assert.equal(f.errors.length, 2);
+  // The downloadable templates import cleanly.
+  const csv = (t) => t.trim().split("\n").map((l) => l.match(/("[^"]*"|[^,]+)/g).map((c) => c.replace(/^"|"$/g, "")));
+  const [ph, ...pr] = csv(ti.TEMPLATE_CSV.products);
+  assert.equal(ti.rowsToProducts(ph, pr).items.length, 2);
+  const [fh, ...fr] = csv(ti.TEMPLATE_CSV.faqs);
+  assert.equal(ti.rowsToFaqs(fh, fr).items.length, 2);
+});
+
 test("disabled flow steps are skipped at runtime and not validated", () => {
   const fg = loadTS("lib/flow-graph.ts");
   const node = (id, type, data, extra = {}) => ({ id, type, position: { x: 0, y: 0 }, data, ...extra });

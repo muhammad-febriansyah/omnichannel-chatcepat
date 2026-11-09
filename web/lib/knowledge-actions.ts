@@ -11,6 +11,9 @@ import { db } from "./db";
 import { aiUnanswered, knowledgeFaqs } from "./db/schema";
 import { requireAbility } from "./rbac";
 import { requireSession } from "./session";
+import { assertCanAddKb } from "./entitlements";
+import { enginePost } from "./engine-call";
+import { MAX_IMPORT_ROWS } from "./table-import";
 
 const MAX_FAQS = 500;
 
@@ -87,4 +90,60 @@ export async function setUnansweredStatus(id: string, status: "open" | "ignored"
     .set({ status })
     .where(and(eq(aiUnanswered.id, id), eq(aiUnanswered.tenantId, tenantId)));
   revalidatePath("/flows");
+}
+
+/** One public page of the business's own website → knowledge document. */
+export async function importKnowledgeUrl(url: string, title: string): Promise<{ chars: number }> {
+  const session = await requireSession();
+  requireAbility(session, "knowledge.manage");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const clean = url.trim();
+  if (!/^https?:\/\/\S+$/i.test(clean) || clean.length > 500) throw userError("Masukkan alamat lengkap, mis. https://tokoanda.com/faq");
+  await assertCanAddKb(session);
+  try {
+    const data = await enginePost<{ chars: number }>("/knowledge/url", session.role, {
+      tenant_id: session.tenantId,
+      url: clean,
+      title: title.trim().slice(0, 120) || null,
+    });
+    revalidatePath("/flows");
+    return { chars: data.chars };
+  } catch (e) {
+    throw userError(e instanceof Error ? e.message : "Gagal mengambil halaman");
+  }
+}
+
+const faqImportSchema = z
+  .array(
+    z.object({
+      question: z.string().trim().min(3).max(300),
+      answer: z.string().trim().min(1).max(2000),
+    }),
+  )
+  .min(1, "Tidak ada baris untuk diimpor")
+  .max(MAX_IMPORT_ROWS, `Maksimal ${MAX_IMPORT_ROWS} baris sekali impor`);
+
+/** Excel/CSV rows → Tanya-jawab. A question that already exists (same text) is skipped. */
+export async function importFaqs(items: { question: string; answer: string }[]): Promise<{ added: number; skipped: number }> {
+  const tenantId = await tenantSession();
+  const parsed = faqImportSchema.safeParse(items);
+  if (!parsed.success) throw userError(parsed.error.issues[0]?.message ?? "Data tidak valid");
+  const key = (q: string) => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const result = await db.transaction(async (tx) => {
+    const existing = await tx.select({ q: knowledgeFaqs.question }).from(knowledgeFaqs).where(eq(knowledgeFaqs.tenantId, tenantId));
+    const seen = new Set(existing.map((r) => key(r.q)));
+    const fresh = parsed.data.filter((r) => {
+      const k = key(r.question);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (existing.length + fresh.length > MAX_FAQS) {
+      throw userError(`Maksimal ${MAX_FAQS} tanya-jawab per workspace (sekarang ${existing.length})`);
+    }
+    if (fresh.length) await tx.insert(knowledgeFaqs).values(fresh.map((r) => ({ tenantId, question: r.question, answer: r.answer })));
+    return { added: fresh.length, skipped: parsed.data.length - fresh.length };
+  });
+  revalidatePath("/flows");
+  return result;
 }

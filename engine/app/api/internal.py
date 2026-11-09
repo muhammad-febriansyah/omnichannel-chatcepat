@@ -6,6 +6,8 @@ import asyncio
 
 import uuid
 
+import httpx
+
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel, Field
 
@@ -283,6 +285,12 @@ async def knowledge_create(
     """Buat dokumen KB + ingest (chunk + embed). Butuh knowledge.manage."""
     _auth(x_service_token)
     _require(x_actor_role, "knowledge.manage")
+    data = await _create_knowledge_doc(payload.tenant_id, payload.title, payload.source_type, payload.text)
+    return {"data": {"document_id": data["document_id"], "chunks": data["chunks"]}}
+
+
+async def _create_knowledge_doc(tenant_id: uuid.UUID, title: str, source_type: str, text: str, meta: dict | None = None) -> dict:
+    """Document row + ingest (chunk + embed) — shared by text, file and URL sources."""
     from ..ai.ingest import ingest
     from ..db import AsyncSessionLocal
     from ..models import KnowledgeDocument
@@ -290,20 +298,109 @@ async def knowledge_create(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             doc = KnowledgeDocument(
-                tenant_id=payload.tenant_id,
-                source_type=payload.source_type,
-                title=payload.title,
+                tenant_id=tenant_id,
+                source_type=source_type,
+                title=title[:120],
                 status="processing",
+                meta=meta or {},
             )
             session.add(doc)
             await session.flush()
             doc_id = doc.id
         async with session.begin():
             try:
-                n = await ingest(session, doc_id, payload.text)
+                n = await ingest(session, doc_id, text)
             except RuntimeError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
-    return {"data": {"document_id": str(doc_id), "chunks": n}}
+    return {"document_id": str(doc_id), "chunks": n, "chars": len(text)}
+
+
+def _b64(content: str) -> bytes:
+    import base64
+    import binascii
+
+    try:
+        return base64.b64decode(content, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise HTTPException(status_code=400, detail="file tidak valid") from e
+
+
+class KnowledgeFileIn(BaseModel):
+    tenant_id: uuid.UUID
+    title: str
+    filename: str
+    content_b64: str
+
+
+@router.post("/knowledge/file")
+async def knowledge_from_file(
+    payload: KnowledgeFileIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """PDF / Word / TXT → knowledge document. Needs knowledge.manage."""
+    _auth(x_service_token)
+    _require(x_actor_role, "knowledge.manage")
+    from ..ai.extract import ExtractError, extract_file
+
+    try:
+        text = extract_file(payload.filename, _b64(payload.content_b64))
+    except ExtractError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    title = payload.title.strip() or payload.filename
+    data = await _create_knowledge_doc(payload.tenant_id, title, "file", text, {"filename": payload.filename[:200]})
+    return {"data": data}
+
+
+class KnowledgeUrlIn(BaseModel):
+    tenant_id: uuid.UUID
+    url: str
+    title: str | None = None
+
+
+@router.post("/knowledge/url")
+async def knowledge_from_url(
+    payload: KnowledgeUrlIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """One public web page → knowledge document (SSRF-guarded fetch). knowledge.manage."""
+    _auth(x_service_token)
+    _require(x_actor_role, "knowledge.manage")
+    from ..ai.extract import ExtractError, fetch_url_text
+
+    try:
+        page_title, text = await fetch_url_text(payload.url)
+    except ExtractError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=400, detail="Website tidak bisa diakses") from e
+    title = (payload.title or "").strip() or page_title or payload.url
+    data = await _create_knowledge_doc(payload.tenant_id, title, "url", text, {"url": payload.url[:500]})
+    return {"data": data}
+
+
+class TableIn(BaseModel):
+    filename: str
+    content_b64: str
+    purpose: str  # "products" | "faqs"
+
+
+@router.post("/files/table")
+async def parse_table_file(
+    payload: TableIn,
+    x_service_token: str | None = Header(default=None),
+    x_actor_role: str | None = Header(default=None),
+) -> dict:
+    """CSV / Excel → {columns, rows}; the web app maps and writes them."""
+    _auth(x_service_token)
+    _require(x_actor_role, "product.manage" if payload.purpose == "products" else "knowledge.manage")
+    from ..ai.extract import ExtractError, parse_table
+
+    try:
+        return {"data": parse_table(payload.filename, _b64(payload.content_b64))}
+    except ExtractError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/knowledge/{document_id}")

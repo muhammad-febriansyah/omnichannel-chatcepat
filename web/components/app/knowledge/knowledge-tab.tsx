@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, CircleHelp, FileText, MessageSquareText, Package, Plus, Sparkles } from "lucide-react";
+import { BookOpen, CircleHelp, FileSpreadsheet, FileText, MessageSquareText, Package, Plus, Sparkles } from "lucide-react";
 import { ActionLink } from "@/components/app/action-link";
 import { EditButton } from "@/components/app/action-button";
 import { DeleteButton } from "@/components/app/delete-button";
@@ -137,9 +137,14 @@ export function KnowledgeTab({
         title="Tanya-jawab"
         hint="Jawaban resmi untuk pertanyaan yang sering muncul. AI memakainya lebih dulu daripada dokumen."
         action={
-          <ActionLink href="/knowledge/faq/new" size="sm">
-            <Plus className="size-3.5" /> Tambah
-          </ActionLink>
+          <div className="flex gap-1.5">
+            <ActionLink href="/knowledge/faq/import" size="sm" variant="outline">
+              <FileSpreadsheet className="size-3.5" /> Import Excel
+            </ActionLink>
+            <ActionLink href="/knowledge/faq/new" size="sm">
+              <Plus className="size-3.5" /> Tambah
+            </ActionLink>
+          </div>
         }
       >
         {faqs.length === 0 ? (
@@ -180,7 +185,7 @@ export function KnowledgeTab({
         <Section
           icon={BookOpen}
           title="Dokumen pengetahuan"
-          hint="Teks panjang: kebijakan, SOP, price list, profil usaha."
+          hint="Ketik, upload PDF/Word, atau ambil dari halaman website Anda."
           action={
             <ActionLink href="/knowledge/docs/new" size="sm" variant="outline">
               <Plus className="size-3.5" /> Tambah
