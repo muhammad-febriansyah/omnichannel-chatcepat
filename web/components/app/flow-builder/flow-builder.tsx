@@ -41,6 +41,7 @@ import {
   type NodeKind,
 } from "@/lib/flow-graph";
 import { FlowNode, type FlowRFNode } from "./flow-node";
+import { DeletableEdge } from "./deletable-edge";
 import { ConfigPanel, type AgentOption, type ChannelOption } from "./config-panel";
 import type { KnowledgeDoc, PromoItem } from "@/lib/ai-agent-options";
 import { COMING_SOON, DRAG_MIME, GROUP_FOR_TRIGGER, NODE_META, PALETTE_GROUPS, nodeMatches, type NodeGroup } from "./meta";
@@ -49,8 +50,10 @@ import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_META).map((k) => [k, FlowNode]));
 
+const edgeTypes = { deletable: DeletableEdge };
+
 const edgeDefaults = {
-  type: "smoothstep",
+  type: "deletable",
   markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   style: { strokeWidth: 2 },
 };
@@ -543,7 +546,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
           <div className="flex items-start gap-2 border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
             <MousePointerClick className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              Seret langkah ke kanvas, lalu tarik titik bulat untuk menyambungkan.{" "}
+              Seret langkah ke kanvas, lalu tarik titik bulat untuk menyambungkan. Hapus langkah lewat ikon tempat sampah, konektor lewat tombol ×.{" "}
               <Link href="/flows?tab=panduan" target="_blank" className="font-medium text-brand-blue hover:underline">
                 Lihat panduan
               </Link>
@@ -557,6 +560,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={(c) => {
               onNodesChange(c);
               if (c.some((x) => x.type !== "select" && x.type !== "dimensions")) markDirty();

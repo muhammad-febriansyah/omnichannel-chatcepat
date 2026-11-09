@@ -1,8 +1,8 @@
 "use client";
 
 import { memo } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { AlertCircle } from "lucide-react";
+import { Handle, Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
+import { AlertCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { aiNodeMode, outputHandles, type GraphNode, type NodeDataMap, type NodeKind } from "@/lib/flow-graph";
 import { normalizeAiConfig, roleLabel, toneMeta } from "@/lib/ai-agent-options";
@@ -82,6 +82,7 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
 function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
   const meta = NODE_META[data.kind];
   const Icon = meta.icon;
+  const { deleteElements } = useReactFlow();
   const handles = outputHandles({ id, type: data.kind, position: { x: 0, y: 0 }, data: data.payload } as GraphNode);
   const branching = handles.length > 1 || (handles[0] && handles[0].label);
   const hasIssue = data.issues.length > 0;
@@ -129,6 +130,24 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
           <span title={data.issues.join("\n")} className="text-red-500">
             <AlertCircle className="size-4" />
           </span>
+        )}
+        {data.kind !== "trigger" && (
+          // Removes the step and every connector attached to it.
+          <button
+            type="button"
+            aria-label={`Hapus langkah ${meta.label}`}
+            title="Hapus langkah"
+            onClick={(e) => {
+              e.stopPropagation();
+              void deleteElements({ nodes: [{ id }] });
+            }}
+            className={cn(
+              "nodrag nopan grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/15",
+              selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            )}
+          >
+            <Trash2 className="size-3.5" />
+          </button>
         )}
       </div>
 
