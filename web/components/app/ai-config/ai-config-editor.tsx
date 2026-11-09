@@ -445,7 +445,22 @@ export function AiSimulator({ value }: { value: AiConfig }) {
                   )}
                 </div>
               ))}
-              <p className="text-[10.5px] text-muted-foreground">{result.kbUsed ? "✓ Memakai pengetahuan" : "Pengetahuan tidak cocok dengan pertanyaan ini"}</p>
+              {result.sources.length > 0 ? (
+                <div className="space-y-1">
+                  <p className="text-[10.5px] font-medium text-muted-foreground">Jawaban berdasarkan:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {result.sources.map((s) => (
+                      <span key={s} className="max-w-full truncate rounded-md bg-white/80 px-1.5 py-0.5 text-[10.5px] text-[#111b21] dark:bg-[#202c33] dark:text-[#e9edef]" title={s}>
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10.5px] text-amber-700 dark:text-amber-300">
+                  Tidak ada data yang cocok — tambahkan di Automation → Pengetahuan supaya AI tidak menebak.
+                </p>
+              )}
             </>
           ))}
         </div>

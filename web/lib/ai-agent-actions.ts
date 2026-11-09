@@ -62,6 +62,7 @@ export type SimulateResult = {
   quotaExceeded?: boolean;
   answers: { tone: string; answer: string }[];
   kbUsed: boolean;
+  sources: string[]; // what the answer was based on (Tanya-jawab, Dokumen, Katalog, Info bisnis)
 };
 
 // Try unsaved agent settings; tones = compare the same question in several styles.
@@ -107,9 +108,15 @@ export async function simulateAgent(message: string, agent: AgentInput, tones?: 
   });
   if (!res.ok) throw userError("Gagal menjalankan simulasi");
   const j = (await res.json()) as {
-    data: { enabled: boolean; quota_exceeded?: boolean; answers?: { tone: string; answer: string }[]; kb_used?: boolean };
+    data: { enabled: boolean; quota_exceeded?: boolean; answers?: { tone: string; answer: string }[]; kb_used?: boolean; sources?: string[] };
   };
-  return { enabled: j.data.enabled, quotaExceeded: Boolean(j.data.quota_exceeded), answers: j.data.answers ?? [], kbUsed: Boolean(j.data.kb_used) };
+  return {
+    enabled: j.data.enabled,
+    quotaExceeded: Boolean(j.data.quota_exceeded),
+    answers: j.data.answers ?? [],
+    kbUsed: Boolean(j.data.kb_used),
+    sources: Array.isArray(j.data.sources) ? j.data.sources.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+  };
 }
 
 // --- Asisten AI (menu Asisten AI): reusable agents for channels and flow AI nodes ---

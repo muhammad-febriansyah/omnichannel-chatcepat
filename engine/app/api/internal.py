@@ -490,10 +490,16 @@ async def ai_preview(
     from ..ai.agent import strip_unknown_marker
 
     replies = [strip_unknown_marker(r.text or "")[0] for r in results]
-    kb_used = any(used for _, used in prompts)
+    sources = prompts[0][1] if prompts else []
     answers = [{"tone": t, "answer": (r or "").strip()} for t, r in zip(tones, replies)]
     return {
-        "data": {"enabled": True, "answer": answers[0]["answer"], "answers": answers, "kb_used": kb_used}
+        "data": {
+            "enabled": True,
+            "answer": answers[0]["answer"],
+            "answers": answers,
+            "kb_used": any(s for s in sources if not s.startswith("Info bisnis")),
+            "sources": sources,
+        }
     }
 
 

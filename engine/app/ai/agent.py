@@ -182,6 +182,28 @@ def _guardrail(extra_handoff: str | None = None) -> str:
     )
 
 
+def retrieval_query(query: str, history: list[Turn]) -> str:
+    """What to search the knowledge with: the message itself, plus the customer's
+    previous message(s) when it is a short follow-up without its own topic."""
+    if len(rag.keywords(query)) >= 3:
+        return query
+    previous = [t["content"] for t in history if t.get("role") == "user" and t.get("content")]
+    return " ".join([*previous[-2:], query]).strip()[:500]
+
+
+async def _doc_titles(session: AsyncSession, document_ids: list) -> list[str]:
+    if session is None or not document_ids:
+        return []
+    from ..models import KnowledgeDocument
+
+    ids = list(dict.fromkeys(document_ids))
+    rows = await session.execute(
+        select(KnowledgeDocument.id, KnowledgeDocument.title).where(KnowledgeDocument.id.in_(ids))
+    )
+    titles = {i: t for i, t in rows}
+    return [titles[i] for i in ids if i in titles]
+
+
 def strip_unknown_marker(answer: str) -> tuple[str, bool]:
     """(answer without the "no data" marker, whether it was there)."""
     if _UNKNOWN_MARKER not in (answer or ""):
@@ -234,22 +256,28 @@ async def build_system_prompt(
     spec: AgentSpec,
     query: str,
     contact_name: str | None = None,
-) -> tuple[str, bool]:
+    history: list[Turn] | None = None,
+) -> tuple[str, list[str]]:
     """System prompt for an agent: style → tenant instructions → examples → data → rules.
 
-    Returns (prompt, knowledge_used). Shared by live replies and the simulator.
+    Returns (prompt, sources) — sources = what the data came from (shown in the
+    simulator; empty = no knowledge matched). Shared by live replies and the simulator.
     """
-    vec = await metered.embed(session, tenant_id, query)  # None → keyword retrieval
+    # Short follow-ups ("kalau minggu?") are searched together with the previous question.
+    search = retrieval_query(query, history or [])
+    vec = await metered.embed(session, tenant_id, search)  # None → keyword retrieval
     chunks = await rag.retrieve(
         session,
         tenant_id,
         vec,
         RAG_TOP_K,
         document_ids=None if spec.knowledge_all else spec.document_ids,
-        query_text=query,
+        query_text=search,
     )
     kb_context = "\n\n".join(c.content for c in chunks)
-    faqs = await faq_repo.relevant_faqs(session, tenant_id, query)
+    faqs = await faq_repo.relevant_faqs(session, tenant_id, search)
+    sources = [f"Tanya-jawab: {f.question.strip()}" for f in faqs]
+    sources += [f"Dokumen: {t}" for t in await _doc_titles(session, [c.document_id for c in chunks])]
 
     system = style_prompt(spec)
     identity = identity_prompt(spec)
@@ -289,8 +317,9 @@ async def build_system_prompt(
         )
 
     if spec.use_catalog:
-        catalog = await _catalog_context(session, tenant_id, query)
+        catalog = await _catalog_context(session, tenant_id, search)
         if catalog:
+            sources.append("Katalog produk")
             system += (
                 "\n\nKatalog produk (harga & stok terkini) — DATA sumber kebenaran, jangan "
                 "mengarang produk/harga:\n" + _wrap_data("katalog_produk", catalog)
@@ -311,8 +340,10 @@ async def build_system_prompt(
     else:
         system += "\n\nTidak ada promo aktif. Jangan menjanjikan diskon, bonus, atau promo apa pun."
 
+    if business:
+        sources.append("Info bisnis")
     system += _guardrail(spec.handoff_rules)
-    return system, bool(kb_context or faqs)
+    return system, sources
 
 
 async def _agent_spec(
@@ -355,10 +386,10 @@ async def try_ai(
         return AIResult(reply=AI_ESCALATION_MESSAGE, handoff=True)
 
     spec = await _agent_spec(session, conv, channel, agent_id, inline)
-    system, _kb_used = await build_system_prompt(
-        session, conv.tenant_id, spec, query, getattr(contact, "name", None)
-    )
     history = await _build_history(session, conv, query)
+    system, _sources = await build_system_prompt(
+        session, conv.tenant_id, spec, query, getattr(contact, "name", None), history
+    )
     try:
         result = await metered.chat(
             session, conv.tenant_id, "flow_reply", system, query, history, conversation_id=conv.id
