@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,7 +174,7 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 				Sender struct {
 					ID string `json:"id"`
 				} `json:"sender"`
-				Timestamp int64 `json:"timestamp"`
+				Timestamp flexInt64 `json:"timestamp"`
 				Message   struct {
 					Mid    string `json:"mid"`
 					Text   string `json:"text"`
@@ -201,7 +202,7 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 			text := msg.Message.Text
 			ts := time.Now().UTC()
 			if msg.Timestamp > 0 {
-				ts = time.UnixMilli(msg.Timestamp).UTC()
+				ts = time.UnixMilli(int64(msg.Timestamp)).UTC()
 			}
 			inb := contracts.InboundMessage{
 				ChannelType:       ct,
@@ -220,6 +221,21 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 		}
 	}
 	return out, nil
+}
+
+// flexInt64 accepts a number or a numeric string. Meta's dashboard "Test" payloads
+// send timestamps as strings; real webhooks send numbers. Anything else reads as 0.
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		*f = 0
+		return nil
+	}
+	*f = flexInt64(n)
+	return nil
 }
 
 // metaChange = entry.changes[] (Page "feed" / Instagram "comments").

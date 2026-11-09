@@ -99,3 +99,18 @@ func TestMessengerHumanizedCommentReply(t *testing.T) {
 		t.Fatalf("comment reply: calls=%v pauses=%v", rec.calls, *pauses)
 	}
 }
+
+// Meta's dashboard "Test" sends the timestamp as a string; real webhooks send a number.
+// Both must parse (an error reply makes Meta retry and eventually disable the webhook).
+func TestParseMessengerTimestampStringOrNumber(t *testing.T) {
+	for _, ts := range []string{`"1527459824000"`, `1527459824000`, `"oops"`} {
+		body := []byte(`{"object":"page","entry":[{"id":"p1","messaging":[{"sender":{"id":"u1"},"timestamp":` + ts + `,"message":{"mid":"m1","text":"halo"}}]}]}`)
+		parsed, err := ParseMessenger(body)
+		if err != nil {
+			t.Fatalf("timestamp %s: %v", ts, err)
+		}
+		if len(parsed) != 1 || parsed[0].ExternalID != "p1" || *parsed[0].Inbound.Body != "halo" {
+			t.Fatalf("timestamp %s: got %+v", ts, parsed)
+		}
+	}
+}

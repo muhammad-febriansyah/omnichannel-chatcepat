@@ -89,7 +89,10 @@ func (s *Server) handleMetaWA(w http.ResponseWriter, r *http.Request) {
 
 	parsed, err := channels.ParseWhatsAppCloud(body)
 	if err != nil {
-		http.Error(w, "parse error", http.StatusBadRequest)
+		// Same as Messenger: acknowledge signed-but-unreadable payloads so Meta does
+		// not keep retrying and eventually disable the webhook.
+		log.Printf("meta webhook: payload WhatsApp tidak terbaca, diabaikan: %v", err)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	for _, p := range parsed {
@@ -150,7 +153,10 @@ func (s *Server) handleMessenger(w http.ResponseWriter, r *http.Request) {
 
 	parsed, err := channels.ParseMessenger(body)
 	if err != nil {
-		http.Error(w, "parse error", http.StatusBadRequest)
+		// Signed by Meta but unreadable: acknowledge anyway. Error replies make Meta
+		// retry and, if they keep failing, disable the app's webhook subscription.
+		log.Printf("messenger webhook: payload tidak terbaca, diabaikan: %v", err)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	for _, p := range parsed {
