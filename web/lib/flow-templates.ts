@@ -11,7 +11,7 @@ export const TEMPLATE_CATEGORIES: { value: TemplateCategory; label: string }[] =
   { value: "chat", label: "Chat & Menu" },
   { value: "broadcast", label: "Broadcast" },
   { value: "komentar", label: "Komentar FB/IG" },
-  { value: "ai", label: "AI Agent" },
+  { value: "ai", label: "Asisten AI" },
   { value: "penjualan", label: "Penjualan & Leads" },
 ];
 
@@ -73,7 +73,12 @@ class G {
   }
 }
 
-const ai = (patch: Partial<AiConfig>): { ai: AiConfig } => ({ ai: { ...DEFAULT_AI_CONFIG, ...patch } });
+// AI step with its own settings (only this step answers this way).
+const ai = (patch: Partial<AiConfig>): NodeDataMap["ai_agent"] => ({ ai: { ...DEFAULT_AI_CONFIG, ...patch }, mode: "custom" });
+// AI step that answers with the channel's assistant (menu Asisten AI) — one flow, many accounts.
+const assistant = (): NodeDataMap["ai_agent"] => ({ ai: DEFAULT_AI_CONFIG, mode: "channel" });
+// "Awal percakapan": first message, and again when a customer returns after 12 quiet hours.
+const welcome = (): NodeDataMap["trigger"] => ({ kind: "welcome", keywords: [], idleHours: 12 });
 
 function menu(prompt: string, options: [string, string][], saveAs = "pilihan"): NodeDataMap["menu"] {
   return {
@@ -121,7 +126,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       const cond = g.add("condition", { variable: "balasan", rules: [{ id: newId("r"), op: "contains", value: "1" }] });
       const info = g.add("send_text", { text: "Siap kak {{nama}}! Ini detail promonya:\n(isi detail promo, syarat, periode)\n\nMau langsung order? Balas *ORDER* ya 😊" });
       const tag = g.add("add_tag", { tags: ["tertarik-promo"] });
-      const bot = g.add("ai_agent", ai({}));
+      const bot = g.add("ai_agent", assistant());
       const rule = (g.nodes.find((n) => n.id === cond)!.data as NodeDataMap["condition"]).rules[0].id;
       g.chain(t, msg, cond);
       g.link(cond, info, `rule:${rule}`).chain(info, tag);
@@ -156,10 +161,10 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     platforms: ALL_CHAT,
     level: "Menengah",
     setup: ["Ganti alamat & jam buka di langkah Lokasi", "Sesuaikan cara order", "Pastikan produk aktif di menu Produk untuk katalog"],
-    steps: ["Pesan pertama", "Menu 4 pilihan", "Katalog / info / CS"],
+    steps: ["Awal percakapan", "Menu 4 pilihan", "Katalog / info / CS"],
     build() {
       const g = new G();
-      const t = g.add("trigger", { kind: "welcome", keywords: [] });
+      const t = g.add("trigger", welcome());
       const hi = g.add("send_text", {
         text: "Halo kak {{nama}} 👋 Selamat datang! Ada yang bisa kami bantu?",
         variants: ["Hai kak {{nama}}, terima kasih sudah chat kami 😊", "Halo {{nama}}! Senang bisa bantu kakak hari ini 🙌"],
@@ -286,12 +291,12 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Unggah dokumen pengetahuan (FAQ, harga, kebijakan) di AI Agent", "Pilih gaya bahasa AI"],
-    steps: ["Pesan tak dikenali", "AI Agent (ramah)", "Perlu CS → Alihkan"],
+    setup: ["Buat asisten di menu Asisten AI (nama, prompt, info bisnis)", "Pilih asisten itu di kartu Channel", "Unggah dokumen pengetahuan (FAQ, harga, kebijakan)"],
+    steps: ["Pesan tak dikenali", "Asisten AI channel", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
       const t = g.add("trigger", { kind: "fallback", keywords: [] });
-      const bot = g.add("ai_agent", ai({ role: "cs", tone: "ramah" }));
+      const bot = g.add("ai_agent", assistant());
       const note = g.add("send_text", { text: "Baik kak, kami sambungkan ke tim CS ya. Mohon tunggu sebentar 🙏" });
       const cs = g.add("handoff", {});
       g.chain(t, bot);
@@ -306,7 +311,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Isi promo yang sedang berjalan di AI Agent", "Sesuaikan keyword promo"],
+    setup: ["Isi promo yang sedang berjalan di langkah AI (Pengetahuan & promo)", "Sesuaikan keyword promo"],
     steps: ["Keyword promo", "AI Agent (promosi)", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
@@ -331,7 +336,17 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       const g = new G();
       const t = g.add("trigger", { kind: "keyword", keywords: ["komplain", "rusak", "kecewa", "refund", "retur"] });
       const tag = g.add("add_tag", { tags: ["komplain"] });
-      const bot = g.add("ai_agent", ai({ role: "cs", tone: "empatik", instructions: "Minta nomor pesanan dan foto masalah. Jangan menjanjikan refund." }));
+      const bot = g.add(
+        "ai_agent",
+        ai({
+          role: "cs",
+          tone: "empatik",
+          emoji: "tanpa",
+          instructions:
+            "Kamu menangani keluhan pelanggan {{nama_bisnis}}. Minta maaf atas ketidaknyamanannya, lalu minta nomor pesanan dan foto masalah. " +
+            "Jangan menyalahkan pelanggan dan jangan menjanjikan refund — sampaikan bahwa tim kami akan menindaklanjuti.",
+        }),
+      );
       const cs = g.add("handoff", {});
       g.chain(t, tag, bot, cs);
       g.link(bot, cs, "handoff");
@@ -413,15 +428,15 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
   {
     id: "natural-greeting-ai",
     title: "Sapa Natural + AI",
-    desc: "Pesan pertama disapa dengan kalimat yang berganti-ganti (tidak terlihat bot), lalu pertanyaan pelanggan dijawab AI. Cocok untuk WA nomor pribadi.",
+    desc: "Pelanggan yang baru menyapa (atau kembali setelah 12 jam) disapa dengan kalimat yang berganti-ganti, lalu pertanyaannya dijawab asisten AI. Cocok untuk WA nomor pribadi.",
     category: "chat",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Ubah variasi sapaan di Kirim Teks", "Unggah dokumen pengetahuan di AI Agent"],
-    steps: ["Pesan pertama", "Sapaan (4 variasi)", "Tunggu pertanyaan", "AI menjawab", "Perlu CS → Alihkan"],
+    setup: ["Ubah variasi sapaan di Kirim Teks", "Pilih asisten AI di kartu Channel (menu Asisten AI)"],
+    steps: ["Awal percakapan", "Sapaan (4 variasi)", "Tunggu pertanyaan", "AI menjawab", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
-      const t = g.add("trigger", { kind: "welcome", keywords: [] });
+      const t = g.add("trigger", welcome());
       const hi = g.add("send_text", {
         text: "Halo kak {{nama}} 👋 ada yang bisa kami bantu?",
         variants: [
@@ -431,7 +446,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
         ],
       });
       const wait = g.add("wait_reply", { saveAs: "pertanyaan" });
-      const bot = g.add("ai_agent", ai({ role: "cs", tone: "ramah" }));
+      const bot = g.add("ai_agent", assistant());
       const cs = g.add("handoff", {});
       g.chain(t, hi, wait, bot);
       g.link(bot, cs, "handoff");
@@ -445,11 +460,11 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Menengah",
-    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Unggah dokumen pengetahuan di AI Agent"],
-    steps: ["Pesan pertama", "Menu 4 pilihan", "Katalog / promo / AI / CS"],
+    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Pilih asisten AI di kartu Channel (menu Asisten AI)"],
+    steps: ["Awal percakapan", "Menu 4 pilihan", "Katalog / promo / AI / CS"],
     build() {
       const g = new G();
-      const t = g.add("trigger", { kind: "welcome", keywords: [] });
+      const t = g.add("trigger", welcome());
       const m = g.add(
         "menu",
         menu("Halo kak {{nama}} 👋 mau dibantu apa hari ini?", [
@@ -463,7 +478,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       const promo = g.add("send_text", { text: "Promo minggu ini 🎉\n(isi promo, periode, syarat)\n\nMau order? Balas *ORDER* ya kak." });
       const ask = g.add("send_text", { text: "Silakan tulis pertanyaannya kak, kami jawab ya 😊" });
       const wait = g.add("wait_reply", { saveAs: "pertanyaan" });
-      const bot = g.add("ai_agent", ai({ role: "cs", tone: "ramah" }));
+      const bot = g.add("ai_agent", assistant());
       const cs = g.add("handoff", {});
       g.chain(t, m);
       const opts = (g.nodes.find((n) => n.id === m)!.data as NodeDataMap["menu"]).options;

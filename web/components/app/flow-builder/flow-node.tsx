@@ -4,7 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { outputHandles, type GraphNode, type NodeDataMap, type NodeKind } from "@/lib/flow-graph";
+import { aiNodeMode, outputHandles, type GraphNode, type NodeDataMap, type NodeKind } from "@/lib/flow-graph";
 import { normalizeAiConfig, roleLabel, toneMeta } from "@/lib/ai-agent-options";
 import { NODE_META } from "./meta";
 import { formatWib } from "@/lib/broadcast-flow";
@@ -17,7 +17,8 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
   switch (kind) {
     case "trigger": {
       const d = payload as NodeDataMap["trigger"];
-      if (d.kind === "welcome") return "Pesan pertama dari pelanggan";
+      if (d.kind === "welcome")
+        return d.idleHours ? `Pesan pertama / kembali setelah ${d.idleHours} jam` : "Pesan pertama dari pelanggan";
       if (d.kind === "fallback") return "Pesan yang tidak cocok flow lain";
       if (d.kind === "button") return d.keywords.length ? "" : "Belum ada label tombol";
       if (d.kind === "comment") return d.keywords.length ? "" : "Semua komentar FB/IG";
@@ -54,7 +55,11 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
     }
     case "ai_agent":
     {
-      const ai = normalizeAiConfig((payload as NodeDataMap["ai_agent"])?.ai);
+      const d = payload as NodeDataMap["ai_agent"];
+      const mode = aiNodeMode(d);
+      if (mode === "channel") return "Asisten sesuai channel";
+      if (mode === "agent") return d.agentId ? `Asisten: ${d.agentName || "terpilih"}` : "Belum pilih asisten";
+      const ai = normalizeAiConfig(d?.ai);
       const t = toneMeta(ai.tone);
       return `${t.emoji} ${t.label} · ${roleLabel(ai.role)}`;
     }

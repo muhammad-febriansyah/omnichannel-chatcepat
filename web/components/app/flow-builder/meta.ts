@@ -48,7 +48,7 @@ export const NODE_META: Record<NodeKind, Meta> = {
   condition: { label: "Kondisi", desc: "Cabang berdasarkan isi variabel", icon: GitBranch, color: "#ec4899", group: "Logika & Data", keywords: "if jika kondisi cabang logika filter" },
   set_var: { label: "Set Variabel", desc: "Isi variabel dengan nilai tetap", icon: Variable, color: "#64748b", group: "Logika & Data", keywords: "variabel data simpan nilai" },
   add_tag: { label: "Beri Tag", desc: "Tandai kontak untuk segmen & broadcast", icon: Tag, color: "#14b8a6", group: "Logika & Data", keywords: "tag label segmen kontak lead" },
-  ai_agent: { label: "AI Agent", desc: "Jawab otomatis dari knowledge base", icon: Sparkles, color: "#8b5cf6", group: "AI & Agen", keywords: "ai bot gpt otomatis jawab faq cs pintar" },
+  ai_agent: { label: "AI Agent", desc: "Dijawab asisten AI (prompt, info bisnis, pengetahuan)", icon: Sparkles, color: "#8b5cf6", group: "AI & Agen", keywords: "ai bot gpt otomatis jawab faq cs pintar asisten prompt persona" },
   handoff: { label: "Alihkan ke Agen", desc: "Serahkan ke CS manusia, flow selesai", icon: UserPlus, color: "#10b981", group: "AI & Agen", keywords: "cs admin manusia agen operator serahkan" },
 };
 

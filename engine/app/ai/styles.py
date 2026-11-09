@@ -87,6 +87,18 @@ FORMAT_GUIDE = (
 
 MAX_EXAMPLES = 5
 
+# Structured business facts an assistant may quote (web: "Identitas & info bisnis").
+# key → (prompt label, max length). Order = order in the prompt.
+BUSINESS_FIELDS: dict[str, tuple[str, int]] = {
+    "business_name": ("Nama bisnis", 80),
+    "hours": ("Jam operasional", 200),
+    "address": ("Alamat / lokasi", 300),
+    "shipping": ("Pengiriman", 300),
+    "payment": ("Pembayaran", 300),
+    "returns": ("Retur & garansi", 300),
+    "other": ("Info lain", 1000),
+}
+
 
 @dataclass
 class AgentSpec:
@@ -108,6 +120,7 @@ class AgentSpec:
     document_ids: list = field(default_factory=list)
     use_catalog: bool = True
     use_promos: bool = True
+    business_info: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, raw: dict) -> "AgentSpec":
@@ -126,6 +139,8 @@ class AgentSpec:
         values["document_ids"] = ids
         if not isinstance(values.get("examples"), list):
             values["examples"] = []
+        if not isinstance(values.get("business_info"), dict):
+            values["business_info"] = {}
         return cls(**values)
 
     @classmethod
@@ -147,6 +162,7 @@ class AgentSpec:
             document_ids=list(document_ids or []),
             use_catalog=row.use_catalog,
             use_promos=row.use_promos,
+            business_info=dict(getattr(row, "business_info", None) or {}),
         )
 
 
@@ -187,3 +203,41 @@ def examples_prompt(agent: AgentSpec) -> str:
         "Contoh gaya jawaban dari pemilik bisnis — tiru GAYA-nya, bukan isinya (fakta tetap "
         "harus dari data):\n\n" + "\n\n".join(pairs)
     )
+
+
+def _info(agent: AgentSpec, key: str) -> str:
+    raw = (agent.business_info or {}).get(key)
+    if not isinstance(raw, str):
+        return ""
+    limit = BUSINESS_FIELDS.get(key, ("", 80))[1] if key in BUSINESS_FIELDS else 40
+    return " ".join(raw.split())[:limit] if key != "other" else raw.strip()[:limit]
+
+
+def identity_prompt(agent: AgentSpec) -> str:
+    """Who the assistant is: its own name and the business it speaks for."""
+    name = _info(agent, "assistant_name")
+    business = _info(agent, "business_name")
+    if name and business:
+        return f"Namamu {name}, asisten dari {business}. Perkenalkan diri dengan nama ini bila ditanya."
+    if name:
+        return f"Namamu {name}. Perkenalkan diri dengan nama ini bila ditanya."
+    if business:
+        return f"Kamu mewakili {business}."
+    return ""
+
+
+def business_prompt(agent: AgentSpec) -> str:
+    """Business facts as plain lines (wrapped as DATA by the caller)."""
+    lines = []
+    for key, (label, _limit) in BUSINESS_FIELDS.items():
+        value = _info(agent, key)
+        if value:
+            lines.append(f"{label}: {value}")
+    return "\n".join(lines)
+
+
+def fill_placeholders(text: str, agent: AgentSpec) -> str:
+    """{{nama_asisten}} / {{nama_bisnis}} in tenant instructions → identity values."""
+    name = _info(agent, "assistant_name") or "asisten"
+    business = _info(agent, "business_name") or "bisnis ini"
+    return text.replace("{{nama_asisten}}", name).replace("{{nama_bisnis}}", business)

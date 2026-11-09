@@ -41,7 +41,7 @@ import {
   type NodeKind,
 } from "@/lib/flow-graph";
 import { FlowNode, type FlowRFNode } from "./flow-node";
-import { ConfigPanel, type ChannelOption } from "./config-panel";
+import { ConfigPanel, type AgentOption, type ChannelOption } from "./config-panel";
 import type { KnowledgeDoc, PromoItem } from "@/lib/ai-agent-options";
 import { COMING_SOON, DRAG_MIME, GROUP_FOR_TRIGGER, NODE_META, PALETTE_GROUPS, nodeMatches, type NodeGroup } from "./meta";
 import { SaveFlowDialog, type SaveSummary } from "./save-dialog";
@@ -55,14 +55,21 @@ const edgeDefaults = {
   style: { strokeWidth: 2 },
 };
 
-function toRF(graph: FlowGraph): { nodes: FlowRFNode[]; edges: Edge[] } {
+// Assistant names for AI nodes come from the live list (renames show up, deleted ones don't).
+function withAgentNames(n: GraphNode, agents: AgentOption[]): GraphNode["data"] {
+  if (n.type !== "ai_agent") return n.data;
+  const d = n.data as NodeDataMap["ai_agent"];
+  return d.agentId ? { ...d, agentName: agents.find((a) => a.id === d.agentId)?.name } : d;
+}
+
+function toRF(graph: FlowGraph, agents: AgentOption[] = []): { nodes: FlowRFNode[]; edges: Edge[] } {
   return {
     nodes: graph.nodes.map((n) => ({
       id: n.id,
       type: n.type,
       position: n.position,
       deletable: n.type !== "trigger",
-      data: { kind: n.type, payload: n.data, issues: [] },
+      data: { kind: n.type, payload: withAgentNames(n, agents), issues: [] },
     })),
     edges: graph.edges.map((e) => ({ ...edgeDefaults, id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target })),
   };
@@ -88,13 +95,14 @@ type Props = {
   docs?: KnowledgeDoc[];
   promos?: PromoItem[];
   channels?: ChannelOption[];
+  agents?: AgentOption[];
   allowedNodes?: string[] | null; // null = every step (plan entitlements)
   tags?: string[];
   templates?: BroadcastTemplateOpt[];
 };
 
-function Builder({ id, name: initialName, status: initialStatus, definition, docs = [], promos = [], channels = [], allowedNodes = null, tags = [], templates = [] }: Props) {
-  const initial = useMemo(() => toRF(loadGraph(definition)), [definition]);
+function Builder({ id, name: initialName, status: initialStatus, definition, docs = [], promos = [], channels = [], agents = [], allowedNodes = null, tags = [], templates = [] }: Props) {
+  const initial = useMemo(() => toRF(loadGraph(definition), agents), [definition, agents]);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowRFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [name, setName] = useState(initialName);
@@ -575,6 +583,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
               docs={docs}
               promos={promos}
               channels={channels}
+              agents={agents}
               tags={tags}
               templates={templates}
               broadcastChannelId={triggerData?.kind === "broadcast" ? (triggerData.channels?.[0] ?? null) : null}

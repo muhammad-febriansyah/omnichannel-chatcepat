@@ -3,7 +3,9 @@
 Urutan (berhenti di yang pertama menjawab), hanya saat handler != agent:
   1. FLOW (state lanjut / trigger tombol/keyword/welcome/cadangan) — pipeline.flow_engine.
      AI menjawab lewat node "AI Agent" di dalam flow (mis. flow Cadangan → AI).
-  2. FALLBACK — pesan default
+  2. FALLBACK — per channel (channels.fallback_action): 'ai' = asisten AI channel
+     menjawab, 'message' = pesan tetap (channels.fallback_message / default),
+     'silent' = diam, agen membalas manual.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import DEFAULT_FALLBACK_MESSAGE
 from ..contracts.events import InboundMessage
+from ..ai import agent as ai
 from ..models import Channel, Contact, Conversation
 from . import flow_engine
 from .reply import Reply, text_reply
@@ -64,5 +67,14 @@ async def decide(
     if outcome is not None:
         return Decision(replies=outcome.replies, handoff=outcome.handoff)
 
-    # 2. Fallback default.
-    return Decision(replies=[text_reply(DEFAULT_FALLBACK_MESSAGE)])
+    # 2. Nothing matched → what this channel chose.
+    action = getattr(channel, "fallback_action", None) or "message"
+    if action == "silent":
+        return Decision(stop=True)
+    if action == "ai":
+        res = await ai.try_ai(session, conv, channel, contact, inbound)
+        if res is not None:
+            return Decision(replies=[text_reply(res.reply)] if res.reply else [], handoff=res.handoff)
+        # AI unavailable (no model configured, media-only message) → fixed text below.
+    text = (getattr(channel, "fallback_message", None) or "").strip() or DEFAULT_FALLBACK_MESSAGE
+    return Decision(replies=[text_reply(text)])

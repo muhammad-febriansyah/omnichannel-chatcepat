@@ -1,9 +1,90 @@
 import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { broadcastRecipients, broadcasts, knowledgeDocuments, promos } from "./db/schema";
+import { aiAgentKnowledge, aiAgents, broadcastRecipients, broadcasts, channels, knowledgeDocuments, promos } from "./db/schema";
 import type { BroadcastRow } from "@/components/app/broadcasts-table";
-import type { PromoItem, PromoState } from "./ai-agent-options";
+import {
+  businessFromEngine,
+  normalizeAiConfig,
+  type AgentInput,
+  type PromoItem,
+  type PromoState,
+} from "./ai-agent-options";
+
+export type AgentSummary = {
+  id: string;
+  name: string;
+  role: string;
+  tone: string;
+  assistantName: string;
+  businessName: string;
+  isDefault: boolean;
+  isActive: boolean;
+  channels: number;
+  updatedAt: string;
+};
+
+// Menu Asisten AI list + pickers (channel card, flow AI node). Channel counts in one query.
+export async function loadAgents(tenantId: string): Promise<AgentSummary[]> {
+  const [rows, usage] = await Promise.all([
+    db.query.aiAgents.findMany({
+      where: eq(aiAgents.tenantId, tenantId),
+      orderBy: [desc(aiAgents.isDefault), aiAgents.createdAt],
+      columns: { id: true, name: true, role: true, tone: true, businessInfo: true, isDefault: true, isActive: true, updatedAt: true },
+    }),
+    db
+      .select({ id: channels.aiAgentId, n: sql<number>`count(*)::int` })
+      .from(channels)
+      .where(and(eq(channels.tenantId, tenantId), isNotNull(channels.aiAgentId)))
+      .groupBy(channels.aiAgentId),
+  ]);
+  const used = new Map(usage.map((u) => [u.id, Number(u.n)]));
+  return rows.map((a) => {
+    const info = businessFromEngine(a.businessInfo);
+    return {
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      tone: a.tone,
+      assistantName: info.assistantName,
+      businessName: info.businessName,
+      isDefault: a.isDefault,
+      isActive: a.isActive,
+      channels: used.get(a.id) ?? 0,
+      updatedAt: a.updatedAt,
+    };
+  });
+}
+
+// One assistant as editor values (null = not this tenant's).
+export async function loadAgent(tenantId: string, id: string): Promise<(AgentInput & { id: string; isDefault: boolean }) | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const a = await db.query.aiAgents.findFirst({ where: and(eq(aiAgents.id, id), eq(aiAgents.tenantId, tenantId)) });
+  if (!a) return null;
+  const docs = await db
+    .select({ id: aiAgentKnowledge.documentId })
+    .from(aiAgentKnowledge)
+    .where(and(eq(aiAgentKnowledge.tenantId, tenantId), eq(aiAgentKnowledge.agentId, a.id)));
+  const config = normalizeAiConfig({
+    role: a.role,
+    tone: a.tone,
+    emoji: a.emoji,
+    length: a.length,
+    greeting: a.greeting,
+    language: a.language,
+    goal: a.goal ?? "",
+    instructions: a.instructions ?? "",
+    examples: Array.isArray(a.examples) ? a.examples : [],
+    handoffRules: a.handoffRules ?? "",
+    fallbackMessage: a.fallbackMessage ?? "",
+    knowledgeAll: a.knowledgeAll,
+    documentIds: docs.map((d) => d.id),
+    useCatalog: a.useCatalog,
+    usePromos: a.usePromos,
+    businessInfo: businessFromEngine(a.businessInfo),
+  });
+  return { ...config, id: a.id, name: a.name, isActive: a.isActive, isDefault: a.isDefault };
+}
 
 // YYYY-MM-DD in WIB, for <input type="date">.
 const wibDay = (iso: string | null) =>

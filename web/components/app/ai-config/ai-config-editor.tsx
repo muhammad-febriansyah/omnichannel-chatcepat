@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
-import { Plus, Trash2, Send, Loader2, Layers, Palette, NotebookPen, BookOpen, Headset, UserRound } from "lucide-react";
+import { Plus, Trash2, Send, Loader2, Layers, Palette, NotebookPen, BookOpen, Headset, UserRound, Store, WandSparkles } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { simulateAgent, type SimulateResult } from "@/lib/ai-agent-actions";
 import {
+  BUSINESS_FIELDS,
   EMOJIS,
+  PROMPT_TEMPLATES,
   roleLabel,
   GREETINGS,
   LANGUAGES,
@@ -23,6 +25,7 @@ import {
   toneMeta,
   type AgentTone,
   type AiConfig,
+  type BusinessInfo,
   type KnowledgeDoc,
   type PromoItem,
 } from "@/lib/ai-agent-options";
@@ -112,13 +115,35 @@ export function AiConfigEditor({
   onChange,
   docs,
   promos = [],
+  defaultOpen = ["gaya"],
 }: {
   value: AiConfig;
   onChange: (v: AiConfig) => void;
   docs: KnowledgeDoc[];
   promos?: PromoItem[];
+  defaultOpen?: string[];
 }) {
   const set = <K extends keyof AiConfig>(k: K, x: AiConfig[K]) => onChange({ ...v, [k]: x });
+  const setInfo = (k: keyof BusinessInfo, x: string) => set("businessInfo", { ...v.businessInfo, [k]: x });
+  const infoCount = BUSINESS_FIELDS.filter((f) => v.businessInfo[f.key].trim()).length;
+  const identityHint = [
+    v.businessInfo.assistantName.trim() || "Tanpa nama",
+    v.businessInfo.businessName.trim(),
+    `${infoCount} info bisnis`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Sample prompt for the chosen role; appended so nothing typed gets lost.
+  function insertSample() {
+    const sample = PROMPT_TEMPLATES[v.role];
+    if (v.instructions.includes(sample)) return;
+    const next = v.instructions.trim() ? `${v.instructions.trim()}\n\n${sample}` : sample;
+    set("instructions", next.slice(0, 3000));
+  }
+  function insertToken(token: string) {
+    set("instructions", `${v.instructions}${v.instructions && !v.instructions.endsWith(" ") ? " " : ""}${token}`.slice(0, 3000));
+  }
 
   const filledExamples = v.examples.filter((x) => x.q.trim() && x.a.trim()).length;
   const knowledgeHint = [
@@ -131,7 +156,33 @@ export function AiConfigEditor({
   const handoffCount = v.handoffRules.split("\n").filter((l) => l.trim()).length;
 
   return (
-    <Accordion multiple defaultValue={["gaya"]} className="gap-2">
+    <Accordion multiple defaultValue={defaultOpen} className="gap-2">
+      <Section value="identitas" icon={Store} title="Identitas & info bisnis" hint={identityHint}>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="block text-[11.5px] font-medium">Nama asisten</span>
+            <Input value={v.businessInfo.assistantName} maxLength={40} onChange={(e) => setInfo("assistantName", e.target.value)} placeholder="mis. Rina" className={inputCls} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-[11.5px] font-medium">Nama bisnis</span>
+            <Input value={v.businessInfo.businessName} maxLength={80} onChange={(e) => setInfo("businessName", e.target.value)} placeholder="mis. Toko Mulia" className={inputCls} />
+          </label>
+        </div>
+        <p className="text-[11px] text-muted-foreground">AI hanya menyebut fakta yang Anda isi di sini, di Pengetahuan, katalog, atau promo.</p>
+        <div className="grid gap-2.5">
+          {BUSINESS_FIELDS.map((f) => (
+            <label key={f.key} className="space-y-1">
+              <span className="block text-[11.5px] font-medium">{f.label}</span>
+              {f.rows ? (
+                <Textarea value={v.businessInfo[f.key]} maxLength={f.max} rows={f.rows} onChange={(e) => setInfo(f.key, e.target.value)} placeholder={f.placeholder} className={areaCls} />
+              ) : (
+                <Input value={v.businessInfo[f.key]} maxLength={f.max} onChange={(e) => setInfo(f.key, e.target.value)} placeholder={f.placeholder} className={inputCls} />
+              )}
+            </label>
+          ))}
+        </div>
+      </Section>
+
       <Section value="gaya" icon={Palette} title="Peran & gaya" hint={`${roleLabel(v.role)} · ${toneMeta(v.tone).emoji} ${toneMeta(v.tone).label}`}>
         <Group title="Peran">
           <NativeSelect value={v.role} onChange={(e) => set("role", e.target.value as AiConfig["role"])} className={inputCls}>
@@ -194,18 +245,38 @@ export function AiConfigEditor({
         value="instruksi"
         icon={NotebookPen}
         title="Instruksi & contoh"
-        hint={[v.instructions.trim() ? "Ada instruksi" : "Belum ada instruksi", `${filledExamples} contoh`].join(" · ")}
+        hint={[v.instructions.trim() ? "Ada prompt" : "Belum ada prompt", `${filledExamples} contoh`].join(" · ")}
       >
-        <Group title="Instruksi khusus">
+        <Group title="Prompt / instruksi">
+          <p className="text-[11px] text-muted-foreground">
+            Jelaskan siapa asisten ini dan cara kerjanya, mis. &quot;Kamu adalah customer service…&quot;.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={insertSample} className="w-full">
+            <WandSparkles className="size-3.5" /> Pakai contoh prompt {roleLabel(v.role)}
+          </Button>
           <Textarea
             value={v.instructions}
             maxLength={3000}
-            rows={4}
+            rows={6}
             onChange={(e) => set("instructions", e.target.value)}
-            placeholder="mis. Buka 08.00–21.00. Kirim via JNE & SiCepat. Selalu tawarkan bundling."
+            placeholder="mis. Kamu adalah {{nama_asisten}}, customer service {{nama_bisnis}}. Selalu tawarkan bundling."
             className={areaCls}
           />
-          <div className="text-right text-[10.5px] text-muted-foreground">{v.instructions.length}/3000</div>
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex flex-wrap gap-1">
+              {["{{nama_asisten}}", "{{nama_bisnis}}"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => insertToken(t)}
+                  className="rounded-md border border-dashed border-border px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground hover:border-brand-blue hover:text-brand-blue"
+                >
+                  + {t}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10.5px] text-muted-foreground">{v.instructions.length}/3000</span>
+          </div>
         </Group>
 
         <Group title={`Contoh jawaban (${v.examples.length}/5)`}>

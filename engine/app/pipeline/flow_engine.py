@@ -459,6 +459,11 @@ async def run(
 
     # Tak ada state → cocokkan trigger.
     is_first = (await messages.count_inbound(session, conv.id)) <= 1
+    idle_hours = None
+    if not is_first:
+        prev = await messages.previous_inbound_at(session, conv.id)
+        if prev is not None:
+            idle_hours = (_now() - prev).total_seconds() / 3600
     flow = await flows.match_trigger(
         session,
         conv.tenant_id,
@@ -467,6 +472,7 @@ async def run(
         preferred_flow_id=preferred_flow_id,
         button_text=body if is_button else None,
         channel_id=channel.id,
+        idle_hours=idle_hours,
     )
     if flow is None:
         return None

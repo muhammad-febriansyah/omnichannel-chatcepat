@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { channels, flows, tags as tagsTable } from "@/lib/db/schema";
 import { listWaTemplates } from "@/lib/wa-templates";
 import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
-import { loadDocs, loadPromos } from "@/lib/automation-data";
+import { loadAgents, loadDocs, loadPromos } from "@/lib/automation-data";
 import { allowedFlowNodes } from "@/lib/entitlements";
 import { requirePageAbility } from "@/lib/session";
 import { FlowBuilder } from "@/components/app/flow-builder/flow-builder";
@@ -38,7 +38,7 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
   });
   if (!flow) notFound();
   const tenantId = session.tenantId;
-  const [docs, promos, accounts, allowedNodes, tagRows, templates] = await Promise.all([
+  const [docs, promos, accounts, allowedNodes, tagRows, templates, agents] = await Promise.all([
     loadDocs(session.tenantId),
     loadPromos(session.tenantId),
     db.query.channels.findMany({
@@ -48,6 +48,7 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
     allowedFlowNodes(session),
     db.query.tags.findMany({ where: eq(tagsTable.tenantId, tenantId), columns: { name: true } }),
     loadTemplates(tenantId),
+    loadAgents(tenantId),
   ]);
 
   return (
@@ -60,6 +61,7 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
       promos={promos}
       allowedNodes={allowedNodes}
       channels={accounts.map((c) => ({ id: c.id, name: c.name, type: c.type, autoReply: c.autoReplyEnabled }))}
+      agents={agents.map((a) => ({ id: a.id, name: a.name, isActive: a.isActive, isDefault: a.isDefault }))}
       tags={tagRows.map((t) => t.name)}
       templates={templates}
     />

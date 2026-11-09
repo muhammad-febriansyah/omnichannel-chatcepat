@@ -2,13 +2,15 @@
 
 import { userError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
-import { promos } from "./db/schema";
+import { aiAgentKnowledge, aiAgents, knowledgeDocuments, promos } from "./db/schema";
 import { requireAbility } from "./rbac";
 import { requireSession } from "./session";
-import type { AgentInput } from "./ai-agent-options";
+import { businessToEngine, type AgentInput } from "./ai-agent-options";
+
+const text = (max: number, label: string) => z.string().trim().max(max, `${label} maksimal ${max} karakter`);
 
 const ENGINE = process.env.ENGINE_INTERNAL_URL ?? "http://localhost:8000/internal/v1";
 
@@ -32,6 +34,16 @@ const agentSchema = z.object({
   useCatalog: z.boolean(),
   usePromos: z.boolean(),
   isActive: z.boolean(),
+  businessInfo: z.object({
+    assistantName: text(40, "Nama asisten"),
+    businessName: text(80, "Nama bisnis"),
+    hours: text(200, "Jam operasional"),
+    address: text(300, "Alamat"),
+    shipping: text(300, "Info pengiriman"),
+    payment: text(300, "Info pembayaran"),
+    returns: text(300, "Info retur"),
+    other: text(1000, "Info lain"),
+  }),
 });
 
 function firstError(e: z.ZodError): string {
@@ -88,6 +100,7 @@ export async function simulateAgent(message: string, agent: AgentInput, tones?: 
         document_ids: v.documentIds,
         use_catalog: v.useCatalog,
         use_promos: v.usePromos,
+        business_info: businessToEngine(v.businessInfo),
       },
     }),
     cache: "no-store",
@@ -97,6 +110,114 @@ export async function simulateAgent(message: string, agent: AgentInput, tones?: 
     data: { enabled: boolean; quota_exceeded?: boolean; answers?: { tone: string; answer: string }[]; kb_used?: boolean };
   };
   return { enabled: j.data.enabled, quotaExceeded: Boolean(j.data.quota_exceeded), answers: j.data.answers ?? [], kbUsed: Boolean(j.data.kb_used) };
+}
+
+// --- Asisten AI (menu Asisten AI): reusable agents for channels and flow AI nodes ---
+
+// Only this tenant's documents may be linked (ids come from the client).
+async function ownDocIds(tenantId: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: knowledgeDocuments.id })
+    .from(knowledgeDocuments)
+    .where(and(eq(knowledgeDocuments.tenantId, tenantId), inArray(knowledgeDocuments.id, ids)));
+  return rows.map((r) => r.id);
+}
+
+export async function saveAgent(id: string | null, input: AgentInput): Promise<{ id: string }> {
+  const { tenantId } = await tenantSession();
+  const parsed = agentSchema.safeParse(input);
+  if (!parsed.success) throw userError(firstError(parsed.error));
+  const v = parsed.data;
+  const docIds = v.knowledgeAll ? [] : await ownDocIds(tenantId, v.documentIds);
+  const values = {
+    name: v.name,
+    role: v.role,
+    tone: v.tone,
+    emoji: v.emoji,
+    length: v.length,
+    greeting: v.greeting,
+    language: v.language,
+    goal: v.goal || null,
+    instructions: v.instructions || null,
+    examples: v.examples.filter((x) => x.q && x.a),
+    handoffRules: v.handoffRules || null,
+    fallbackMessage: v.fallbackMessage || null,
+    businessInfo: businessToEngine(v.businessInfo),
+    knowledgeAll: v.knowledgeAll,
+    useCatalog: v.useCatalog,
+    usePromos: v.usePromos,
+    isActive: v.isActive,
+  };
+
+  const savedId = await db.transaction(async (tx) => {
+    let agentId: string;
+    if (id) {
+      const updated = await tx
+        .update(aiAgents)
+        .set({ ...values, updatedAt: sql`now()` })
+        .where(and(eq(aiAgents.id, id), eq(aiAgents.tenantId, tenantId)))
+        .returning({ id: aiAgents.id });
+      if (!updated.length) throw userError("Asisten tidak ditemukan");
+      agentId = updated[0].id;
+      await tx.delete(aiAgentKnowledge).where(and(eq(aiAgentKnowledge.tenantId, tenantId), eq(aiAgentKnowledge.agentId, agentId)));
+    } else {
+      // The first assistant becomes the workspace default (used when nothing else is chosen).
+      const [{ n }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(aiAgents)
+        .where(eq(aiAgents.tenantId, tenantId));
+      if (Number(n) >= 20) throw userError("Maksimal 20 asisten per workspace");
+      const [row] = await tx
+        .insert(aiAgents)
+        .values({ ...values, tenantId, isDefault: Number(n) === 0 })
+        .returning({ id: aiAgents.id });
+      agentId = row.id;
+    }
+    if (docIds.length) {
+      await tx.insert(aiAgentKnowledge).values(docIds.map((documentId) => ({ tenantId, agentId, documentId })));
+    }
+    return agentId;
+  });
+  revalidatePath("/ai-agent");
+  return { id: savedId };
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  const { tenantId } = await tenantSession();
+  const [gone] = await db
+    .delete(aiAgents)
+    .where(and(eq(aiAgents.id, id), eq(aiAgents.tenantId, tenantId)))
+    .returning({ isDefault: aiAgents.isDefault });
+  // Keep a default when others remain (channels with no assistant use it).
+  if (gone?.isDefault) {
+    const next = await db.query.aiAgents.findFirst({
+      where: eq(aiAgents.tenantId, tenantId),
+      orderBy: (a, { asc }) => [asc(a.createdAt)],
+      columns: { id: true },
+    });
+    if (next) await db.update(aiAgents).set({ isDefault: true }).where(and(eq(aiAgents.id, next.id), eq(aiAgents.tenantId, tenantId)));
+  }
+  revalidatePath("/ai-agent");
+  revalidatePath("/channels");
+}
+
+export async function setDefaultAgent(id: string): Promise<void> {
+  const { tenantId } = await tenantSession();
+  // One default per tenant (unique index): clear the old one first, then set.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(aiAgents)
+      .set({ isDefault: false })
+      .where(and(eq(aiAgents.tenantId, tenantId), ne(aiAgents.id, id)));
+    const hit = await tx
+      .update(aiAgents)
+      .set({ isDefault: true, isActive: true, updatedAt: sql`now()` })
+      .where(and(eq(aiAgents.id, id), eq(aiAgents.tenantId, tenantId)))
+      .returning({ id: aiAgents.id });
+    if (!hit.length) throw userError("Asisten tidak ditemukan");
+  });
+  revalidatePath("/ai-agent");
 }
 
 // --- Promos ---

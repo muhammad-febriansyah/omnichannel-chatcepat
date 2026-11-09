@@ -12,7 +12,7 @@ const LABELS: Record<string, string> = {
   broadcasts: "Broadcast",
   templates: "Template Pesan",
   flows: "Automation",
-  "ai-agent": "AI Agent",
+  "ai-agent": "Asisten AI",
   reports: "Laporan",
   channels: "Channel",
   tags: "Tag & Label",

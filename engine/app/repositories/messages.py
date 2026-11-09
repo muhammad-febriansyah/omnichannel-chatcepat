@@ -57,6 +57,17 @@ async def count_inbound(session: AsyncSession, conversation_id: uuid.UUID) -> in
     ) or 0
 
 
+async def previous_inbound_at(session: AsyncSession, conversation_id: uuid.UUID) -> datetime | None:
+    """Time of the inbound message before the latest one (None = only one so far)."""
+    return await session.scalar(
+        select(Message.created_at)
+        .where(Message.conversation_id == conversation_id, Message.direction == "inbound")
+        .order_by(Message.created_at.desc())
+        .offset(1)
+        .limit(1)
+    )
+
+
 async def count_outbound_since(
     session: AsyncSession, channel_id: uuid.UUID, since: datetime
 ) -> int:

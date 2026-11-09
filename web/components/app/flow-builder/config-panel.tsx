@@ -1,17 +1,19 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
-import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical, Plug, Bot, Settings2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WaMessageEditor } from "@/components/app/wa-message-editor";
 import {
   CONDITION_OPS,
+  aiNodeMode,
   newId,
+  type AiNodeMode,
   type ConditionOp,
   type GraphNode,
   type NodeDataMap,
@@ -108,6 +110,21 @@ function KeywordInput({
 }
 
 export type ChannelOption = { id: string; name: string; type: string; autoReply?: boolean };
+export type AgentOption = { id: string; name: string; isActive: boolean; isDefault: boolean };
+
+const AI_MODES: { value: AiNodeMode; label: string; desc: string; icon: React.ElementType }[] = [
+  { value: "channel", label: "Ikuti asisten channel", desc: "Pakai asisten yang dipilih di kartu Channel (atau default).", icon: Plug },
+  { value: "agent", label: "Pilih asisten", desc: "Pakai satu asisten dari menu Asisten AI.", icon: Bot },
+  { value: "custom", label: "Atur khusus", desc: "Prompt & gaya khusus untuk langkah ini saja.", icon: Settings2 },
+];
+
+const IDLE_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "Hanya pesan pertama" },
+  { value: 6, label: "Atau setelah 6 jam tidak aktif" },
+  { value: 12, label: "Atau setelah 12 jam tidak aktif" },
+  { value: 24, label: "Atau setelah 1 hari tidak aktif" },
+  { value: 72, label: "Atau setelah 3 hari tidak aktif" },
+];
 
 // Other wordings of the same message. The engine picks one at random per send, so
 // repeated bot replies read natural instead of copy-pasted (also a spam signal).
@@ -160,27 +177,40 @@ const CHANNEL_LABEL: Record<string, string> = {
   telegram: "Telegram",
 };
 
-// Pick which connected accounts the trigger listens to. None picked = all.
+// Pick the ONE account a trigger listens to ("Semua akun" = every account). Stored as
+// a list for compatibility: [] = all, [id] = that account only.
 function ChannelPicker({ value, onChange, options }: { value: string[]; onChange: (v: string[]) => void; options: ChannelOption[] }) {
   if (options.length === 0) {
     return <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">Belum ada akun yang cocok. Hubungkan dulu di menu Channel.</p>;
   }
+  // Older flows may list several accounts; show the first and save a single one on change.
+  const selected = value.find((id) => options.some((o) => o.id === id)) ?? null;
+  const row = (key: string, active: boolean, onPick: () => void, label: React.ReactNode, badge?: string) => (
+    <button
+      key={key}
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onPick}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors",
+        active ? "border-brand-blue bg-blue-50 dark:bg-blue-500/10" : "border-border hover:bg-muted/50",
+      )}
+    >
+      <span className={cn("grid size-4 shrink-0 place-items-center rounded-full border-2", active ? "border-brand-blue" : "border-muted-foreground/40")}>
+        {active && <span className="size-2 rounded-full bg-brand-blue" />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge && <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">{badge}</span>}
+    </button>
+  );
   return (
-    <div className="space-y-1">
-      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px] hover:bg-muted/50">
-        <Checkbox checked={value.length === 0} onCheckedChange={() => onChange([])} />
-        <span className="font-medium">Semua akun</span>
-      </label>
-      {options.map((c) => {
-        const checked = value.includes(c.id);
-        return (
-          <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px] hover:bg-muted/50">
-            <Checkbox checked={checked} onCheckedChange={() => onChange(checked ? value.filter((x) => x !== c.id) : [...value, c.id])} />
-            <span className="min-w-0 flex-1 truncate">{c.name}</span>
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">{CHANNEL_LABEL[c.type] ?? c.type}</span>
-          </label>
-        );
-      })}
+    <div role="radiogroup" className="space-y-1">
+      {row("__all", selected === null, () => onChange([]), <span className="font-medium">Semua akun</span>)}
+      {options.map((c) => row(c.id, selected === c.id, () => onChange([c.id]), c.name, CHANNEL_LABEL[c.type] ?? c.type))}
+      {value.length > 1 && (
+        <p className="px-1 pt-1 text-[11px] text-amber-700 dark:text-amber-300">Flow ini sebelumnya memakai beberapa akun. Pilih satu akun lalu simpan.</p>
+      )}
     </div>
   );
 }
@@ -196,10 +226,12 @@ export function ConfigPanel({
   docs = [],
   promos = [],
   channels = [],
+  agents = [],
   tags = [],
   templates = [],
   broadcastChannelId = null,
 }: {
+  agents?: AgentOption[];
   docs?: DocOption[];
   promos?: PromoItem[];
   channels?: ChannelOption[];
@@ -233,7 +265,7 @@ export function ConfigPanel({
                 ["comment", "Komentar FB/IG"],
                 ["broadcast", "Broadcast terjadwal"],
                 ["button", "Klik tombol"],
-                ["welcome", "Pesan pertama"],
+                ["welcome", "Awal percakapan"],
                 ["fallback", "Cadangan"],
               ] as [TriggerKind, string][]).map(([k, label]) => (
                 <button
@@ -252,7 +284,10 @@ export function ConfigPanel({
             <p className={hintCls}>
               {d.kind === "keyword" && "Flow mulai saat pesan pelanggan mengandung salah satu keyword."}
               {d.kind === "button" && "Flow mulai saat pelanggan mengklik tombol dengan label ini — dari template broadcast atau pesan interaktif."}
-              {d.kind === "welcome" && "Flow mulai saat pelanggan mengirim pesan pertama kali."}
+              {d.kind === "welcome" &&
+                (d.idleHours
+                  ? `Flow mulai di pesan pertama pelanggan, dan lagi bila pelanggan kembali setelah ${d.idleHours} jam tidak mengirim pesan.`
+                  : "Flow mulai saat pelanggan mengirim pesan pertama kali.")}
               {d.kind === "fallback" && "Flow mulai saat pesan tidak cocok dengan flow lain."}
               {d.kind === "comment" &&
                 "Flow mulai saat ada komentar baru di postingan Facebook Page / Instagram. Balas publik dengan Balas Komentar, kirim pesan pribadi dengan Kirim DM."}
@@ -260,6 +295,21 @@ export function ConfigPanel({
                 "Kirim pesan massal WhatsApp ke kontak opt-in pada waktu yang Anda pilih. Sambungkan ke Pesan Broadcast, lalu atur langkah saat kontak membalas atau klik tombol."}
             </p>
           </Field>
+          {d.kind === "welcome" && (
+            <Field label="Mulai lagi" hint="Pelanggan lama yang menyapa lagi ikut mendapat sambutan, bukan cuma kontak baru.">
+              <NativeSelect
+                value={String(d.idleHours ?? 0)}
+                onChange={(e) => set<"trigger">({ idleHours: Number(e.target.value) || undefined })}
+                className={inputCls}
+              >
+                {IDLE_OPTIONS.map((o) => (
+                  <NativeSelectOption key={o.value} value={String(o.value)}>
+                    {o.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
           {d.kind === "broadcast" && <BroadcastTriggerFields d={d} set={(patch) => set<"trigger">(patch)} channels={channels} tags={tags} />}
           {d.kind === "comment" && (
             <>
@@ -581,8 +631,95 @@ export function ConfigPanel({
       break;
     }
     case "ai_agent": {
-      const ai = normalizeAiConfig((node.data as NodeDataMap["ai_agent"])?.ai);
-      body = (
+      const data = node.data as NodeDataMap["ai_agent"];
+      const ai = normalizeAiConfig(data?.ai);
+      const mode = aiNodeMode(data);
+      const chosen = agents.find((a) => a.id === data?.agentId);
+      const modePicker = (
+        <Field label="Siapa yang menjawab">
+          <div className="space-y-1.5" role="radiogroup" aria-label="Siapa yang menjawab">
+            {AI_MODES.map((m) => {
+              const MIcon = m.icon;
+              const on = mode === m.value;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set<"ai_agent">({ mode: m.value })}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition",
+                    on ? "border-brand-blue bg-blue-50 ring-2 ring-brand-blue/10 dark:bg-blue-500/10" : "border-border hover:bg-muted/50",
+                  )}
+                >
+                  <MIcon className={cn("size-4 shrink-0", on ? "text-brand-blue" : "text-muted-foreground")} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold">{m.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{m.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      );
+      const agentPicker =
+        mode === "agent" ? (
+          <Field label="Asisten">
+            {agents.length === 0 ? (
+              <p className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
+                Belum ada asisten.{" "}
+                <Link href="/ai-agent/new" target="_blank" className="font-medium text-brand-blue hover:underline">
+                  Buat di menu Asisten AI
+                </Link>
+                .
+              </p>
+            ) : (
+              <NativeSelect
+                value={data?.agentId ?? ""}
+                onChange={(e) => {
+                  const a = agents.find((x) => x.id === e.target.value);
+                  set<"ai_agent">({ agentId: a?.id, agentName: a?.name });
+                }}
+                className={inputCls}
+              >
+                <NativeSelectOption value="">Pilih asisten…</NativeSelectOption>
+                {agents.map((a) => (
+                  <NativeSelectOption key={a.id} value={a.id}>
+                    {a.name}
+                    {a.isDefault ? " (default)" : ""}
+                    {a.isActive ? "" : " (nonaktif)"}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            )}
+            {chosen && !chosen.isActive && (
+              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">Asisten ini nonaktif — yang menjawab asisten default.</p>
+            )}
+          </Field>
+        ) : null;
+      const linkOut = (
+        <Link
+          href={mode === "agent" && chosen ? `/ai-agent/${chosen.id}` : "/ai-agent"}
+          target="_blank"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-blue hover:underline"
+        >
+          <ExternalLink className="size-3.5" /> {mode === "agent" && chosen ? "Ubah & uji asisten ini" : "Kelola Asisten AI"}
+        </Link>
+      );
+      body = mode !== "custom" ? (
+        <div className="space-y-4">
+          {modePicker}
+          {agentPicker}
+          {mode === "channel" && (
+            <p className="rounded-lg bg-violet-50 p-3 text-[11.5px] leading-relaxed text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
+              Satu flow bisa dipakai di banyak akun — tiap akun menjawab dengan asisten yang dipilih di kartu Channel. Belum dipilih = asisten default.
+            </p>
+          )}
+          {linkOut}
+        </div>
+      ) : (
         <Tabs defaultValue="atur" className="gap-4">
           <TabsList className="w-full">
             <TabsTrigger value="atur" className="flex-1">
@@ -593,6 +730,7 @@ export function ConfigPanel({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="atur" className="space-y-3">
+            {modePicker}
             <AiConfigEditor value={ai} onChange={(next) => set<"ai_agent">({ ai: next })} docs={docs} promos={promos} />
             <div className="rounded-xl border border-dashed border-border p-3 text-[11.5px] leading-relaxed text-muted-foreground">
               <div className="mb-1.5 font-semibold text-foreground">Dua jalur keluar</div>

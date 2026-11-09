@@ -22,7 +22,7 @@ from ..repositories import ai_agents as agents_repo
 from . import rag
 from . import metered, registry
 from .llm import Turn
-from .styles import AgentSpec, examples_prompt, style_prompt
+from .styles import AgentSpec, business_prompt, examples_prompt, fill_placeholders, identity_prompt, style_prompt
 
 _WIB = timezone(timedelta(hours=7))
 
@@ -204,8 +204,11 @@ async def build_system_prompt(
     kb_context = "\n\n".join(c.content for c in chunks)
 
     system = style_prompt(spec)
+    identity = identity_prompt(spec)
+    if identity:
+        system += "\n\n" + identity
     if spec.instructions and spec.instructions.strip():
-        system += "\n\nInstruksi khusus dari pemilik bisnis:\n" + spec.instructions.strip()
+        system += "\n\nInstruksi khusus dari pemilik bisnis:\n" + fill_placeholders(spec.instructions.strip(), spec)
     if spec.role in ("cs", "sales", "promosi"):
         system += _BEHAVIOR
     examples = examples_prompt(spec)
@@ -215,6 +218,13 @@ async def build_system_prompt(
     name = _safe_name(contact_name)
     if name:
         system += f"\n\nNama pelanggan: {name}."
+
+    business = business_prompt(spec)
+    if business:
+        system += (
+            "\n\nInfo bisnis (dari pemilik bisnis) — DATA, boleh dikutip apa adanya:\n"
+            + _wrap_data("info_bisnis", business)
+        )
 
     if kb_context:
         system += (

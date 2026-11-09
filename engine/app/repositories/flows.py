@@ -59,6 +59,19 @@ def _match_comment(active: list[Flow], text: str, post_id: str) -> Flow | None:
     return catch_all
 
 
+def welcome_matches(trig: dict, is_first: bool, idle_hours: float | None) -> bool:
+    """"Awal percakapan": the first message, or — when the trigger sets idle_hours —
+    the first message after the customer was quiet that long (greet returning
+    customers again instead of the default reply)."""
+    if is_first:
+        return True
+    try:
+        limit = float(trig.get("idle_hours") or 0)
+    except (TypeError, ValueError):
+        return False
+    return limit > 0 and idle_hours is not None and idle_hours >= limit
+
+
 async def match_trigger(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -68,10 +81,12 @@ async def match_trigger(
     button_text: str | None = None,
     channel_id: uuid.UUID | None = None,
     comment_post_id: str | None = None,
+    idle_hours: float | None = None,
 ) -> Flow | None:
     """Cari flow aktif yang trigger-nya cocok. Urutan: klik tombol (label persis) →
     keyword (substring) → welcome (pesan pertama) → fallback.
 
+    idle_hours = jam sejak pesan masuk sebelumnya di percakapan ini (None = belum ada).
     Komentar postingan (comment_post_id diisi) hanya cocok ke pemicu "comment".
     Pemicu dengan daftar `channels` hanya berlaku untuk akun/channel itu."""
     text = (body or "").lower()
@@ -103,7 +118,7 @@ async def match_trigger(
             words = [w.lower() for w in trig.get("match", [])]
             if words and any(w in text for w in words):
                 return flow
-        elif kind == "welcome" and is_first:
+        elif kind == "welcome" and welcome_matches(trig, is_first, idle_hours):
             welcome = welcome or flow
         elif kind == "fallback":
             fallback = fallback or flow

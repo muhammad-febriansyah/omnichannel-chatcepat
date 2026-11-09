@@ -30,6 +30,8 @@ class AiAgent(UUIDPkMixin, TimestampMixin, Base):
     examples: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
     handoff_rules: Mapped[str | None] = mapped_column(sa.Text)
     fallback_message: Mapped[str | None] = mapped_column(sa.Text)
+    # Structured business facts (hours, address, shipping…) injected into the prompt.
+    business_info: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
     knowledge_all: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
     use_catalog: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
     use_promos: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())

@@ -8,9 +8,9 @@ type NodeDoc = { kind: NodeKind; what: string; when: string; tips?: string };
 const NODE_DOCS: NodeDoc[] = [
   {
     kind: "trigger",
-    what: "Titik awal flow. Pilih jenisnya: Keyword (pesan mengandung kata tertentu), Komentar FB/IG, Broadcast terjadwal, Klik tombol, Pesan pertama, atau Cadangan (pesan yang tidak cocok flow lain).",
+    what: "Titik awal flow. Pilih jenisnya: Keyword (pesan mengandung kata tertentu), Komentar FB/IG, Broadcast terjadwal, Klik tombol, Awal percakapan (pesan pertama, atau kembali setelah sekian jam tidak aktif), atau Cadangan (pesan yang tidak cocok flow lain).",
     when: "Setiap flow wajib punya tepat satu Pemicu. Atur juga “Berlaku untuk akun” bila flow hanya untuk akun tertentu, mis. Instagram toko A.",
-    tips: "Flow keyword dicek lebih dulu, lalu Pesan pertama, lalu Cadangan. Gunakan Cadangan + AI Agent sebagai jaring pengaman.",
+    tips: "Flow keyword dicek lebih dulu, lalu Awal percakapan, lalu Cadangan. Kalau tidak ada flow yang cocok, kartu Channel menentukan: dijawab Asisten AI, pesan tetap, atau diam.",
   },
   {
     kind: "broadcast_message",
@@ -182,7 +182,7 @@ export function FlowGuide() {
           <li>Simpan → Aktifkan. Komentar baru akan dibalas otomatis dan muncul di Inbox dengan label 💬 Komentar.</li>
         </ol>
         <p>
-          Untuk DM biasa (bukan komentar), pakai Pemicu Keyword / Pesan pertama / Cadangan dan atur “Berlaku untuk akun” agar flow hanya membalas akun tertentu.
+          Untuk DM biasa (bukan komentar), pakai Pemicu Keyword / Awal percakapan / Cadangan dan atur “Berlaku untuk akun” agar flow hanya membalas akun tertentu.
         </p>
         <Tip tone="warn">
           Aturan Meta: 1 DM per komentar (maks. 7 hari setelah komentar). Balasan biasa di DM hanya boleh dalam 24 jam sejak pesan terakhir pelanggan. Hindari
@@ -216,7 +216,7 @@ export function FlowGuide() {
           <li>Percakapan sedang dipegang CS → bot diam.</li>
           <li>Pelanggan sedang di tengah flow (Tunggu Balasan/Menu) → flow dilanjutkan.</li>
           <li>Klik tombol broadcast → flow Pemicu “Klik tombol”.</li>
-          <li>Keyword cocok → flow Keyword. Pesan pertama → flow Pesan pertama.</li>
+          <li>Keyword cocok → flow Keyword. Pesan pertama (atau kembali setelah lama diam) → flow Awal percakapan.</li>
           <li>Tidak ada yang cocok → flow Cadangan (mis. template CS AI 24 Jam). Tanpa flow Cadangan → pesan default “pesan Anda kami terima”.</li>
         </ol>
         <p>Komentar FB/IG hanya dibalas flow Komentar — flow Cadangan/AI tidak pernah membalas komentar secara publik.</p>

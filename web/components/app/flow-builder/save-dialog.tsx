@@ -35,7 +35,7 @@ type StepState = "wait" | "run" | "ok" | "fail";
 const TRIGGER_TEXT: Record<TriggerKind, string> = {
   keyword: "Keyword",
   button: "Tombol broadcast",
-  welcome: "Pesan pertama",
+  welcome: "Awal percakapan",
   fallback: "Pesan tak dikenali",
   comment: "Semua komentar FB/IG",
   broadcast: "Broadcast terjadwal",

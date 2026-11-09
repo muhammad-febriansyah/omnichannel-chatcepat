@@ -12,7 +12,8 @@ import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeleteButton } from "@/components/app/delete-button";
 import { ChannelAutomationSettings } from "@/components/app/channel-automation-settings";
-import { disconnectChannel } from "@/lib/actions";
+import { disconnectChannel, type FallbackAction } from "@/lib/actions";
+import { loadAgents } from "@/lib/automation-data";
 import { Suspense } from "react";
 import { ConnectToast } from "./connect-toast";
 
@@ -45,13 +46,16 @@ async function load(tenantId: string | null) {
 export default async function ChannelsPage() {
   const session = await requirePageAbility("channel.view");
   const rows = await load(session.tenantId);
-  const menuFlows = session.tenantId
-    ? await db.query.flows.findMany({
-        where: and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")),
-        columns: { id: true, name: true, status: true },
-        orderBy: [desc(flows.createdAt)],
-      })
-    : [];
+  const [menuFlows, agents] = session.tenantId
+    ? await Promise.all([
+        db.query.flows.findMany({
+          where: and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")),
+          columns: { id: true, name: true, status: true },
+          orderBy: [desc(flows.createdAt)],
+        }),
+        loadAgents(session.tenantId),
+      ])
+    : [[], []];
 
   const connected = rows.filter((c) => c.status === "connected").length;
 
@@ -131,6 +135,10 @@ export default async function ChannelsPage() {
                     enabled={c.autoReplyEnabled}
                     defaultFlowId={c.defaultFlowId}
                     flows={menuFlows}
+                    agentId={c.aiAgentId}
+                    agents={agents}
+                    fallbackAction={c.fallbackAction as FallbackAction}
+                    fallbackMessage={c.fallbackMessage}
                   />
                 </div>
 

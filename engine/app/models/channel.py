@@ -44,3 +44,7 @@ class Channel(UUIDPkMixin, TimestampMixin, Base):
     ai_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.Uuid, sa.ForeignKey("ai_agents.id", ondelete="SET NULL")
     )
+    # No flow matched: 'ai' (channel assistant answers), 'message' (fixed text),
+    # 'silent' (agent replies manually). See migration 0028.
+    fallback_action: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="message")
+    fallback_message: Mapped[str | None] = mapped_column(sa.Text)

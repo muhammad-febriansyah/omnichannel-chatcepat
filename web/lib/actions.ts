@@ -8,7 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
+import { aiAgents, broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import {
   assertCanAddAgent,
@@ -528,9 +528,17 @@ export async function setChannelAutoReply(channelId: string, enabled: boolean) {
   revalidatePath("/channels");
 }
 
+export type FallbackAction = "ai" | "message" | "silent";
+
 export async function setChannelAutomation(
   channelId: string,
-  input: { enabled: boolean; flowId: string | null },
+  input: {
+    enabled: boolean;
+    flowId: string | null;
+    agentId?: string | null;
+    fallbackAction?: FallbackAction;
+    fallbackMessage?: string | null;
+  },
 ) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
@@ -546,6 +554,18 @@ export async function setChannelAutomation(
     if (flow.status !== "active") throw userError("Aktifkan flow itu dulu sebelum dijadikan flow utama");
   }
 
+  // Assistant answering on this channel (null = workspace default) — must be ours.
+  if (input.agentId) {
+    const agent = await db.query.aiAgents.findFirst({
+      where: and(eq(aiAgents.id, input.agentId), eq(aiAgents.tenantId, session.tenantId)),
+      columns: { id: true },
+    });
+    if (!agent) throw userError("Asisten tidak ditemukan");
+  }
+  const fallbackAction = input.fallbackAction ?? "message";
+  if (!["ai", "message", "silent"].includes(fallbackAction)) throw userError("Pilihan balasan tidak valid");
+  const fallbackMessage = (input.fallbackMessage ?? "").trim().slice(0, 500) || null;
+
   await db
     .update(channels)
     .set({
@@ -553,6 +573,8 @@ export async function setChannelAutomation(
       // Mode is legacy: everything is flow-first now (AI = AI Agent node in a flow).
       autoReplyMode: "hybrid",
       defaultFlowId: input.flowId,
+      ...(input.agentId !== undefined ? { aiAgentId: input.agentId } : {}),
+      ...(input.fallbackAction !== undefined ? { fallbackAction, fallbackMessage } : {}),
       updatedAt: sql`now()`,
     })
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));

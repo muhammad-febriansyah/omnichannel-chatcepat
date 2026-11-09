@@ -98,6 +98,8 @@ export const channels = pgTable("channels", {
 	autoReplyMode: autoReplyMode("auto_reply_mode").default('hybrid').notNull(),
 	defaultFlowId: uuid("default_flow_id"),
 	aiAgentId: uuid("ai_agent_id"),
+	fallbackAction: text("fallback_action").default('message').notNull(),
+	fallbackMessage: text("fallback_message"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -542,6 +544,7 @@ export const aiAgents = pgTable("ai_agents", {
 	examples: jsonb().default([]).notNull(),
 	handoffRules: text("handoff_rules"),
 	fallbackMessage: text("fallback_message"),
+	businessInfo: jsonb("business_info").default({}).notNull(),
 	knowledgeAll: boolean("knowledge_all").default(true).notNull(),
 	useCatalog: boolean("use_catalog").default(true).notNull(),
 	usePromos: boolean("use_promos").default(true).notNull(),

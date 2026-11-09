@@ -7,7 +7,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { DEFAULT_AI_CONFIG, normalizeAiConfig, type AiConfig } from "./ai-agent-options";
+import { DEFAULT_AI_CONFIG, businessFromEngine, businessToEngine, normalizeAiConfig, type AiConfig } from "./ai-agent-options";
 
 export type TriggerKind = "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast";
 export type ConditionOp = "equals" | "not_equals" | "contains" | "starts_with" | "is_empty" | "not_empty";
@@ -32,6 +32,8 @@ export type NodeDataMap = {
     posts?: string[];
     tags?: string[];
     scheduleAt?: string | null;
+    // welcome only: also restart after the customer was quiet this many hours (0/absent = first message only).
+    idleHours?: number;
   };
   // variants: other wordings of the same message; the engine picks one at random.
   send_text: { text: string; variants?: string[] };
@@ -42,7 +44,10 @@ export type NodeDataMap = {
   condition: { variable: string; rules: ConditionRule[] };
   set_var: { pairs: VarPair[] };
   add_tag: { tags: string[] };
-  ai_agent: { ai: AiConfig }; // AI settings live on the node (n8n style)
+  // mode: "channel" = the channel's assistant (menu Asisten AI), "agent" = a chosen
+  // assistant, "custom" = settings on this node only (older nodes have no mode → custom).
+  // agentName: display only (not compiled), refreshed from the assistant list on load.
+  ai_agent: { ai: AiConfig; mode?: AiNodeMode; agentId?: string; agentName?: string };
   handoff: Record<string, never>;
   reply_comment: { texts: string[] }; // public reply under a FB/IG comment (one picked at random)
   private_reply: { text: string; variants?: string[] }; // one DM to the commenter
@@ -60,6 +65,12 @@ export type NodeDataMap = {
     saveAs: string;
   };
 };
+
+export type AiNodeMode = "channel" | "agent" | "custom";
+
+export function aiNodeMode(d: { mode?: AiNodeMode } | undefined): AiNodeMode {
+  return d?.mode === "channel" || d?.mode === "agent" ? d.mode : "custom";
+}
 
 export type NodeKind = keyof NodeDataMap;
 
@@ -131,7 +142,7 @@ export function defaultData<K extends NodeKind>(kind: K): NodeDataMap[K] {
     condition: { variable: "pesan", rules: [{ id: newId("r"), op: "contains", value: "" }] },
     set_var: { pairs: [{ id: newId("v"), key: "", value: "" }] },
     add_tag: { tags: [] },
-    ai_agent: { ai: DEFAULT_AI_CONFIG },
+    ai_agent: { ai: DEFAULT_AI_CONFIG, mode: "channel" },
     handoff: {},
     reply_comment: { texts: ["Terima kasih kak {{nama}}! Info lengkapnya sudah kami kirim lewat DM ya 🙏"] },
     private_reply: { text: "Halo kak {{nama}}, terima kasih sudah berkomentar! Ini info yang kakak tanyakan:" },
@@ -217,6 +228,7 @@ export function aiToEngine(raw: unknown): Record<string, unknown> {
     document_ids: c.knowledgeAll ? [] : c.documentIds,
     use_catalog: c.useCatalog,
     use_promos: c.usePromos,
+    business_info: businessToEngine(c.businessInfo),
   };
 }
 
@@ -238,6 +250,7 @@ function aiFromEngine(raw: any): AiConfig {
     documentIds: raw.document_ids,
     useCatalog: raw.use_catalog ?? true,
     usePromos: raw.use_promos ?? true,
+    businessInfo: businessFromEngine(raw.business_info),
   });
 }
 
@@ -270,6 +283,7 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
             ...(d.channels?.length ? { channels: d.channels } : {}),
             ...(d.kind === "comment" && d.posts?.length ? { posts: d.posts } : {}),
             ...(d.kind === "broadcast" ? { tags: d.tags ?? [], schedule_at: d.scheduleAt || null } : {}),
+            ...(d.kind === "welcome" && d.idleHours && d.idleHours > 0 ? { idle_hours: Math.round(d.idleHours) } : {}),
           },
           next,
         });
@@ -387,15 +401,20 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         out.push({ id: invalidId, type: "send_text", text: d.invalidText, next: target(node.id, "invalid") ?? node.id });
         break;
       }
-      case "ai_agent":
+      case "ai_agent": {
+        const d = node.data as NodeDataMap["ai_agent"];
+        const mode = aiNodeMode(d);
         out.push({
           id: node.id,
           type: "ai_agent",
-          ai: aiToEngine((node.data as NodeDataMap["ai_agent"]).ai),
+          // Engine order: node settings (ai) → agent_id → channel assistant → default.
+          ...(mode === "custom" ? { ai: aiToEngine(d.ai) } : {}),
+          ...(mode === "agent" && d.agentId ? { agent_id: d.agentId } : {}),
           next,
           handoff_next: target(node.id, "handoff"),
         });
         break;
+      }
       case "handoff":
         out.push({ id: node.id, type: "handoff", to: "agent" });
         break;
@@ -465,6 +484,11 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       case "add_tag":
         if ((node.data as NodeDataMap["add_tag"]).tags.length === 0) add(node.id, "Tambahkan minimal satu tag");
         break;
+      case "ai_agent": {
+        const d = node.data as NodeDataMap["ai_agent"];
+        if (aiNodeMode(d) === "agent" && !d.agentId) add(node.id, "Pilih asisten AI");
+        break;
+      }
       case "wait_reply":
         if (!VAR_RE.test((node.data as NodeDataMap["wait_reply"]).saveAs))
           add(node.id, "Nama variabel hanya huruf, angka, underscore");
@@ -670,6 +694,7 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
             ...(n.trigger?.kind === "broadcast"
               ? { tags: Array.isArray(n.trigger?.tags) ? n.trigger.tags.map(String) : [], scheduleAt: n.trigger?.schedule_at ?? null }
               : {}),
+            ...(n.trigger?.kind === "welcome" && Number(n.trigger?.idle_hours) > 0 ? { idleHours: Number(n.trigger.idle_hours) } : {}),
           },
         });
         edges.push(...edge(n.id, "out", n.next));
@@ -720,7 +745,17 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         break;
       }
       case "ai_agent":
-        gNodes.push({ id: n.id, type: "ai_agent", position: at, data: { ai: aiFromEngine(n.ai) } });
+        gNodes.push({
+          id: n.id,
+          type: "ai_agent",
+          position: at,
+          // Same precedence as the engine: own settings → chosen assistant → channel.
+          data: n.ai
+            ? { ai: aiFromEngine(n.ai), mode: "custom" }
+            : n.agent_id
+              ? { ai: DEFAULT_AI_CONFIG, mode: "agent", agentId: String(n.agent_id) }
+              : { ai: DEFAULT_AI_CONFIG, mode: "channel" },
+        });
         edges.push(...edge(n.id, "out", n.next));
         edges.push(...edge(n.id, "handoff", n.handoff_next));
         break;

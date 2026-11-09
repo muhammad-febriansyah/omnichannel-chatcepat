@@ -63,7 +63,8 @@ export const TENANT_SECTIONS: NavSection[] = [
     id: "automation",
     title: "Otomasi & Marketing",
     items: [
-      { href: "/flows", label: "Automation", icon: Workflow, ability: "flow.manage", keywords: "flow bot alur chatbot menu ai agent knowledge promo broadcast blast kampanye" },
+      { href: "/flows", label: "Automation", icon: Workflow, ability: "flow.manage", keywords: "flow bot alur chatbot menu knowledge promo broadcast blast kampanye" },
+      { href: "/ai-agent", label: "Asisten AI", icon: Sparkles, ability: "knowledge.manage", keywords: "ai agent bot prompt persona customer service cs sales gaya bahasa" },
       { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage", keywords: "hsm balasan cepat" },
       { href: "/automation", label: "Otomasi Sosial", icon: Bot, ability: "flow.manage", keywords: "instagram facebook komentar dm" },
     ],

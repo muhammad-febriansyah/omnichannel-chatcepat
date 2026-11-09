@@ -267,6 +267,65 @@ test("flow AI Agent node carries its own AI settings to the engine and back", ()
   assert.equal(legacy.nodes.find((n) => n.id === "a").data.ai.tone, "ramah");
 });
 
+test("flow AI node modes: channel assistant, chosen assistant, or own settings", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const mk = (data) => ({
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "welcome", keywords: [], idleHours: 12 } },
+      { id: "a", type: "ai_agent", position: { x: 0, y: 0 }, data },
+    ],
+    edges: [{ id: "1", source: "t", sourceHandle: "out", target: "a" }],
+  });
+  const ai = fg.defaultData("ai_agent").ai;
+
+  // channel: no ai, no agent_id → engine uses channel.ai_agent_id / tenant default
+  const ch = fg.compileGraph(mk({ ai, mode: "channel" })).nodes;
+  const chNode = ch.find((n) => n.id === "a");
+  assert.equal(chNode.ai, undefined);
+  assert.equal(chNode.agent_id, undefined);
+  assert.equal(fg.loadGraph({ nodes: ch }).nodes.find((n) => n.id === "a").data.mode, "channel");
+
+  // agent: only agent_id goes to the engine; the display name never does
+  const ag = fg.compileGraph(mk({ ai, mode: "agent", agentId: "11111111-1111-4111-8111-111111111111", agentName: "CS" })).nodes;
+  const agNode = ag.find((n) => n.id === "a");
+  assert.equal(agNode.agent_id, "11111111-1111-4111-8111-111111111111");
+  assert.equal(agNode.ai, undefined);
+  assert.equal(agNode.agentName, undefined);
+  const agBack = fg.loadGraph({ nodes: ag }).nodes.find((n) => n.id === "a").data;
+  assert.equal(agBack.mode, "agent");
+  assert.equal(agBack.agentId, "11111111-1111-4111-8111-111111111111");
+  assert.ok(fg.validateGraph(mk({ ai, mode: "agent" })).some((i) => i.nodeId === "a" && /asisten/i.test(i.message)));
+
+  // custom: own settings incl. business info
+  const custom = { ...ai, businessInfo: { ...ai.businessInfo, assistantName: "Rina", businessName: "Toko Mulia" } };
+  const cu = fg.compileGraph(mk({ ai: custom, mode: "custom" })).nodes;
+  const cuNode = cu.find((n) => n.id === "a");
+  assert.deepEqual(cuNode.ai.business_info, { assistant_name: "Rina", business_name: "Toko Mulia" });
+  const cuBack = fg.loadGraph({ nodes: cu }).nodes.find((n) => n.id === "a").data;
+  assert.equal(cuBack.mode, "custom");
+  assert.equal(cuBack.ai.businessInfo.assistantName, "Rina");
+
+  // "Awal percakapan" idle hours survive the round trip
+  const trig = cu.find((n) => n.type === "trigger");
+  assert.equal(trig.trigger.idle_hours, 12);
+  assert.equal(fg.loadGraph({ nodes: cu }).nodes.find((n) => n.type === "trigger").data.idleHours, 12);
+  const noIdle = fg.compileGraph({ ...mk({ ai, mode: "channel" }), nodes: [{ id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "keyword", keywords: ["x"], idleHours: 12 } }, mk({ ai, mode: "channel" }).nodes[1]] });
+  assert.equal(noIdle.nodes.find((n) => n.type === "trigger").trigger.idle_hours, undefined, "idle only for welcome");
+});
+
+test("assistant presets and business info map cleanly to the engine", () => {
+  const o = loadTS("lib/ai-agent-options.ts");
+  const cs = o.presetInput("cs");
+  assert.equal(cs.role, "cs");
+  assert.match(cs.instructions, /\{\{nama_asisten\}\}/);
+  assert.equal(cs.isActive, true);
+  assert.equal(o.presetInput("kosong").instructions, "", "blank start has no sample prompt");
+  for (const p of o.ASSISTANT_PRESETS) assert.ok(o.presetInput(p.id).instructions.length > 20, `${p.id} has a prompt`);
+  const info = { ...o.EMPTY_BUSINESS_INFO, assistantName: " Rina ", hours: "08-21" };
+  assert.deepEqual(o.businessToEngine(info), { assistant_name: "Rina", hours: "08-21" });
+  assert.equal(o.businessFromEngine({ assistant_name: "Rina", hours: 5 }).hours, "");
+});
+
 test("flow AI node 'Perlu CS' branch compiles, validates and reloads", () => {
   const fg = loadTS("lib/flow-graph.ts");
   const graph = {
@@ -310,6 +369,16 @@ test("every flow template builds a valid, compilable graph", () => {
     // Reload keeps every node (templates stay editable).
     assert.equal(fg.loadGraph({ nodes: compiled.nodes, ui: graph }).nodes.length, graph.nodes.length);
   }
+  // Welcome templates greet returning customers too; general AI steps follow the channel's assistant.
+  for (const id of ["welcome-menu", "natural-greeting-ai", "menu-ai-hybrid"]) {
+    const trig = fg.compileGraph(tpl.findTemplate(id).build()).nodes.find((n) => n.type === "trigger");
+    assert.equal(trig.trigger.idle_hours, 12, `${id} idle hours`);
+  }
+  for (const id of ["ai-faq", "natural-greeting-ai", "menu-ai-hybrid"]) {
+    const bot = fg.compileGraph(tpl.findTemplate(id).build()).nodes.find((n) => n.type === "ai_agent");
+    assert.ok(bot && bot.ai === undefined && bot.agent_id === undefined, `${id} uses the channel assistant`);
+  }
+  assert.ok(fg.compileGraph(tpl.findTemplate("ai-complaint").build()).nodes.find((n) => n.type === "ai_agent").ai, "complaint keeps its own style");
   const c2d = tpl.findTemplate("comment-to-dm").build();
   const trig = fg.compileGraph(c2d).nodes.find((n) => n.type === "trigger");
   assert.equal(trig.trigger.kind, "comment");
