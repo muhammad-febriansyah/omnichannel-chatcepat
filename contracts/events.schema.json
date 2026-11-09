@@ -91,6 +91,10 @@
           "type": "string",
           "enum": ["comment_reply", "private_reply"],
           "description": "comment_reply = balas publik di komentar; private_reply = DM ke pemberi komentar"
+        },
+        "humanize": {
+          "type": "boolean",
+          "description": "Balasan otomatis bot: gateway tampilkan seperti manusia (dilihat, mengetik, jeda) sebelum kirim. Kosong/false = kirim langsung (balasan agen)."
         }
       },
       "required": ["event_id", "idempotency_key", "channel_id", "to", "type", "conversation_id"]

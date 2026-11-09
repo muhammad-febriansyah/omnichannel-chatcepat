@@ -12,6 +12,7 @@ export function StatCard({
   spark,
   hint,
   delta,
+  lowerIsBetter = false,
 }: {
   icon: ElementType;
   label: string;
@@ -20,7 +21,10 @@ export function StatCard({
   spark?: number[];
   hint?: React.ReactNode; // small line under the value, e.g. "Real-time"
   delta?: number | null; // % vs previous period (null = new, undefined = hidden)
+  lowerIsBetter?: boolean; // e.g. response time: a drop is good news (green)
 }) {
+  const good = delta == null ? delta === null : lowerIsBetter ? delta < 0 : delta > 0;
+  const bad = delta != null && (lowerIsBetter ? delta > 0 : delta < 0);
   return (
     <div className="flex flex-col gap-4 rounded-[20px] bg-card p-5">
       <div className="flex items-start justify-between gap-3">
@@ -35,7 +39,7 @@ export function StatCard({
           <div
             className={cn(
               "mt-2 inline-flex items-center gap-1 text-xs font-semibold",
-              delta === null || delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-500" : "text-muted-foreground",
+              good ? "text-emerald-600" : bad ? "text-red-500" : "text-muted-foreground",
             )}
           >
             {delta === null ? "Baru" : delta > 0 ? `↗ +${delta}%` : delta < 0 ? `↘ ${delta}%` : "Stabil"}

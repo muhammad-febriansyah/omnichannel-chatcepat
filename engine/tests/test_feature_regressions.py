@@ -165,3 +165,33 @@ async def test_disabled_flow_does_not_resume_and_fallback_triggers(service_db):
 @pytest.mark.parametrize("raw,expected", [("0812-3456-789", "628123456789"), ("+81 9012345678", "819012345678"), ("0081 9012345678", "819012345678")])
 def test_international_phone_not_rewritten_as_indonesian(raw, expected):
     assert conversation._normalize_phone(raw) == expected
+
+
+def test_inbound_media_preview_label():
+    from datetime import datetime, timezone
+
+    from app.contracts.events import InboundMessage
+    from app.services.inbound import _inbound_kind, _preview
+
+    def msg(media, typ="file"):
+        return InboundMessage.model_validate({
+            "channel_id": "00000000-0000-0000-0000-000000000001", "channel_type": "wa_unofficial", "event_id": "e",
+            "dedup_key": "d", "provider_message_id": "p",
+            "from": {"external_id": "62812"}, "type": typ,
+            "media": media, "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+    assert _preview(None, _inbound_kind(msg({"url": "/uploads/a.ogg", "mime": "audio/ogg"}))) == "[audio]"
+    assert _preview(None, _inbound_kind(msg({"url": "/uploads/a.jpg", "mime": "image/jpeg"}, "image"))) == "[foto]"
+    assert _preview(None, _inbound_kind(msg({"url": "/uploads/a.pdf", "mime": "application/pdf"}))) == "[dokumen]"
+    assert _preview("halo", _inbound_kind(msg(None, "text"))) == "halo"
+
+
+def test_flow_message_variants_pick_one():
+    from app.pipeline.flow_engine import pick_text
+
+    node = {"text": "Halo kak!", "variants": ["Hai kak 👋", "", "Halo, ada yang bisa dibantu?"]}
+    seen = {pick_text(node) for _ in range(200)}
+    assert seen == {"Halo kak!", "Hai kak 👋", "Halo, ada yang bisa dibantu?"}
+    assert pick_text({"text": "Satu"}) == "Satu"
+    assert pick_text({"text": "", "variants": []}) == ""

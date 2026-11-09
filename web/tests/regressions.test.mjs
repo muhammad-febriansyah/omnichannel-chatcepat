@@ -430,3 +430,39 @@ test("chat attachments: only safe file types, WhatsApp-sized limits", () => {
   assert.equal(a.CHAT_MAX_BYTES.image, 5 * 1024 * 1024);
   assert.equal(a.formatBytes(1536), "2 KB");
 });
+
+// Tenant isolation: every domain table referenced in the dashboard SQL must carry a
+// `<alias>.tenant_id = ${t}` filter in the same query (joins included), so one
+// tenant's dashboard can never count another tenant's rows.
+test("tenant dashboard: every table alias is filtered by tenant_id", () => {
+  const src = readFileSync(path.join(root, "lib/tenant-dashboard.ts"), "utf8");
+  // Drop tiny nested templates (sql`m.created_at`, sql``) so each query block parses whole.
+  const flat = src.replace(/sql`[\w.]*`/g, "X");
+  const blocks = flat.match(/sql`[\s\S]*?`/g) ?? [];
+  const TABLES = "messages|conversations|contacts|channels|broadcasts|broadcast_recipients|ai_usage|users";
+  const ref = new RegExp(`\\b(?:from|join)\\s+(${TABLES})\\s+(?:as\\s+)?([a-z_]+)`, "gi");
+  let checked = 0;
+  for (const block of blocks) {
+    for (const [, table, alias] of block.matchAll(ref)) {
+      checked++;
+      assert.ok(
+        new RegExp(`\\b${alias}\\.tenant_id\\s*=\\s*\\$\\{t\\}`).test(block),
+        `${table} ${alias} is not filtered by ${alias}.tenant_id = \${t} in:\n${block.slice(0, 200)}`,
+      );
+    }
+    // Tables must always be aliased, otherwise the rule above cannot see them.
+    assert.ok(!new RegExp(`\\b(?:from|join)\\s+(${TABLES})\\s*(?:where|on|\\)|$)`, "i").test(block), `unaliased table in:\n${block.slice(0, 200)}`);
+  }
+  assert.ok(checked >= 20, `expected many table references, found ${checked}`);
+  // The tenant id must come from the caller (session), never from URL filters.
+  assert.match(src, /export async function loadTenantDashboard\(tenantId: string, f: DashboardFilters\)/);
+  const page = readFileSync(path.join(root, "app/(app)/dashboard/page.tsx"), "utf8");
+  assert.match(page, /loadTenantDashboard\(session\.tenantId/);
+});
+
+test("tenant dashboard: URL filters are whitelisted", () => {
+  const mod = loadTS("lib/tenant-dashboard.ts", { "@/lib/db": { db: {} }, "drizzle-orm": { sql: () => ({}) } });
+  assert.deepEqual(mod.parseFilters({ range: "30d", ch: "instagram" }), { range: "30d", days: 30, channel: "instagram" });
+  assert.deepEqual(mod.parseFilters({ range: "1; drop table", ch: "x' or 1=1" }), { range: "7d", days: 7, channel: null });
+  assert.deepEqual(mod.parseFilters({}), { range: "7d", days: 7, channel: null });
+});

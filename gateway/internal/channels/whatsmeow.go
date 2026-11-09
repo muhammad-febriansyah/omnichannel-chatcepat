@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -53,6 +53,7 @@ type Whatsmeow struct {
 	store     Resolver
 	log       waLog.Logger
 	sink      ChannelStatusSink // opsional: persist channels.status durable (via web)
+	media     MediaSink         // opsional: simpan lampiran masuk (via web) → tampil di inbox
 
 	mu          sync.Mutex
 	clients     map[string]*waSession // channelID → sesi aktif
@@ -65,6 +66,15 @@ func (w *Whatsmeow) SetStatusSink(s ChannelStatusSink) {
 		return
 	}
 	w.sink = s
+}
+
+// SetMediaSink memasang penyimpan lampiran masuk. nil = media masuk hanya tampil
+// sebagai teks placeholder (mis. "[Foto]").
+func (w *Whatsmeow) SetMediaSink(s MediaSink) {
+	if w == nil {
+		return
+	}
+	w.media = s
 }
 
 type waSession struct {
@@ -159,7 +169,9 @@ func (w *Whatsmeow) Restore(ctx context.Context) {
 
 // PairDevice memulai sesi baru dan mengalirkan QR sampai sukses/gagal. Pada sukses,
 // client disimpan & handler inbound aktif; web menyimpan PairEvent.JID ke channel.
-func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, error) {
+// ctx = umur halaman QR: kalau ditutup sebelum scan, koneksi WA dilepas (tidak
+// menggantung selamanya).
+func (w *Whatsmeow) PairDevice(ctx context.Context, channelID, tenantID string) (<-chan PairEvent, error) {
 	if w == nil {
 		return nil, fmt.Errorf("whatsmeow nonaktif (DATABASE_URL_SYNC kosong)")
 	}
@@ -197,14 +209,27 @@ func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, er
 	}
 
 	out := make(chan PairEvent)
+	// emit returns false once the page is gone, so the loop never blocks on a reader
+	// that will not come back.
+	emit := func(ev PairEvent) bool {
+		select {
+		case out <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	go func() {
 		defer close(out)
 		for {
 			var item whatsmeow.QRChannelItem
 			var ok bool
 			select {
+			case <-ctx.Done():
+				cli.Disconnect()
+				return
 			case err := <-failCh:
-				out <- PairEvent{Err: err}
+				emit(PairEvent{Err: err})
 				cli.Disconnect()
 				return
 			case item, ok = <-qrChan:
@@ -214,19 +239,24 @@ func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, er
 			}
 			switch {
 			case item.Event == "code":
-				out <- PairEvent{QR: item.Code}
+				if !emit(PairEvent{QR: item.Code}) {
+					cli.Disconnect()
+					return
+				}
 			case item.Error != nil:
-				out <- PairEvent{Err: item.Error}
+				emit(PairEvent{Err: item.Error})
 				cli.Disconnect()
 				return
 			case cli.Store.ID != nil:
 				jid := cli.Store.ID.String()
 				w.put(channelID, &waSession{cli: cli, channelID: channelID, tenantID: tenantID})
-				out <- PairEvent{JID: jid, Done: true}
+				if !emit(PairEvent{JID: jid, Done: true}) {
+					log.Printf("whatsmeow: channel %s ter-pair (%s) tapi halaman QR sudah ditutup — JID belum tersimpan, ulangi pairing", channelID, jid)
+				}
 				return
 			default:
 				// timeout / batal sebelum sukses.
-				out <- PairEvent{Err: fmt.Errorf("pairing berakhir: %s", item.Event)}
+				emit(PairEvent{Err: fmt.Errorf("pairing berakhir: %s", item.Event)})
 				cli.Disconnect()
 				return
 			}
@@ -564,12 +594,16 @@ func (w *Whatsmeow) publishChannelStatus(tenantID, channelID, status, reason str
 // handleMessage menormalisasi pesan masuk WA → contracts.InboundMessage → bus
 // (idempoten via DedupKey).
 func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *events.Message) {
-	if msg.Info.IsFromMe {
+	// Hanya chat pribadi. Grup, status, dan saluran (newsletter) bukan percakapan
+	// dengan pelanggan — kalau ikut masuk, tiap anggota grup / status kontak jadi
+	// percakapan baru dan bisa dibalas bot (spam → rawan banned).
+	if msg.Info.IsFromMe || !isDirectChat(msg.Info.Chat) {
 		return
 	}
 	body := extractText(msg.Message)
-	if body == "" {
-		return // hanya teks untuk saat ini (docs/prd/04)
+	att := inboundAttachment(msg.Message)
+	if body == "" && att == nil {
+		return // reaksi, polling, lokasi, dll. belum didukung
 	}
 
 	// Anti-banned: tampil manusiawi — tandai pesan "dibaca" (centang biru)
@@ -577,12 +611,33 @@ func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *
 	// best-effort, tak boleh menahan handler atau menggagalkan inbound.
 	go markReadHumanlike(cli, msg.Info)
 
+	if att == nil {
+		w.publishInbound(channelID, msg.Info, contracts.InboundMessageTypeText, body, nil)
+		return
+	}
+	// Unduh media bisa beberapa detik — jangan tahan event loop whatsmeow.
+	go func() {
+		media := w.storeAttachment(cli, channelID, att)
+		typ, text := contracts.InboundMessageTypeText, body
+		switch {
+		case media == nil && text == "":
+			text = "[" + att.label + "]" // gagal simpan → tetap kelihatan di inbox
+		case media != nil && att.image:
+			typ = contracts.InboundMessageTypeImage
+		case media != nil:
+			typ = contracts.InboundMessageTypeFile
+		}
+		w.publishInbound(channelID, msg.Info, typ, text, media)
+	}()
+}
+
+// publishInbound menormalisasi pesan masuk → contracts.InboundMessage → bus.
+func (w *Whatsmeow) publishInbound(channelID string, info types.MessageInfo, typ contracts.InboundMessageType, body string, media *contracts.Media) {
 	// WA baru pakai LID (id tersembunyi) di Sender; nomor asli (PN) ada di SenderAlt.
 	// Wajib pakai PN — kalau LID, balasan dikirim ke <lid>@s.whatsapp.net (gagal,
 	// "privacy token 400") + kontak tak match percakapan keluar (yang simpan phone).
-	sender := senderPhone(msg.Info)
-	pmID := msg.Info.ID
-	name := optName(msg.Info.PushName)
+	sender := senderPhone(info)
+	pmID := info.ID
 	phone := sender
 	inb := contracts.InboundMessage{
 		ChannelId:         channelID,
@@ -590,16 +645,107 @@ func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *
 		EventId:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		DedupKey:          channelID + ":" + pmID,
 		ProviderMessageId: pmID,
-		From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: name},
-		Type:              contracts.InboundMessageTypeText,
-		Body:              &body,
-		Timestamp:         msg.Info.Timestamp.UTC(),
+		From:              contracts.Party{ExternalId: sender, Phone: &phone, Name: optName(info.PushName)},
+		Type:              typ,
+		Timestamp:         info.Timestamp.UTC(),
+	}
+	if body != "" {
+		inb.Body = &body
+	}
+	if media != nil {
+		inb.Media = media
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := w.bus.PublishInbound(ctx, &inb); err != nil {
 		log.Printf("whatsmeow publish inbound gagal: %v", err)
 	}
+}
+
+// isDirectChat: chat pribadi = nomor biasa (@s.whatsapp.net) atau LID (@lid).
+// Grup (@g.us), status/broadcast (@broadcast), dan saluran (@newsletter) ditolak.
+func isDirectChat(chat types.JID) bool {
+	return chat.Server == types.DefaultUserServer || chat.Server == types.HiddenUserServer
+}
+
+// waAttachment = lampiran pesan masuk yang bisa diunduh dari WhatsApp.
+type waAttachment struct {
+	msg      whatsmeow.DownloadableMessage
+	mime     string
+	filename string
+	size     uint64
+	image    bool   // tampil sebagai gambar (foto/stiker); sisanya kartu file/pemutar
+	label    string // teks pengganti bila gagal disimpan
+}
+
+// inboundAttachment mengambil foto/video/audio/dokumen/stiker dari pesan. nil = tak ada.
+func inboundAttachment(m *waE2E.Message) *waAttachment {
+	if m == nil {
+		return nil
+	}
+	if im := m.GetImageMessage(); im != nil {
+		return &waAttachment{msg: im, mime: im.GetMimetype(), size: im.GetFileLength(), image: true, label: "Foto"}
+	}
+	if st := m.GetStickerMessage(); st != nil {
+		return &waAttachment{msg: st, mime: st.GetMimetype(), size: st.GetFileLength(), image: true, label: "Stiker"}
+	}
+	if vm := m.GetVideoMessage(); vm != nil {
+		return &waAttachment{msg: vm, mime: vm.GetMimetype(), size: vm.GetFileLength(), label: "Video"}
+	}
+	if am := m.GetAudioMessage(); am != nil {
+		label := "Audio"
+		if am.GetPTT() {
+			label = "Pesan suara"
+		}
+		return &waAttachment{msg: am, mime: am.GetMimetype(), size: am.GetFileLength(), label: label}
+	}
+	if dm := m.GetDocumentMessage(); dm != nil {
+		return &waAttachment{msg: dm, mime: dm.GetMimetype(), filename: dm.GetFileName(), size: dm.GetFileLength(), label: "Dokumen"}
+	}
+	return nil
+}
+
+// storeAttachment mengunduh lampiran dari WhatsApp lalu menyimpannya lewat web.
+// nil = tidak disimpan (sink nonaktif, terlalu besar, atau gagal) — best-effort.
+func (w *Whatsmeow) storeAttachment(cli *whatsmeow.Client, channelID string, a *waAttachment) *contracts.Media {
+	if w.media == nil || a.size > maxMediaBytes {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	data, err := cli.Download(ctx, a.msg)
+	if err != nil {
+		log.Printf("whatsmeow: unduh media masuk channel %s gagal: %v", channelID, err)
+		return nil
+	}
+	if len(data) > maxMediaBytes {
+		return nil
+	}
+	mime := baseMime(a.mime)
+	name := a.filename
+	if name == "" {
+		name = "whatsapp-" + strings.ToLower(strings.ReplaceAll(a.label, " ", "-"))
+	}
+	url, err := w.media.SaveInboundMedia(ctx, channelID, data, mime, name)
+	if err != nil {
+		log.Printf("whatsmeow: simpan media masuk channel %s gagal: %v", channelID, err)
+		return nil
+	}
+	media := &contracts.Media{Url: url, Mime: mime}
+	if a.filename != "" {
+		fn := a.filename
+		media.Filename = &fn
+	}
+	return media
+}
+
+// baseMime membuang parameter MIME ("audio/ogg; codecs=opus" → "audio/ogg").
+func baseMime(m string) string {
+	m = strings.TrimSpace(strings.SplitN(m, ";", 2)[0])
+	if m == "" {
+		return "application/octet-stream"
+	}
+	return strings.ToLower(m)
 }
 
 // Close memutus semua client tersambung (graceful shutdown).
@@ -637,7 +783,14 @@ func extractText(m *waE2E.Message) string {
 	if ext := m.GetExtendedTextMessage(); ext != nil {
 		return ext.GetText()
 	}
-	return ""
+	// Caption lampiran ikut jadi teks pesan.
+	if c := m.GetImageMessage().GetCaption(); c != "" {
+		return c
+	}
+	if c := m.GetVideoMessage().GetCaption(); c != "" {
+		return c
+	}
+	return m.GetDocumentMessage().GetCaption()
 }
 
 func parseRecipient(externalID string) (types.JID, error) {

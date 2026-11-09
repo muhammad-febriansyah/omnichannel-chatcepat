@@ -20,7 +20,7 @@ import {
   type Edge,
   type OnBeforeDelete,
 } from "@xyflow/react";
-import { ArrowLeft, Save, CheckCircle2, AlertTriangle, PanelLeft, LayoutGrid, MousePointerClick, Maximize2, Pencil, Search, Lock } from "lucide-react";
+import { ArrowLeft, Save, CheckCircle2, AlertTriangle, PanelLeft, LayoutGrid, MousePointerClick, Maximize2, Pencil, Search, Lock, ChevronDown } from "lucide-react";
 import { nodeAllowed } from "@/lib/plan-config";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ import {
 import { FlowNode, type FlowRFNode } from "./flow-node";
 import { ConfigPanel, type ChannelOption } from "./config-panel";
 import type { KnowledgeDoc, PromoItem } from "@/lib/ai-agent-options";
-import { COMING_SOON, DRAG_MIME, NODE_META, PALETTE_GROUPS } from "./meta";
+import { COMING_SOON, DRAG_MIME, GROUP_FOR_TRIGGER, NODE_META, PALETTE_GROUPS, nodeMatches, type NodeGroup } from "./meta";
 import { SaveFlowDialog, type SaveSummary } from "./save-dialog";
 import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
 
@@ -104,6 +104,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<NodeGroup>>(new Set());
   // The dialog remembers the last choice (activate vs draft); first save defaults to activate.
   const [lastActivate, setLastActivate] = useState(true);
   const chosen = useRef(true);
@@ -305,10 +306,22 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
 
   const issueCount = nodes.reduce((acc, n) => acc + n.data.issues.length, 0);
   const q = paletteQuery.trim().toLowerCase();
-  const paletteGroups = PALETTE_GROUPS.map(({ group, kinds }) => ({
+  // Steps that fit the current trigger (e.g. comment → Komentar FB/IG) come first.
+  const preferred = GROUP_FOR_TRIGGER[triggerData?.kind ?? ""];
+  const paletteGroups = PALETTE_GROUPS.map(({ group, hint, kinds }) => ({
     group,
-    kinds: kinds.filter((k) => !q || `${NODE_META[k].label} ${NODE_META[k].desc}`.toLowerCase().includes(q)),
-  })).filter((g) => g.kinds.length > 0);
+    hint,
+    kinds: kinds.filter((k) => nodeMatches(k, q)),
+  }))
+    .filter((g) => g.kinds.length > 0)
+    .sort((a, b) => Number(b.group === preferred) - Number(a.group === preferred));
+  const toggleGroup = (g: NodeGroup) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(g)) next.delete(g);
+      else next.add(g);
+      return next;
+    });
 
   return (
     <div className="flex h-full min-h-[560px] flex-col bg-background">
@@ -383,7 +396,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
               <Input
                 value={paletteQuery}
                 onChange={(e) => setPaletteQuery(e.target.value)}
-                placeholder="Cari langkah…"
+                placeholder="Cari langkah… mis. dm, foto, tombol"
                 aria-label="Cari langkah"
                 className="h-8 w-full pl-8 pr-2 text-[13px]"
               />
@@ -391,9 +404,26 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-4 pt-1">
             {paletteGroups.length === 0 && <p className="px-1 py-6 text-center text-xs text-muted-foreground">Tidak ada langkah “{paletteQuery}”</p>}
-            {paletteGroups.map(({ group, kinds }) => (
+            {paletteGroups.map(({ group, hint, kinds }) => {
+              // Searching always shows matches, even inside a collapsed group.
+              const open = !!q || !collapsed.has(group);
+              return (
               <div key={group}>
-                <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">{group}</div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group)}
+                  aria-expanded={open}
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left hover:bg-muted/60"
+                >
+                  <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">{group}</span>
+                  <span className="text-[10.5px] text-muted-foreground/60">{kinds.length}</span>
+                  {group === preferred && !q && (
+                    <span className="ml-auto rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Cocok</span>
+                  )}
+                </button>
+                {open && <p className="-mt-0.5 mb-1 px-6 text-[10.5px] text-muted-foreground/70">{hint}</p>}
+                {open && (
                 <div className="space-y-0.5">
                   {kinds.map((kind) => {
                     const m = NODE_META[kind];
@@ -419,8 +449,15 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
                         <span className="grid size-8 shrink-0 place-items-center rounded-lg text-white shadow-sm transition-transform group-hover/item:scale-105" style={{ background: m.color }}>
                           <Icon className="size-4" />
                         </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] font-medium">{m.label}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate text-[13px] font-medium">{m.label}</span>
+                            {m.channels && (
+                              <span className="shrink-0 rounded bg-muted px-1 py-px text-[9.5px] font-semibold text-muted-foreground" title={`Hanya untuk ${m.channels.join(", ")}`}>
+                                {m.channels.join(" · ")}
+                              </span>
+                            )}
+                          </span>
                           <span className="block truncate text-[11px] text-muted-foreground">{locked ? "Butuh paket lebih tinggi" : m.desc}</span>
                         </span>
                         {locked && <Lock className="ml-auto size-3.5 shrink-0 text-muted-foreground" />}
@@ -428,8 +465,10 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
                     );
                   })}
                 </div>
+                )}
               </div>
-            ))}
+              );
+            })}
             {!q && (
               <div>
                 <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">Segera hadir</div>

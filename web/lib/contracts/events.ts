@@ -114,6 +114,10 @@ export interface OutboundCommand {
    * comment_reply = balas publik di komentar; private_reply = DM ke pemberi komentar
    */
   reply_mode?: "comment_reply" | "private_reply";
+  /**
+   * Balasan otomatis bot: gateway tampilkan seperti manusia (dilihat, mengetik, jeda) sebelum kirim. Kosong/false = kirim langsung (balasan agen).
+   */
+  humanize?: boolean;
   [k: string]: unknown;
 }
 /**

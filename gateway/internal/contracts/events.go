@@ -314,6 +314,10 @@ type OutboundCommand struct {
 	// ulid
 	EventId string `json:"event_id" yaml:"event_id" mapstructure:"event_id"`
 
+	// Balasan otomatis bot: gateway tampilkan seperti manusia (dilihat, mengetik,
+	// jeda) sebelum kirim. Kosong/false = kirim langsung (balasan agen).
+	Humanize *bool `json:"humanize,omitempty,omitzero" yaml:"humanize,omitempty" mapstructure:"humanize,omitempty"`
+
 	// gateway skip kalau sudah kirim
 	IdempotencyKey string `json:"idempotency_key" yaml:"idempotency_key" mapstructure:"idempotency_key"`
 

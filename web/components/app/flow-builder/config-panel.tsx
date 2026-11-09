@@ -20,6 +20,7 @@ import {
 } from "@/lib/flow-graph";
 import { NODE_META } from "./meta";
 import { BroadcastMessageFields, BroadcastTriggerFields } from "./broadcast-config";
+import { PostPicker } from "./post-picker";
 import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
 import { AiConfigEditor, AiSimulator, type DocOption } from "@/components/app/ai-config/ai-config-editor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -107,6 +108,49 @@ function KeywordInput({
 }
 
 export type ChannelOption = { id: string; name: string; type: string; autoReply?: boolean };
+
+// Other wordings of the same message. The engine picks one at random per send, so
+// repeated bot replies read natural instead of copy-pasted (also a spam signal).
+function VariantsField({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+  return (
+    <Field label={`Variasi kalimat (${value.length}/4, opsional)`} hint="Satu kalimat dipilih acak tiap kirim supaya balasan terasa natural, tidak copy-paste.">
+      <div className="space-y-2">
+        {value.map((t, i) => (
+          <div key={i} className="flex items-start gap-1.5">
+            <Textarea
+              value={t}
+              rows={3}
+              maxLength={1000}
+              onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
+              placeholder={placeholder}
+              className="w-full p-2.5 text-sm"
+            />
+            <button
+              type="button"
+              aria-label="Hapus variasi"
+              onClick={() => onChange(value.filter((_, j) => j !== i))}
+              className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-red-500"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        ))}
+        {value.length < 4 && (
+          <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, ""])}>
+            <Plus className="size-3.5" /> Tambah variasi
+          </Button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+// Bot replies on these channels are sent the way a person answers (see gateway).
+const HumanizedNote = () => (
+  <p className="rounded-lg bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
+    Di WhatsApp, Facebook, dan Instagram, bot membalas seperti manusia: pesan ditandai dibaca, muncul <i>mengetik…</i>, lalu jeda sesuai panjang pesan sebelum terkirim.
+  </p>
+);
 
 const CHANNEL_LABEL: Record<string, string> = {
   wa_official: "WA Official",
@@ -222,8 +266,17 @@ export function ConfigPanel({
               <Field label="Kata kunci komentar (opsional)" hint="Kosongkan untuk membalas SEMUA komentar. Flow dengan kata kunci didahulukan.">
                 <KeywordInput value={d.keywords} onChange={(keywords) => set<"trigger">({ keywords })} placeholder="mis. harga, info, mau" />
               </Field>
-              <Field label="Hanya postingan tertentu (opsional)" hint="Tempel ID postingan/Reels. Kosong = semua postingan. ID ada di URL postingan.">
-                <KeywordInput value={d.posts ?? []} onChange={(posts) => set<"trigger">({ posts })} placeholder="mis. 1789012345" lowercase={false} />
+              <Field label="Hanya postingan tertentu (opsional)" hint="Buat satu flow per postingan supaya tiap postingan punya balasannya sendiri.">
+                <PostPicker
+                  value={d.posts ?? []}
+                  onChange={(posts) => set<"trigger">({ posts })}
+                  accounts={channels.filter(
+                    (c) => (c.type === "facebook" || c.type === "instagram") && (!d.channels?.length || d.channels.includes(c.id)),
+                  )}
+                />
+                <div className="mt-2">
+                  <KeywordInput value={d.posts ?? []} onChange={(posts) => set<"trigger">({ posts })} placeholder="atau tempel ID postingan" lowercase={false} />
+                </div>
               </Field>
             </>
           )}
@@ -311,6 +364,7 @@ export function ConfigPanel({
           <Field label="Isi DM" hint="Klik variabel untuk menyisipkan.">
             <WaMessageEditor value={d.text} onChange={(text) => set<"private_reply">({ text })} variables={waVars} rows={6} placeholder="Halo {{nama}}, ini info yang kakak tanyakan…" />
           </Field>
+          <VariantsField value={d.variants ?? []} onChange={(variants) => set<"private_reply">({ variants })} placeholder="Hai kak {{nama}} 👋 makasih sudah komen, ini infonya ya…" />
         </>
       );
       break;
@@ -331,9 +385,13 @@ export function ConfigPanel({
     case "send_text": {
       const d = node.data as NodeDataMap["send_text"];
       body = (
-        <Field label="Isi pesan" hint="Klik variabel untuk menyisipkan, mis. {{nama}}.">
-          <WaMessageEditor value={d.text} onChange={(text) => set<"send_text">({ text })} variables={waVars} rows={6} placeholder="Halo {{nama}}, ada yang bisa kami bantu?" />
-        </Field>
+        <>
+          <Field label="Isi pesan" hint="Klik variabel untuk menyisipkan, mis. {{nama}}.">
+            <WaMessageEditor value={d.text} onChange={(text) => set<"send_text">({ text })} variables={waVars} rows={6} placeholder="Halo {{nama}}, ada yang bisa kami bantu?" />
+          </Field>
+          <VariantsField value={d.variants ?? []} onChange={(variants) => set<"send_text">({ variants })} placeholder="Hai kak {{nama}} 👋 ada yang bisa dibantu?" />
+          <HumanizedNote />
+        </>
       );
       break;
     }

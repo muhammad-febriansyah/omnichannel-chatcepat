@@ -34,6 +34,15 @@ def _preview(text: str | None, kind: str) -> str:
     return (text or f"[{kind}]")[:120]
 
 
+def _inbound_kind(inbound: InboundMessage) -> str:
+    """Inbox preview label for an attachment without caption (e.g. "[foto]")."""
+    mime = inbound.media.mime if inbound.media else ""
+    for prefix, label in (("image/", "foto"), ("video/", "video"), ("audio/", "audio")):
+        if mime.startswith(prefix):
+            return label
+    return "dokumen" if inbound.media else inbound.type.value
+
+
 _MIME_BY_EXT = {
     "png": "image/png",
     "jpg": "image/jpeg",
@@ -140,6 +149,8 @@ async def _publish_outbound(
         conversation_id=conv.id,
         comment_id=comment_id if reply.mode else None,
         reply_mode=reply.mode if comment_id else None,
+        # Bot reply → gateway shows "seen" + typing + a short human pause first.
+        humanize=True,
     )
     await publish_outbound(cmd.model_dump_json(by_alias=True))
 
@@ -183,7 +194,7 @@ async def handle(inbound: InboundMessage) -> None:
             )
             now = _now()
             conv.last_message_at = now
-            conv.last_message_preview = _preview(inbound.body, inbound.type.value)
+            conv.last_message_preview = _preview(inbound.body, _inbound_kind(inbound))
             conv.unread_count = conv.unread_count + 1
             # Window layanan 24 jam berlaku untuk semua platform Meta: WA official +
             # Messenger + Instagram. Di luar window, free-form ditolak Meta → balasan

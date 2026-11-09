@@ -33,7 +33,8 @@ export type NodeDataMap = {
     tags?: string[];
     scheduleAt?: string | null;
   };
-  send_text: { text: string };
+  // variants: other wordings of the same message; the engine picks one at random.
+  send_text: { text: string; variants?: string[] };
   send_media: { url: string; caption: string };
   send_catalog: { category: string; intro: string };
   menu: { prompt: string; saveAs: string; invalidText: string; options: MenuOption[] };
@@ -44,7 +45,7 @@ export type NodeDataMap = {
   ai_agent: { ai: AiConfig }; // AI settings live on the node (n8n style)
   handoff: Record<string, never>;
   reply_comment: { texts: string[] }; // public reply under a FB/IG comment (one picked at random)
-  private_reply: { text: string }; // one DM to the commenter
+  private_reply: { text: string; variants?: string[] }; // one DM to the commenter
   // First message of a broadcast flow. WA unofficial: text (+ optional image);
   // WA official: approved template (+ header media, variables, quick-reply buttons).
   broadcast_message: {
@@ -296,9 +297,11 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         });
         break;
       }
-      case "send_text":
-        out.push({ id: node.id, type: "send_text", text: (node.data as NodeDataMap["send_text"]).text, next });
+      case "send_text": {
+        const d = node.data as NodeDataMap["send_text"];
+        out.push({ id: node.id, type: "send_text", text: d.text, ...variantsOut(d.variants), next });
         break;
+      }
       case "send_media": {
         const d = node.data as NodeDataMap["send_media"];
         out.push({ id: node.id, type: "send_media", url: d.url, caption: d.caption || undefined, next });
@@ -326,9 +329,11 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
           next,
         });
         break;
-      case "private_reply":
-        out.push({ id: node.id, type: "private_reply", text: (node.data as NodeDataMap["private_reply"]).text, next });
+      case "private_reply": {
+        const d = node.data as NodeDataMap["private_reply"];
+        out.push({ id: node.id, type: "private_reply", text: d.text, ...variantsOut(d.variants), next });
         break;
+      }
       case "add_tag":
         out.push({ id: node.id, type: "add_tag", tags: (node.data as NodeDataMap["add_tag"]).tags, next });
         break;
@@ -670,7 +675,7 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "send_text":
-        gNodes.push({ id: n.id, type: "send_text", position: at, data: { text: String(n.text ?? "") } });
+        gNodes.push({ id: n.id, type: "send_text", position: at, data: { text: String(n.text ?? ""), ...variantsIn(n.variants) } });
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "send_media":
@@ -690,7 +695,7 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "private_reply":
-        gNodes.push({ id: n.id, type: "private_reply", position: at, data: { text: String(n.text ?? "") } });
+        gNodes.push({ id: n.id, type: "private_reply", position: at, data: { text: String(n.text ?? ""), ...variantsIn(n.variants) } });
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "add_tag":
@@ -794,4 +799,14 @@ export function flowVariables(graph: FlowGraph): string[] {
     if (n.type === "set_var") (n.data as NodeDataMap["set_var"]).pairs.forEach((p) => p.key.trim() && vars.add(p.key.trim()));
   }
   return [...vars].filter((v) => VAR_RE.test(v));
+}
+
+// Message variants ↔ flow definition. Empty wordings are dropped; no variants → no key.
+function variantsOut(variants: string[] | undefined): { variants?: string[] } {
+  const list = (variants ?? []).map((t) => t.trim()).filter(Boolean);
+  return list.length ? { variants: list } : {};
+}
+
+function variantsIn(raw: unknown): { variants?: string[] } {
+  return Array.isArray(raw) && raw.length ? { variants: raw.map(String) } : {};
 }

@@ -91,6 +91,7 @@ func main() {
 		// Kosong → deteksi ban tetap jalan (lepas sesi + realtime), cuma tak persist.
 		if sink := channels.NewWebStatusSink(env("WEB_INTERNAL_URL", ""), env("SERVICE_TOKEN", "")); sink != nil {
 			wa.SetStatusSink(sink)
+			wa.SetMediaSink(sink) // foto/video/audio/dokumen masuk → /uploads (inbox)
 		}
 		defer wa.Close()
 		go wa.Restore(ctx) // sambung ulang device tersimpan (non-blocking).

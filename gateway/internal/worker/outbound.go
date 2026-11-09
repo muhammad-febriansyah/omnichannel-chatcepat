@@ -4,6 +4,7 @@ package worker
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/chatcepat/gateway/internal/bus"
@@ -34,10 +35,15 @@ func (w *Outbound) RunOnce(ctx context.Context, blockMs int) (int, error) {
 		return 0, err
 	}
 	for _, m := range msgs {
-		w.process(ctx, m)
-		_ = w.Bus.AckOutbound(ctx, m.ID)
+		w.handle(ctx, m)
 	}
 	return len(msgs), nil
+}
+
+// handle sends one message and acks it.
+func (w *Outbound) handle(ctx context.Context, m bus.OutMsg) {
+	w.process(ctx, m)
+	_ = w.Bus.AckOutbound(ctx, m.ID)
 }
 
 func (w *Outbound) process(ctx context.Context, m bus.OutMsg) {
@@ -112,20 +118,124 @@ func (w *Outbound) fail(ctx context.Context, st contracts.MessageStatus, cause e
 	}
 }
 
-// Run loop sampai ctx selesai.
+// Run loop sampai ctx selesai. Tiap channel punya antrian (lane) sendiri: pesan
+// dalam satu channel tetap berurutan, tapi jeda "manusiawi" satu akun (WA unofficial
+// mengetik, FB/IG dilihat→mengetik) tidak menahan pesan tenant/akun lain.
 func (w *Outbound) Run(ctx context.Context) {
 	if err := w.Bus.EnsureGroup(ctx, bus.StreamOutbound, bus.GroupGateway); err != nil {
 		log.Printf("ensure group outbound: %v", err)
 	}
+	l := newLanes(ctx, w.handle)
+	defer l.wait()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			if _, err := w.RunOnce(ctx, 5000); err != nil && ctx.Err() == nil {
+		}
+		if !l.reserve(ctx) {
+			return
+		}
+		msgs, err := w.Bus.ConsumeOutbound(ctx, w.Consumer, 1, 5000)
+		if err != nil || len(msgs) == 0 {
+			l.release()
+			if err != nil && ctx.Err() == nil {
 				log.Printf("outbound worker: %v", err)
 				time.Sleep(time.Second)
 			}
+			continue
+		}
+		l.dispatch(msgs[0])
+	}
+}
+
+const (
+	// maxInFlight = pesan yang sudah dibaca dari stream tapi belum selesai dikirim
+	// (semua lane). Juga kapasitas buffer tiap lane, jadi kirim ke lane tak pernah blok.
+	maxInFlight = 256
+	// laneIdle = lane tanpa pesan selama ini ditutup (goroutine tidak menumpuk).
+	laneIdle = time.Minute
+)
+
+// lanes = satu goroutine per channel_id, masing-masing memproses pesannya berurutan.
+type lanes struct {
+	ctx    context.Context
+	handle func(context.Context, bus.OutMsg)
+	slots  chan struct{} // batas total in-flight
+
+	mu     sync.Mutex
+	byChan map[string]chan bus.OutMsg
+	wg     sync.WaitGroup
+}
+
+func newLanes(ctx context.Context, handle func(context.Context, bus.OutMsg)) *lanes {
+	return &lanes{
+		ctx:    ctx,
+		handle: handle,
+		slots:  make(chan struct{}, maxInFlight),
+		byChan: make(map[string]chan bus.OutMsg),
+	}
+}
+
+// reserve menunggu slot in-flight kosong sebelum membaca pesan berikutnya.
+func (l *lanes) reserve(ctx context.Context) bool {
+	select {
+	case l.slots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (l *lanes) release() { <-l.slots }
+
+// dispatch memasukkan pesan ke lane channel-nya (dibuat bila belum ada). Kirim ke
+// buffer dilakukan di bawah lock supaya lane tidak bisa tutup di antara lookup dan
+// kirim; buffer >= maxInFlight jadi tak pernah blok.
+func (l *lanes) dispatch(m bus.OutMsg) {
+	key := m.Cmd.ChannelId
+	l.mu.Lock()
+	ch, ok := l.byChan[key]
+	if !ok {
+		ch = make(chan bus.OutMsg, maxInFlight)
+		l.byChan[key] = ch
+		l.wg.Add(1)
+		go l.run(key, ch)
+	}
+	ch <- m
+	l.mu.Unlock()
+}
+
+func (l *lanes) run(key string, ch chan bus.OutMsg) {
+	defer l.wg.Done()
+	idle := time.NewTimer(laneIdle)
+	defer idle.Stop()
+	for {
+		select {
+		case <-l.ctx.Done():
+			return
+		case m := <-ch:
+			l.handle(l.ctx, m)
+			l.release()
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			idle.Reset(laneIdle)
+		case <-idle.C:
+			l.mu.Lock()
+			if len(ch) == 0 {
+				delete(l.byChan, key)
+				l.mu.Unlock()
+				return
+			}
+			l.mu.Unlock()
+			idle.Reset(laneIdle)
 		}
 	}
 }
+
+// wait menunggu semua lane berhenti (dipanggil saat shutdown).
+func (l *lanes) wait() { l.wg.Wait() }

@@ -14,6 +14,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Sembunyikan badge "N" Next.js (indikator dev) di pojok layar.
   devIndicators: false,
+  experimental: {
+    // Middleware buffers request bodies only up to this size (default 10 MB); chat
+    // attachments go up to 16 MB, so larger uploads would arrive truncated.
+    proxyClientMaxBodySize: "20mb",
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

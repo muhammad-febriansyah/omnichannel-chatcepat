@@ -59,6 +59,14 @@ def render(text: str, ctx: dict) -> str:
     return _VAR.sub(lambda m: str(ctx.get(m.group(1), "")), text or "")
 
 
+def pick_text(node: dict) -> str:
+    """Main text or one of its variants, at random. Several wordings for the same
+    message keep repeated bot replies from looking copy-pasted (spam signal on
+    WhatsApp / Meta) and read more natural to customers."""
+    options = [str(t) for t in [node.get("text", ""), *(node.get("variants") or [])] if str(t).strip()]
+    return random.choice(options) if options else ""
+
+
 # Operator kata (dipakai node Kondisi di flow builder). Case-insensitive + trim.
 _WORD_OP = re.compile(
     r"^\s*([a-zA-Z0-9_]+)\s+(equals|not_equals|contains|starts_with|is_empty|not_empty)\b\s*(.*)$",
@@ -164,7 +172,7 @@ async def _walk(
                 for b in node.get("buttons") or []
                 if b.get("id") and b.get("title")
             ]
-            outcome.replies.append(Reply(text=render(node.get("text", ""), ctx), buttons=buttons))
+            outcome.replies.append(Reply(text=render(pick_text(node), ctx), buttons=buttons))
             node_id = node.get("next")
         elif ntype == "reply_comment":
             # Public reply under the comment. Several variants → pick one at random so
@@ -175,7 +183,7 @@ async def _walk(
             node_id = node.get("next")
         elif ntype == "private_reply":
             # One DM to the commenter. Outside a comment it is just a normal message.
-            text = render(node.get("text", ""), ctx)
+            text = render(pick_text(node), ctx)
             if text.strip():
                 mode = "private_reply" if getattr(inbound, "comment", None) is not None else None
                 outcome.replies.append(Reply(text=text, mode=mode))

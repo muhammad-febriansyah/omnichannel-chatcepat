@@ -469,9 +469,14 @@ func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundComman
 	if cmd.CommentId != nil {
 		commentID = *cmd.CommentId
 	}
+	humanize := cmd.Humanize != nil && *cmd.Humanize
 	if cmd.ReplyMode != nil && *cmd.ReplyMode == contracts.OutboundCommandReplyModeCommentReply {
 		if commentID == "" {
 			return "", fmt.Errorf("messenger: comment_id kosong")
+		}
+		// Public reply: a person reads the comment, then types — never instant.
+		if humanize && !humanPause(ctx, readDelay()+typingDelay(len(body))) {
+			return "", ctx.Err()
 		}
 		return m.replyComment(ctx, commentID, body, token)
 	}
@@ -482,6 +487,12 @@ func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundComman
 			return "", fmt.Errorf("messenger: comment_id kosong")
 		}
 		recipient = map[string]any{"comment_id": commentID}
+		// No conversation exists yet, so no seen/typing indicator — only the pause.
+		if humanize && !humanPause(ctx, readDelay()+typingDelay(len(body))) {
+			return "", ctx.Err()
+		}
+	} else if humanize && !m.actLikeHuman(ctx, pageID, token, recipient, len(body)) {
+		return "", ctx.Err()
 	}
 
 	// Attachment first (Messenger/IG attachments have no caption), then the text.
@@ -508,6 +519,40 @@ func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundComman
 		}
 	}
 	return firstID, nil
+}
+
+// humanPause sleeps for d unless ctx ends first (false). A variable so tests run
+// without real waiting.
+var humanPause = sleepCtx
+
+// actLikeHuman shows the bot reply the way a person answers in Messenger / Instagram
+// DM: mark the message seen, pause to "read", show typing for a time that fits the
+// reply length, then the caller sends. Indicator errors are ignored (best-effort);
+// false only when ctx ends.
+func (m *MessengerSender) actLikeHuman(ctx context.Context, pageID, token string, recipient map[string]any, bodyLen int) bool {
+	m.senderAction(ctx, pageID, token, recipient, "mark_seen")
+	if !humanPause(ctx, readDelay()) {
+		return false
+	}
+	m.senderAction(ctx, pageID, token, recipient, "typing_on")
+	return humanPause(ctx, typingDelay(bodyLen))
+}
+
+// senderAction posts a sender_action (mark_seen / typing_on) to the Send API.
+func (m *MessengerSender) senderAction(ctx context.Context, pageID, token string, recipient map[string]any, action string) {
+	reqBody, _ := json.Marshal(map[string]any{"recipient": recipient, "sender_action": action})
+	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", pageID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 // messengerAttachmentType maps a MIME type to Messenger/Instagram attachment types.

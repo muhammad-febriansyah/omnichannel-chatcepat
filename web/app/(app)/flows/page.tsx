@@ -116,7 +116,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
         }
       />
 
-      {tab === "template" && <FlowTemplatesGallery category={category} allowedNodes={await allowedFlowNodes(session)} />}
+      {tab === "template" && <FlowTemplatesGallery key={category ?? "all"} category={category} allowedNodes={await allowedFlowNodes(session)} />}
       {tab === "panduan" && <FlowGuide />}
       {tab === "broadcast" && (
         <div className="space-y-4">

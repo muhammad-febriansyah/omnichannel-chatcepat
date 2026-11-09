@@ -267,7 +267,7 @@ func (s *Server) handleChannelOps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := s.WA.PairDevice(channelID, info.TenantID)
+	events, err := s.WA.PairDevice(r.Context(), channelID, info.TenantID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

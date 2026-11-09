@@ -33,13 +33,15 @@ export async function middleware(req: NextRequest) {
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/register";
-  // Publik tanpa login: landing (/), form opt-in, aset upload, callback Duitku (server-to-server).
+  // Publik tanpa login: landing (/), form opt-in, aset upload, callback Duitku (server-to-server),
+  // dan endpoint internal gateway → web (tiap route wajib cek X-Service-Token sendiri).
   const isPublic =
     path === "/" ||
     path.startsWith("/opt-in/") ||
     path.startsWith("/uploads/") ||
     path.startsWith("/api/duitku/") ||
-    path.startsWith("/api/meta/");
+    path.startsWith("/api/meta/") ||
+    path.startsWith("/api/internal/");
 
   if (isPublic) return NextResponse.next();
 
