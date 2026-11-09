@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
-import { channels, flows } from "@/lib/db/schema";
+import { channels } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { CHANNEL_META, ChannelType, statusLabel, timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
@@ -46,16 +46,7 @@ async function load(tenantId: string | null) {
 export default async function ChannelsPage() {
   const session = await requirePageAbility("channel.view");
   const rows = await load(session.tenantId);
-  const [menuFlows, agents] = session.tenantId
-    ? await Promise.all([
-        db.query.flows.findMany({
-          where: and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")),
-          columns: { id: true, name: true, status: true },
-          orderBy: [desc(flows.createdAt)],
-        }),
-        loadAgents(session.tenantId),
-      ])
-    : [[], []];
+  const agents = session.tenantId ? await loadAgents(session.tenantId) : [];
 
   const connected = rows.filter((c) => c.status === "connected").length;
 
@@ -104,7 +95,7 @@ export default async function ChannelsPage() {
             return (
               <div
                 key={c.id}
-                className="flex flex-col overflow-hidden rounded-[20px] bg-card transition-shadow hover:shadow-md"
+                className="flex flex-col overflow-hidden rounded-[20px] border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
               >
                 {/* Identity */}
                 <div className="flex items-start gap-3 p-4">
@@ -133,8 +124,6 @@ export default async function ChannelsPage() {
                     channelId={c.id}
                     type={c.type}
                     enabled={c.autoReplyEnabled}
-                    defaultFlowId={c.defaultFlowId}
-                    flows={menuFlows}
                     agentId={c.aiAgentId}
                     agents={agents}
                     fallbackAction={c.fallbackAction as FallbackAction}

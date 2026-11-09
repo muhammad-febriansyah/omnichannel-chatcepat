@@ -171,7 +171,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
                 const keywords = def?.nodes?.find((n) => n?.type === "trigger")?.trigger?.match ?? [];
                 const triggerLabel =
                   f.trigger === "welcome"
-                    ? "Pesan pertama"
+                    ? "Awal percakapan"
                     : f.trigger === "fallback"
                       ? "Cadangan"
                       : f.trigger === "button"
@@ -185,7 +185,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
                   <Link
                     key={f.id}
                     href={`/flows/${f.id}`}
-                    className="group relative flex flex-col gap-3 rounded-[20px] bg-card p-4 transition hover:-translate-y-0.5 hover:border-brand-blue/40 hover:shadow-md"
+                    className="group relative flex flex-col gap-3 rounded-[20px] border border-border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue/40 hover:shadow-md"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-brand-blue dark:bg-blue-500/10">

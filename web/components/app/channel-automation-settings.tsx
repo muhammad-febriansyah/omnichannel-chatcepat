@@ -12,7 +12,6 @@ import { setChannelAutomation, type FallbackAction } from "@/lib/actions";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-type FlowOption = { id: string; name: string; status: string };
 type AgentOption = { id: string; name: string; isDefault: boolean; isActive: boolean };
 
 const DEFAULT_FALLBACK_TEXT = "Terima kasih, pesan Anda kami terima. Agen kami akan segera membalas.";
@@ -25,20 +24,17 @@ const FALLBACKS: { value: FallbackAction; label: string; hint: string }[] = [
 
 type State = {
   enabled: boolean;
-  flowId: string;
   agentId: string;
   fallbackAction: FallbackAction;
   fallbackMessage: string;
 };
 
-// Per channel: auto-reply on/off, optional main flow, which assistant answers, and what
-// happens when no flow matches (AI / fixed message / stay silent).
+// Per channel: auto-reply on/off, which assistant answers, and what happens when no
+// flow matches (AI / fixed message / stay silent). Flows themselves start by trigger.
 export function ChannelAutomationSettings({
   channelId,
   type,
   enabled,
-  defaultFlowId,
-  flows,
   agentId,
   agents,
   fallbackAction,
@@ -47,8 +43,6 @@ export function ChannelAutomationSettings({
   channelId: string;
   type: string;
   enabled: boolean;
-  defaultFlowId: string | null;
-  flows: FlowOption[];
   agentId: string | null;
   agents: AgentOption[];
   fallbackAction: FallbackAction;
@@ -56,14 +50,12 @@ export function ChannelAutomationSettings({
 }) {
   const [s, setS] = useState<State>({
     enabled,
-    flowId: defaultFlowId ?? "",
     agentId: agentId ?? "",
     fallbackAction,
     fallbackMessage: fallbackMessage ?? "",
   });
   const [savedMessage, setSavedMessage] = useState(fallbackMessage ?? "");
   const [pending, start] = useTransition();
-  const active = flows.filter((f) => f.status === "active");
   const defaultAgent = agents.find((a) => a.isDefault);
 
   function save(patch: Partial<State>, done = "Pengaturan balasan tersimpan") {
@@ -74,7 +66,8 @@ export function ChannelAutomationSettings({
       try {
         await setChannelAutomation(channelId, {
           enabled: next.enabled,
-          flowId: next.flowId || null,
+          // "Flow utama" is gone from the UI: flows start by their trigger only.
+          flowId: null,
           agentId: next.agentId || null,
           fallbackAction: next.fallbackAction,
           fallbackMessage: next.fallbackMessage.trim() || null,
@@ -121,19 +114,6 @@ export function ChannelAutomationSettings({
 
       {s.enabled && (
         <>
-          <label className="relative block">
-            <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Flow utama (opsional)</span>
-            <NativeSelect value={s.flowId} onChange={(e) => save({ flowId: e.target.value })} disabled={pending} className={selectCls}>
-              <NativeSelectOption value="">Otomatis sesuai pemicu</NativeSelectOption>
-              {active.map((flow) => (
-                <NativeSelectOption key={flow.id} value={flow.id}>
-                  {flow.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            {chevron}
-          </label>
-
           <label className="relative block">
             <span className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
               Asisten AI

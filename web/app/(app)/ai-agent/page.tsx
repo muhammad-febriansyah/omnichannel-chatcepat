@@ -43,7 +43,7 @@ export default async function AgentsPage() {
           {agents.map((a) => {
             const tone = toneMeta(a.tone);
             return (
-              <div key={a.id} className="flex flex-col rounded-[20px] bg-card p-4">
+              <div key={a.id} className="flex flex-col rounded-[20px] border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-start gap-3">
                   <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-xl dark:bg-violet-500/15">{tone.emoji}</span>
                   <div className="min-w-0 flex-1">
