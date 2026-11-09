@@ -28,6 +28,7 @@ import { createWaTemplateOnMeta, listWaChannelCreds, uploadTemplateSample, type 
 import { getConversation } from "./queries";
 import { compileGraph, starterGraph, validateRuntimeNodes, type RuntimeNode } from "./flow-graph";
 import { applyFlowBroadcast, prepareFlowBroadcast, type FlowBroadcastInfo, type FlowBroadcastResult } from "./flow-broadcast";
+import { conflictMessage, findFlowConflicts, triggerInfo, type FlowTriggerInfo } from "./flow-conflicts";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
@@ -985,46 +986,66 @@ export async function createFlowFromTemplate(templateId: string) {
 
 export type FlowClash = { name: string; reason: string };
 
-// Other ACTIVE flows that would compete with this trigger (shown in the save dialog).
+// Active flows of this workspace as trigger info (for the one-account-one-flow rule).
+async function activeFlowTriggers(tenantId: string): Promise<FlowTriggerInfo[]> {
+  const rows = await db
+    .select({ id: flows.id, name: flows.name, trigger: flows.trigger, definition: flows.definition })
+    .from(flows)
+    .where(and(eq(flows.tenantId, tenantId), eq(flows.status, "active")));
+  return rows.map(triggerInfo);
+}
+
+async function accountNamer(tenantId: string): Promise<(id: string) => string> {
+  const rows = await db
+    .select({ id: channels.id, name: channels.name })
+    .from(channels)
+    .where(eq(channels.tenantId, tenantId));
+  const names = new Map(rows.map((r) => [r.id, r.name]));
+  return (id) => (names.has(id) ? `"${names.get(id)}"` : "terpilih");
+}
+
+// Other ACTIVE flows that answer the same messages on the same account (save dialog).
 export async function flowTriggerClashes(
   id: string,
   trigger: "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast",
   keywords: string[],
+  accounts: string[] = [],
+  posts: string[] = [],
 ): Promise<FlowClash[]> {
   const session = await requireSession();
   requireAbility(session, "flow.manage");
   if (!session.tenantId) return [];
-  if (trigger === "broadcast") return []; // scheduled sends never compete for incoming messages
-  const rows = await db
-    .select({ id: flows.id, name: flows.name, trigger: flows.trigger, definition: flows.definition })
-    .from(flows)
-    .where(and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")));
-  const mine = new Set(keywords.map((k) => k.trim().toLowerCase()).filter(Boolean));
-  const out: FlowClash[] = [];
-  for (const f of rows) {
-    if (f.id === id || f.trigger !== trigger) continue;
-    if (trigger === "comment") {
-      // Comment flows compete only when both are catch-alls or share a keyword.
-      const nodes = ((f.definition as { nodes?: { type?: string; trigger?: { match?: unknown } }[] } | null)?.nodes ?? []);
-      const match = nodes.find((n) => n?.type === "trigger")?.trigger?.match;
-      const theirs = (Array.isArray(match) ? match : []).filter((k): k is string => typeof k === "string");
-      if (!mine.size && !theirs.length) out.push({ name: f.name, reason: "juga membalas semua komentar" });
-      const same = theirs.filter((k) => mine.has(k.trim().toLowerCase()));
-      if (same.length) out.push({ name: f.name, reason: `kata kunci komentar sama: ${same.join(", ")}` });
-      continue;
-    }
-    if (trigger === "welcome" || trigger === "fallback") {
-      out.push({ name: f.name, reason: trigger === "welcome" ? "juga memakai pemicu pesan pertama" : "juga memakai pemicu pesan tak dikenali" });
-      continue;
-    }
-    const nodes = ((f.definition as { nodes?: { type?: string; trigger?: { match?: unknown } }[] } | null)?.nodes ?? []);
-    const match = nodes.find((n) => n?.type === "trigger")?.trigger?.match;
-    const same = (Array.isArray(match) ? match : [])
-      .filter((k): k is string => typeof k === "string")
-      .filter((k) => mine.has(k.trim().toLowerCase()));
-    if (same.length) out.push({ name: f.name, reason: `${trigger === "button" ? "tombol" : "keyword"} sama: ${same.join(", ")}` });
-  }
-  return out.slice(0, 5);
+  const mine: FlowTriggerInfo = {
+    id,
+    name: "",
+    kind: trigger,
+    channels: accounts,
+    keywords: keywords.map((k) => k.trim().toLowerCase()).filter(Boolean),
+    posts,
+  };
+  const [others, name] = await Promise.all([activeFlowTriggers(session.tenantId), accountNamer(session.tenantId)]);
+  return findFlowConflicts(mine, others, name)
+    .slice(0, 5)
+    .map((c) => ({ name: c.flowName, reason: `akun ${c.account} — ${c.reason}` }));
+}
+
+// --- Hapus flow (daftar Automation). Broadcast terjadwal dari flow ini dibatalkan. ---
+export async function deleteFlow(id: string): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const tenantId = session.tenantId;
+  await db.transaction(async (tx) => {
+    const own = await tx
+      .select({ id: flows.id, name: flows.name })
+      .from(flows)
+      .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
+    if (!own.length) throw userError("Flow tidak ditemukan");
+    // A pending broadcast of this flow must not go out after the flow is gone.
+    await applyFlowBroadcast(tx, session, id, own[0].name, "draft", null);
+    await tx.delete(flows).where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
+  });
+  revalidatePath("/flows");
 }
 
 export async function saveFlow(
@@ -1080,6 +1101,14 @@ export async function saveFlow(
       codes.add(code.toLowerCase());
       labels.add(label.toLowerCase());
     }
+  }
+  // One account, one flow per trigger: an active flow may not answer the same
+  // messages on the same account as another active flow.
+  if (input.status === "active" && input.trigger !== "broadcast") {
+    const mine = triggerInfo({ id, name: input.name, trigger: input.trigger, definition: input.definition });
+    const [others, name] = await Promise.all([activeFlowTriggers(session.tenantId), accountNamer(session.tenantId)]);
+    const conflict = findFlowConflicts(mine, others, name)[0];
+    if (conflict) throw userError(conflictMessage(conflict));
   }
   // Broadcast trigger: validate + snapshot before anything is written.
   const nodes = definition.nodes as RuntimeNode[];

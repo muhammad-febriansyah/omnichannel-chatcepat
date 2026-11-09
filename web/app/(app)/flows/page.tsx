@@ -16,7 +16,8 @@ import { db } from "@/lib/db";
 import { channels, flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { allowedFlowNodes, hasFeature } from "@/lib/entitlements";
-import { createFlow } from "@/lib/actions";
+import { createFlow, deleteFlow } from "@/lib/actions";
+import { DeleteButton } from "@/components/app/delete-button";
 import { PlanLock } from "@/components/app/plan-lock";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -203,11 +204,11 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
                             ? "Broadcast terjadwal"
                             : "Keyword";
                 return (
-                  <Link
+                  <div
                     key={f.id}
-                    href={`/flows/${f.id}`}
                     className="group relative flex flex-col gap-3 rounded-[20px] border border-border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue/40 hover:shadow-md"
                   >
+                    <Link href={`/flows/${f.id}`} className="flex flex-col gap-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-brand-blue dark:bg-blue-500/10">
                         <Workflow className="size-5" />
@@ -234,15 +235,29 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
                         </p>
                       )}
                     </div>
+                    </Link>
                     <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3 text-xs">
                       <span className="inline-flex items-center gap-1 text-muted-foreground">
                         <Clock className="size-3" /> Diperbarui {timeAgo(f.updatedAt)}{timeAgo(f.updatedAt) === "baru saja" ? "" : " lalu"}
                       </span>
-                      <span className="inline-flex items-center gap-1 font-medium text-brand-blue">
-                        Buka editor <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                      <span className="flex items-center gap-1.5">
+                        <DeleteButton
+                          onConfirm={deleteFlow.bind(null, f.id)}
+                          title="Hapus flow?"
+                          description={
+                            <>
+                              Flow <span className="font-semibold text-foreground">{f.name}</span> dihapus permanen dan berhenti membalas pesan.
+                              {f.trigger === "broadcast" ? " Broadcast yang belum terkirim ikut dibatalkan." : ""}
+                            </>
+                          }
+                          successMessage="Flow dihapus"
+                        />
+                        <Link href={`/flows/${f.id}`} className="inline-flex items-center gap-1 font-medium text-brand-blue">
+                          Buka editor <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                        </Link>
                       </span>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

@@ -19,6 +19,7 @@ import {
   type TriggerKind,
 } from "@/lib/flow-graph";
 import { NODE_META } from "./meta";
+import { takenAccounts, type FlowTriggerInfo } from "@/lib/flow-conflicts";
 import { BroadcastMessageFields, BroadcastTriggerFields } from "./broadcast-config";
 import { PostPicker } from "./post-picker";
 import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
@@ -171,35 +172,56 @@ const CHANNEL_LABEL: Record<string, string> = {
 
 // Pick the ONE account a trigger listens to ("Semua akun" = every account). Stored as
 // a list for compatibility: [] = all, [id] = that account only.
-function ChannelPicker({ value, onChange, options }: { value: string[]; onChange: (v: string[]) => void; options: ChannelOption[] }) {
+function ChannelPicker({
+  value,
+  onChange,
+  options,
+  taken = new Map(),
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  options: ChannelOption[];
+  // account id (or "*" = all) → name of the other active flow already using it
+  taken?: Map<string, string>;
+}) {
   if (options.length === 0) {
     return <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">Belum ada akun yang cocok. Hubungkan dulu di menu Channel.</p>;
   }
   // Older flows may list several accounts; show the first and save a single one on change.
   const selected = value.find((id) => options.some((o) => o.id === id)) ?? null;
-  const row = (key: string, active: boolean, onPick: () => void, label: React.ReactNode, badge?: string) => (
+  // Another flow holds every account → each one is taken; "Semua akun" needs all free.
+  const holder = (id: string) => taken.get(id) ?? taken.get("*");
+  const allHolder = taken.get("*") ?? (taken.size ? [...taken.values()][0] : undefined);
+  const row = (key: string, active: boolean, onPick: () => void, label: React.ReactNode, badge?: string, usedBy?: string) => (
     <button
       key={key}
       type="button"
       role="radio"
       aria-checked={active}
       onClick={onPick}
+      disabled={!!usedBy && !active}
+      title={usedBy ? `Sudah dipakai flow "${usedBy}"` : undefined}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors",
         active ? "border-brand-blue bg-blue-50 dark:bg-blue-500/10" : "border-border hover:bg-muted/50",
+        usedBy && !active && "cursor-not-allowed opacity-60 hover:bg-transparent",
+        usedBy && active && "border-red-300 bg-red-50 dark:border-red-500/40 dark:bg-red-500/10",
       )}
     >
       <span className={cn("grid size-4 shrink-0 place-items-center rounded-full border-2", active ? "border-brand-blue" : "border-muted-foreground/40")}>
         {active && <span className="size-2 rounded-full bg-brand-blue" />}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {usedBy && <span className="block truncate text-[11px] text-red-600 dark:text-red-400">Dipakai flow &quot;{usedBy}&quot;</span>}
+      </span>
       {badge && <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">{badge}</span>}
     </button>
   );
   return (
     <div role="radiogroup" className="space-y-1">
-      {row("__all", selected === null, () => onChange([]), <span className="font-medium">Semua akun</span>)}
-      {options.map((c) => row(c.id, selected === c.id, () => onChange([c.id]), c.name, CHANNEL_LABEL[c.type] ?? c.type))}
+      {row("__all", selected === null, () => onChange([]), <span className="font-medium">Semua akun</span>, undefined, allHolder)}
+      {options.map((c) => row(c.id, selected === c.id, () => onChange([c.id]), c.name, CHANNEL_LABEL[c.type] ?? c.type, holder(c.id)))}
       {value.length > 1 && (
         <p className="px-1 pt-1 text-[11px] text-amber-700 dark:text-amber-300">Flow ini sebelumnya memakai beberapa akun. Pilih satu akun lalu simpan.</p>
       )}
@@ -218,10 +240,13 @@ export function ConfigPanel({
   docs = [],
   promos = [],
   channels = [],
+  otherFlows = [],
   tags = [],
   templates = [],
   broadcastChannelId = null,
 }: {
+  // Other active flows (one-account-one-flow rule for catch-all triggers).
+  otherFlows?: FlowTriggerInfo[];
   docs?: DocOption[];
   promos?: PromoItem[];
   channels?: ChannelOption[];
@@ -328,6 +353,7 @@ export function ConfigPanel({
             <ChannelPicker
               value={d.channels ?? []}
               onChange={(ids) => set<"trigger">({ channels: ids })}
+              taken={takenAccounts(d.kind, "", otherFlows)}
               options={d.kind === "comment" ? channels.filter((c) => c.type === "facebook" || c.type === "instagram") : channels}
             />
           </Field>

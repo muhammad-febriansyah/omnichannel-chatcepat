@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { channels, flows, tags as tagsTable } from "@/lib/db/schema";
+import { triggerInfo } from "@/lib/flow-conflicts";
 import { listWaTemplates } from "@/lib/wa-templates";
 import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
 import { loadAgents, loadDocs, loadPromos } from "@/lib/automation-data";
@@ -38,7 +39,7 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
   });
   if (!flow) notFound();
   const tenantId = session.tenantId;
-  const [docs, promos, accounts, allowedNodes, tagRows, templates, agents] = await Promise.all([
+  const [docs, promos, accounts, allowedNodes, tagRows, templates, agents, activeFlows] = await Promise.all([
     loadDocs(session.tenantId),
     loadPromos(session.tenantId),
     db.query.channels.findMany({
@@ -49,7 +50,12 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
     db.query.tags.findMany({ where: eq(tagsTable.tenantId, tenantId), columns: { name: true } }),
     loadTemplates(tenantId),
     loadAgents(tenantId),
+    db.query.flows.findMany({
+      where: and(eq(flows.tenantId, tenantId), eq(flows.status, "active")),
+      columns: { id: true, name: true, trigger: true, definition: true },
+    }),
   ]);
+  const otherFlows = activeFlows.filter((f) => f.id !== flow.id).map(triggerInfo);
 
   return (
     <FlowBuilder
@@ -62,6 +68,7 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
       allowedNodes={allowedNodes}
       channels={accounts.map((c) => ({ id: c.id, name: c.name, type: c.type, autoReply: c.autoReplyEnabled }))}
       agents={agents.map((a) => ({ id: a.id, name: a.name, isActive: a.isActive, isDefault: a.isDefault }))}
+      otherFlows={otherFlows}
       tags={tagRows.map((t) => t.name)}
       templates={templates}
     />

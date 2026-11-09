@@ -23,6 +23,8 @@ export type SaveSummary = {
   name: string;
   trigger: TriggerKind;
   keywords: string[];
+  channels: string[]; // trigger accounts (empty = all)
+  posts: string[];
   tags: string[];
   scheduleAt: string | null;
   steps: number;
@@ -114,13 +116,13 @@ export function SaveFlowDialog({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    flowTriggerClashes(summary.id, summary.trigger, summary.keywords)
+    flowTriggerClashes(summary.id, summary.trigger, summary.keywords, summary.channels, summary.posts)
       .then((c) => alive && setClashes(c))
       .catch(() => alive && setClashes([]));
     return () => {
       alive = false;
     };
-  }, [open, summary.id, summary.trigger, summary.keywords]);
+  }, [open, summary.id, summary.trigger, summary.keywords, summary.channels, summary.posts]);
 
   const busy = phase === "saving";
   const labels = [
@@ -269,9 +271,9 @@ export function SaveFlowDialog({
               </p>
             )}
             {!isBroadcast && activate && clashes && clashes.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
                 <p className="mb-1 flex items-center gap-1.5 font-semibold">
-                  <AlertTriangle className="size-3.5" /> Pemicu bentrok dengan flow aktif
+                  <AlertTriangle className="size-3.5" /> Akun sudah dipakai flow aktif lain
                 </p>
                 <ul className="list-inside list-disc space-y-0.5">
                   {clashes.map((c) => (
@@ -280,7 +282,7 @@ export function SaveFlowDialog({
                     </li>
                   ))}
                 </ul>
-                <p className="mt-1.5">Pelanggan hanya akan masuk ke salah satu flow. Ubah keyword atau nonaktifkan flow lain.</p>
+                <p className="mt-1.5">Satu akun hanya boleh punya satu flow untuk pemicu yang sama. Pilih akun lain di Pemicu, ubah keyword, atau simpan sebagai draft.</p>
               </div>
             )}
 
@@ -288,7 +290,11 @@ export function SaveFlowDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 <X className="size-4" /> Batal
               </Button>
-              <Button onClick={run} className={cn(activate && "bg-emerald-600 hover:bg-emerald-600/90")}>
+              <Button
+                onClick={run}
+                disabled={!isBroadcast && activate && (clashes === null || clashes.length > 0)}
+                className={cn(activate && "bg-emerald-600 hover:bg-emerald-600/90")}
+              >
                 {activate ? isBroadcast ? <Megaphone className="size-4" /> : <Rocket className="size-4" /> : <Save className="size-4" />}
                 {activate ? (isBroadcast ? (bc?.sent && !bc.pending ? "Simpan" : summary.scheduleAt ? "Simpan & jadwalkan" : "Simpan & kirim") : "Simpan & aktifkan") : "Simpan draft"}
               </Button>

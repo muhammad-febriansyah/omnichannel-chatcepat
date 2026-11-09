@@ -42,6 +42,7 @@ import {
 } from "@/lib/flow-graph";
 import { FlowNode, type FlowRFNode } from "./flow-node";
 import { DeletableEdge } from "./deletable-edge";
+import type { FlowTriggerInfo } from "@/lib/flow-conflicts";
 import { ConfigPanel, type AgentOption, type ChannelOption } from "./config-panel";
 import type { KnowledgeDoc, PromoItem } from "@/lib/ai-agent-options";
 import { COMING_SOON, DRAG_MIME, GROUP_FOR_TRIGGER, NODE_META, PALETTE_GROUPS, nodeMatches, type NodeGroup } from "./meta";
@@ -99,12 +100,13 @@ type Props = {
   promos?: PromoItem[];
   channels?: ChannelOption[];
   agents?: AgentOption[];
+  otherFlows?: FlowTriggerInfo[]; // other ACTIVE flows of this workspace
   allowedNodes?: string[] | null; // null = every step (plan entitlements)
   tags?: string[];
   templates?: BroadcastTemplateOpt[];
 };
 
-function Builder({ id, name: initialName, status: initialStatus, definition, docs = [], promos = [], channels = [], agents = [], allowedNodes = null, tags = [], templates = [] }: Props) {
+function Builder({ id, name: initialName, status: initialStatus, definition, docs = [], promos = [], channels = [], agents = [], otherFlows = [], allowedNodes = null, tags = [], templates = [] }: Props) {
   const initial = useMemo(() => toRF(loadGraph(definition), agents), [definition, agents]);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowRFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -344,6 +346,8 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
       name: name.trim(),
       trigger: triggerData?.kind ?? "keyword",
       keywords: triggerData?.keywords ?? [],
+      channels: triggerData?.channels ?? [],
+      posts: triggerData?.posts ?? [],
       tags: triggerData?.tags ?? [],
       scheduleAt: triggerData?.scheduleAt ?? null,
       steps: nodes.filter((n) => n.data.kind !== "trigger").length,
@@ -636,6 +640,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
               docs={docs}
               promos={promos}
               channels={channels}
+              otherFlows={otherFlows}
               tags={tags}
               templates={templates}
               broadcastChannelId={triggerData?.kind === "broadcast" ? (triggerData.channels?.[0] ?? null) : null}

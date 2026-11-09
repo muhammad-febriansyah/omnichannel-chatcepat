@@ -390,6 +390,40 @@ test("every flow template builds a valid, compilable graph", () => {
   assert.ok(trig.trigger.match.includes("info"));
 });
 
+test("one account, one flow per trigger: conflicts and taken accounts", () => {
+  const fc = loadTS("lib/flow-conflicts.ts");
+  const flow = (id, kind, channels = [], keywords = [], posts = []) => ({ id, name: id, kind, channels, keywords, posts });
+  const name = (id) => `"${id}"`;
+  const others = [flow("sambutan", "welcome", ["wa1"]), flow("promo", "keyword", ["wa1"], ["promo"]), flow("all-fb", "fallback")];
+
+  // Same catch-all trigger on the same account → conflict; another account is free.
+  assert.equal(fc.findFlowConflicts(flow("new", "welcome", ["wa1"]), others, name).length, 1);
+  assert.equal(fc.findFlowConflicts(flow("new", "welcome", ["wa2"]), others, name).length, 0);
+  // "Semua akun" overlaps every account.
+  assert.equal(fc.findFlowConflicts(flow("new", "welcome", []), others, name)[0].account, '"wa1"');
+  assert.equal(fc.findFlowConflicts(flow("new", "fallback", ["wa9"]), others, name)[0].account, '"wa9"', "other flow covers all accounts");
+  assert.equal(fc.findFlowConflicts(flow("new", "fallback", []), others, name)[0].account, "semua akun");
+  // Keywords only clash when a word is shared on a shared account.
+  assert.equal(fc.findFlowConflicts(flow("new", "keyword", ["wa1"], ["harga"]), others, name).length, 0);
+  assert.match(fc.conflictMessage(fc.findFlowConflicts(flow("new", "keyword", [], ["promo"]), others, name)[0]), /promo/);
+  // A flow never conflicts with itself; broadcasts never compete.
+  assert.equal(fc.findFlowConflicts(flow("sambutan", "welcome", ["wa1"]), others, name).length, 0);
+  assert.equal(fc.findFlowConflicts(flow("b", "broadcast", ["wa1"]), [flow("b2", "broadcast", ["wa1"])], name).length, 0);
+  // Comment flows: different posts don't clash.
+  assert.equal(fc.findFlowConflicts(flow("c", "comment", ["fb"], [], ["p1"]), [flow("c2", "comment", ["fb"], [], ["p2"])], name).length, 0);
+  assert.equal(fc.findFlowConflicts(flow("c", "comment", ["fb"]), [flow("c2", "comment", ["fb"])], name).length, 1);
+
+  // Picker: accounts held by another flow of the same catch-all trigger.
+  const taken = fc.takenAccounts("welcome", "new", others);
+  assert.equal(taken.get("wa1"), "sambutan");
+  assert.equal(fc.takenAccounts("fallback", "new", others).get("*"), "all-fb");
+  assert.equal(fc.takenAccounts("keyword", "new", others).size, 0);
+
+  // Trigger info is read from the saved runtime trigger node.
+  const info = fc.triggerInfo({ id: "x", name: "X", trigger: "keyword", definition: { nodes: [{ type: "trigger", trigger: { kind: "keyword", match: ["Promo "], channels: ["wa1"] } }] } });
+  assert.deepEqual([info.kind, info.keywords, info.channels], ["keyword", ["promo"], ["wa1"]]);
+});
+
 test("broadcast flow: trigger + first message compile with per-button branches", () => {
   const fg = loadTS("lib/flow-graph.ts");
   const msgData = {
