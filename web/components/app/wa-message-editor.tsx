@@ -6,10 +6,28 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { waToHtml } from "@/lib/wa-format";
 
-// Emoji umum CS/penjualan — cukup, tanpa dependency picker berat.
-const EMOJIS = [
-  "😊", "🙏", "👍", "🙌", "🔥", "✅", "🎉", "❤️",
-  "😅", "😍", "🛍️", "📦", "💯", "⭐", "😄", "🤝",
+// Emoji per kategori (seperti picker WhatsApp) — tanpa dependency picker berat.
+const EMOJI_GROUPS: { label: string; icon: string; items: string[] }[] = [
+  {
+    label: "Senyum",
+    icon: "😊",
+    items: ["😊", "😄", "😁", "😂", "🤣", "😅", "😉", "😍", "🥰", "😘", "😎", "🤩", "🥳", "😇", "🙂", "🤗", "🤔", "😌", "😴", "😢", "😭", "😤", "😡", "😱", "🥺", "😳", "🙄", "😬"],
+  },
+  {
+    label: "Gestur",
+    icon: "👍",
+    items: ["👍", "👎", "👌", "✌️", "🤞", "🙏", "🙌", "👏", "🤝", "💪", "👋", "🤙", "👉", "👆", "☝️", "✋", "🫶", "🤲"],
+  },
+  {
+    label: "Hati",
+    icon: "❤️",
+    items: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💕", "💖", "💯", "✨", "🔥", "⭐", "🌟", "🎉", "🎁", "🎊"],
+  },
+  {
+    label: "Belanja",
+    icon: "🛍️",
+    items: ["🛍️", "🛒", "📦", "🚚", "💳", "💰", "💵", "🏷️", "🧾", "📞", "📱", "💬", "📩", "📍", "⏰", "📅", "✅", "❌", "⚠️", "ℹ️", "➡️", "🆕", "🆓", "🔔"],
+  },
 ];
 
 export type WaVariable = { label: string; token: string };
@@ -113,24 +131,10 @@ export function WaFormatToolbar({
           <Smile />
         </Button>
         {emojiOpen && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
-            <div className="absolute bottom-full left-0 z-20 mb-1 grid grid-cols-8 gap-0.5 rounded-lg border border-border bg-card p-1.5 shadow-md">
-              {EMOJIS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  className="flex size-7 items-center justify-center rounded-md text-base hover:bg-muted"
-                  onClick={() => {
-                    insertAtCursor(textareaRef, value, onChange, e);
-                    setEmojiOpen(false);
-                  }}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </>
+          <EmojiPicker
+            onPick={(e) => insertAtCursor(textareaRef, value, onChange, e)}
+            onClose={() => setEmojiOpen(false)}
+          />
         )}
       </div>
 
@@ -244,5 +248,50 @@ export function WaMessageEditor({
         />
       )}
     </div>
+  );
+}
+
+// Fixed-size popover above the toolbar: category tabs + scrollable grid.
+function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
+  const [group, setGroup] = useState(0);
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-label="Pilih emoji"
+        className="absolute bottom-full left-0 z-50 mb-2 w-[300px] overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
+      >
+        <div className="flex border-b border-border">
+          {EMOJI_GROUPS.map((g, i) => (
+            <button
+              key={g.label}
+              type="button"
+              title={g.label}
+              onClick={() => setGroup(i)}
+              className={cn(
+                "flex flex-1 items-center justify-center py-2 text-lg transition-colors",
+                i === group ? "border-b-2 border-primary bg-muted/60" : "opacity-60 hover:opacity-100",
+              )}
+            >
+              {g.icon}
+            </button>
+          ))}
+        </div>
+        <p className="px-3 pt-2 text-[11px] font-medium text-muted-foreground">{EMOJI_GROUPS[group].label}</p>
+        <div className="grid max-h-52 grid-cols-8 gap-0.5 overflow-y-auto p-2">
+          {EMOJI_GROUPS[group].items.map((e) => (
+            <button
+              key={e}
+              type="button"
+              className="flex aspect-square items-center justify-center rounded-md text-xl leading-none hover:bg-muted"
+              onClick={() => onPick(e)}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }

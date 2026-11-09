@@ -18,7 +18,7 @@ export function SectionCard({
   contentClassName?: string;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-border bg-card shadow-sm", className)}>
+    <section className={cn("rounded-[20px] bg-card", className)}>
       <div className="flex items-start justify-between gap-3 px-5 pt-5 sm:px-6">
         <div className="min-w-0">
           <h3 className="text-base font-semibold tracking-tight text-foreground">{title}</h3>

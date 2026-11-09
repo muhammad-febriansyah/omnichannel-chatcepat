@@ -29,6 +29,41 @@ async function counts(tenantId: string | null) {
   }
 }
 
+// Real 7-day daily counts (WIB days, oldest first) for the KPI sparklines.
+async function dailySeries(tenantId: string | null) {
+  const empty = { conversations: [] as number[], inbound: [] as number[], contacts: [] as number[], broadcasts: [] as number[] };
+  if (!tenantId) return empty;
+  try {
+    const series = async (table: string, extra = "") => {
+      const rows = (await db.execute(sql`
+        with days as (
+          select generate_series(
+            date_trunc('day', now() at time zone 'Asia/Jakarta') - interval '6 day',
+            date_trunc('day', now() at time zone 'Asia/Jakarta'),
+            interval '1 day') as d
+        )
+        select count(t.id)::int as n
+        from days
+        left join ${sql.raw(table)} t
+          on t.tenant_id = ${tenantId}
+         and date_trunc('day', t.created_at at time zone 'Asia/Jakarta') = days.d
+         ${sql.raw(extra)}
+        group by days.d order by days.d
+      `)) as unknown as { n: number }[];
+      return rows.map((r) => Number(r.n));
+    };
+    const [conversations, inbound, contacts, broadcasts] = await Promise.all([
+      series("conversations"),
+      series("messages", "and t.direction = 'inbound'"),
+      series("contacts"),
+      series("broadcasts"),
+    ]);
+    return { conversations, inbound, contacts, broadcasts };
+  } catch {
+    return empty;
+  }
+}
+
 // Petakan channel.type → ChannelKey grafik.
 const CH_KEY: Record<string, ChannelKey> = {
   wa_official: "whatsapp",
@@ -121,25 +156,32 @@ function greeting(hour: number) {
   return "Selamat Malam";
 }
 
-type Kpi = { icon: React.ElementType; label: string; value: string; tone: string; spark: number[] };
+type Kpi = { icon: React.ElementType; label: string; value: string; tone: string; spark?: number[]; hint: string };
 
-// KPI ringkasan workspace (client).
-function kpisFor(c: { conversations: number; open: number; contacts: number; broadcasts: number }): Kpi[] {
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+const hasTrend = (xs: number[]) => xs.length > 1 && xs.some((x) => x > 0);
+
+// KPI ringkasan workspace (client). Sparklines = real counts of the last 7 days.
+function kpisFor(
+  c: { conversations: number; open: number; contacts: number; broadcasts: number },
+  d: Awaited<ReturnType<typeof dailySeries>>,
+): Kpi[] {
   return [
-    { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#3B82F6", spark: [22, 28, 26, 34, 40, 52, 64] },
-    { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: [70, 72, 75, 80, 78, 84, 87] },
-    { icon: Clock, label: "Total Kontak", value: cleanIDR(c.contacts), tone: "#8B5CF6", spark: [40, 44, 48, 52, 60, 68, 75] },
-    { icon: CheckCircle2, label: "Broadcast", value: cleanIDR(c.broadcasts), tone: "#10B981", spark: [12, 18, 16, 22, 28, 30, 36] },
+    { icon: MessageSquare, label: "Total Percakapan", value: cleanIDR(c.conversations), tone: "#2547F9", spark: hasTrend(d.conversations) ? d.conversations : undefined, hint: `+${sum(d.conversations)} dalam 7 hari` },
+    { icon: Inbox, label: "Inbox Terbuka", value: cleanIDR(c.open), tone: "#F59E0B", spark: hasTrend(d.inbound) ? d.inbound : undefined, hint: `${sum(d.inbound)} pesan masuk 7 hari` },
+    { icon: Clock, label: "Total Kontak", value: cleanIDR(c.contacts), tone: "#8B5CF6", spark: hasTrend(d.contacts) ? d.contacts : undefined, hint: `+${sum(d.contacts)} kontak baru 7 hari` },
+    { icon: CheckCircle2, label: "Broadcast", value: cleanIDR(c.broadcasts), tone: "#10B981", spark: hasTrend(d.broadcasts) ? d.broadcasts : undefined, hint: `${sum(d.broadcasts)} dibuat 7 hari` },
   ];
 }
 
 export default async function DashboardPage() {
   const session = await requireSession();
-  const [c, volumes, channels, activity] = await Promise.all([
+  const [c, volumes, channels, activity, daily] = await Promise.all([
     counts(session.tenantId),
     channelVolumes(session.tenantId),
     channelStatus(session.tenantId),
     recentConversations(session.tenantId),
+    dailySeries(session.tenantId),
   ]);
   const hasVolume = volumes.length > 0;
 
@@ -157,7 +199,7 @@ export default async function DashboardPage() {
 
   const firstName = session.name.split(/\s+/)[0];
   const roleLabel = "Ringkasan workspace";
-  const kpis = kpisFor(c);
+  const kpis = kpisFor(c, daily);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -168,9 +210,9 @@ export default async function DashboardPage() {
       />
 
       {/* KPI — angka asli dari workspace */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {kpis.map((k) => (
-          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} tone={k.tone} spark={k.spark} />
+          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} tone={k.tone} spark={k.spark} hint={k.hint} />
         ))}
       </div>
 

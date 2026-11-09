@@ -50,16 +50,16 @@
   /* Shadow halus ber-tint navy (UI clean, tidak tebal). Override skala Tailwind v4. */
   --shadow-2xs: 0 1px 2px 0 rgb(30 42 120 / 0.03);
   --shadow-xs: 0 1px 2px 0 rgb(30 42 120 / 0.04);
-  --shadow-sm: 0 1px 2px 0 rgb(30 42 120 / 0.05);
+  --shadow-sm: 0 1px 2px 0 rgb(27 37 89 / 0.03);
   --shadow: 0 1px 3px 0 rgb(30 42 120 / 0.06);
   --shadow-md: 0 2px 8px -2px rgb(30 42 120 / 0.07);
   --shadow-lg: 0 8px 20px -6px rgb(30 42 120 / 0.09);
   --shadow-xl: 0 14px 32px -10px rgb(30 42 120 / 0.11);
 
   /* ChatCepat brand (template web/chatcepat) */
-  --color-brand-navy: #1e2a78;
-  --color-brand-blue: #3b82f6;
-  --color-brand-light: #60a5fa;
+  --color-brand-navy: #1b2559;
+  --color-brand-blue: #2547f9;
+  --color-brand-light: #5b75fb;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
@@ -169,72 +169,74 @@
 
 :root {
   --font-poppins: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  --background: #f8fafc;
-  --foreground: #1e2a78;
+  /* Admin panel style (omnexa): #F7F8FD canvas, white cards, #2547F9 primary. */
+  --background: #f7f8fd;
+  --foreground: #1b2559;
   --card: #ffffff;
-  --card-foreground: #1e2a78;
+  --card-foreground: #1b2559;
   --popover: #ffffff;
-  --popover-foreground: #1e2a78;
-  --primary: #3b82f6;
+  --popover-foreground: #1b2559;
+  --primary: #2547f9;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.948 0.004 247);
-  --input: oklch(0.94 0.004 247);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --secondary: #eef1fe;
+  --secondary-foreground: #1b2559;
+  --muted: #f3f5fc;
+  --muted-foreground: #6b7394;
+  --accent: #eef1fe;
+  --accent-foreground: #1b2559;
+  --destructive: #ef4444;
+  --border: #eaedf7;
+  --input: #e3e7f3;
+  --ring: #9aabfc;
+  --chart-1: #2547f9;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+  --radius: 0.875rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1b2559;
+  --sidebar-primary: #2547f9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef1fe;
+  --sidebar-accent-foreground: #1b2559;
+  --sidebar-border: #eaedf7;
+  --sidebar-ring: #9aabfc;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Navy-tinted dark mode so the brand still reads. */
+  --background: #0b1020;
+  --foreground: #e6eaf6;
+  --card: #111830;
+  --card-foreground: #e6eaf6;
+  --popover: #141c36;
+  --popover-foreground: #e6eaf6;
+  --primary: #5b75fb;
+  --primary-foreground: #0b1020;
+  --secondary: #1a2342;
+  --secondary-foreground: #e6eaf6;
+  --muted: #18213d;
+  --muted-foreground: #94a3b8;
+  --accent: #1c2747;
+  --accent-foreground: #e6eaf6;
+  --destructive: #f87171;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #4766fa;
+  --chart-1: #60a5fa;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f472b6;
+  --sidebar: #111830;
+  --sidebar-foreground: #e6eaf6;
+  --sidebar-primary: #4766fa;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2747;
+  --sidebar-accent-foreground: #e6eaf6;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #4766fa;
 }
 
 @layer base {
@@ -253,4 +255,20 @@
       scroll-behavior: auto;
     }
   }
+}
+
+/* Inbox chat area: WhatsApp-like warm wallpaper with a faint dot texture. */
+.wa-wallpaper {
+  background-color: #efeae2;
+  background-image:
+    radial-gradient(rgb(0 0 0 / 0.035) 1px, transparent 1px),
+    radial-gradient(rgb(0 0 0 / 0.025) 1px, transparent 1px);
+  background-size: 22px 22px, 22px 22px;
+  background-position: 0 0, 11px 11px;
+}
+.dark .wa-wallpaper {
+  background-color: #0b141a;
+  background-image:
+    radial-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px),
+    radial-gradient(rgb(255 255 255 / 0.02) 1px, transparent 1px);
 }

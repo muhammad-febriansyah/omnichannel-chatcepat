@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/action-error";
 import { requireSession } from "@/lib/session";
 import { requireAbility } from "@/lib/rbac";
 import { saveImage } from "@/lib/uploads";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const url = await saveImage(file, `${session.tenantId}/products`);
     return Response.json({ url });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal mengunggah";
+    const msg = errorMessage(err) ?? "Gagal mengunggah";
     return Response.json({ error: msg }, { status: 400 });
   }
 }

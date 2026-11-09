@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import Image from "next/image";
@@ -33,7 +34,7 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
       } catch (e) {
         // redirect() melempar NEXT_REDIRECT (bukan error) → biarkan Next yang handle.
         unstable_rethrow(e);
-        gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan Page");
+        gooeyToast.error(errorMessage(e) ?? "Gagal menghubungkan Page");
       }
     });
   }

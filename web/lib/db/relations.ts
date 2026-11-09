@@ -52,6 +52,7 @@ export const flowsRelations = relations(flows, ({one, many}) => ({
 		references: [tenants.id]
 	}),
 	conversationStates: many(conversationStates),
+	broadcasts: many(broadcasts),
 }));
 
 export const conversationsRelations = relations(conversations, ({one, many}) => ({
@@ -137,6 +138,10 @@ export const broadcastsRelations = relations(broadcasts, ({one, many}) => ({
 	channel: one(channels, {
 		fields: [broadcasts.channelId],
 		references: [channels.id]
+	}),
+	flow: one(flows, {
+		fields: [broadcasts.flowId],
+		references: [flows.id]
 	}),
 	broadcastRecipients: many(broadcastRecipients),
 }));

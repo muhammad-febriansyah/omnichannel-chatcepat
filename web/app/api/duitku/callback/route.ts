@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { orders, tenants } from "@/lib/db/schema";
+import { aiCreditBuckets, orders, tenants } from "@/lib/db/schema";
 import { verifyCallbackSignature } from "@/lib/duitku";
 import { subscriptionExpiry } from "@/lib/subscription";
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   const outcome = await db.transaction(async (tx) => {
     // Serialize duplicate callbacks, including callbacks handled by different workers.
-    const [order] = await tx.select({ id: orders.id, tenantId: orders.tenantId, status: orders.status, amountIdr: orders.amountIdr, duitkuReference: orders.duitkuReference, tier: orders.tier, period: orders.period }).from(orders)
+    const [order] = await tx.select({ id: orders.id, tenantId: orders.tenantId, status: orders.status, amountIdr: orders.amountIdr, duitkuReference: orders.duitkuReference, tier: orders.tier, period: orders.period, planId: orders.planId, kind: orders.kind, aiTokens: orders.aiTokens, aiValidDays: orders.aiValidDays }).from(orders)
       .where(eq(orders.merchantOrderId, merchantOrderId)).for("update");
     if (!order) return { message: "Order not found", status: 404 };
     if (!Number.isSafeInteger(Number(amount)) || Number(amount) !== order.amountIdr) {
@@ -32,9 +32,24 @@ export async function POST(req: Request) {
     if (order.status === "paid") return { message: "OK", status: 200 };
     const now = new Date();
     const raw = Object.fromEntries(form.entries());
-    if (get("resultCode") === "00") {
+    if (get("resultCode") === "00" && order.kind === "ai_topup") {
+      // Top-up token AI: one bucket per paid order (unique index → idempotent).
+      await tx.update(orders).set({
+        status: "paid", duitkuReference: get("reference") || order.duitkuReference,
+        paymentMethod: get("paymentCode") || null, paidAt: now.toISOString(),
+        raw, updatedAt: now.toISOString(),
+      }).where(eq(orders.id, order.id));
+      await tx.insert(aiCreditBuckets).values({
+        tenantId: order.tenantId,
+        source: "topup",
+        tokensTotal: order.aiTokens ?? 0,
+        expiresAt: new Date(now.getTime() + (order.aiValidDays ?? 30) * 86_400_000).toISOString(),
+        orderId: order.id,
+        note: "Top-up token AI",
+      }).onConflictDoNothing();
+    } else if (get("resultCode") === "00") {
       // Different orders for one tenant must not overwrite each other's extension.
-      const [tenant] = await tx.select({ planExpiresAt: tenants.planExpiresAt }).from(tenants)
+      const [tenant] = await tx.select({ planExpiresAt: tenants.planExpiresAt, settings: tenants.settings }).from(tenants)
         .where(eq(tenants.id, order.tenantId)).for("update");
       if (!tenant) return { message: "Tenant not found", status: 404 };
       await tx.update(orders).set({
@@ -44,7 +59,14 @@ export async function POST(req: Request) {
       }).where(eq(orders.id, order.id));
       await tx.update(tenants).set({
         plan: order.tier,
-        planExpiresAt: subscriptionExpiry(tenant.planExpiresAt, order.period, now.getTime()),
+        planId: order.planId,
+        // A trial's remaining days don't carry over: paid time starts now.
+        planExpiresAt: subscriptionExpiry(
+          (tenant.settings as { trial?: unknown } | null)?.trial === true ? null : tenant.planExpiresAt,
+          order.period,
+          now.getTime(),
+        ),
+        settings: { ...((tenant.settings as Record<string, unknown> | null) ?? {}), trial: false },
         updatedAt: now.toISOString(),
       }).where(eq(tenants.id, order.tenantId));
     } else if (order.status === "pending") {

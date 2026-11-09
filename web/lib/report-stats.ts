@@ -44,7 +44,7 @@ export async function getReportStats(tenantId: string | null): Promise<ReportSta
       `select opt_in_status status, count(*)::int n from contacts where tenant_id=${t} group by opt_in_status order by n desc`,
     );
     const msgPerDay = await rows(
-      `select to_char(d.day, 'YYYY-MM-DD') day,
+      `select to_char(d.day, 'YYYY-MM-DD') AS day,
          coalesce((select count(*) from messages m where m.tenant_id=${t} and date_trunc('day', m.created_at at time zone 'Asia/Jakarta') = d.day), 0)::int n
        from generate_series(date_trunc('day', now() at time zone 'Asia/Jakarta') - interval '6 days', date_trunc('day', now() at time zone 'Asia/Jakarta'), interval '1 day') d(day)
        order by d.day`,

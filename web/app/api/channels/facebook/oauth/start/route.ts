@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/action-error";
 // GET /api/channels/facebook/oauth/start?platform=facebook|instagram
 // Mulai OAuth: gate auth + ability, tandatangani state (anti-CSRF), redirect ke dialog Meta.
 import { NextResponse } from "next/server";
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     const state = await signState({ tenantId: session.tenantId, userId: session.id, platform });
     url = authDialogUrl(state, platform);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "config";
+    const msg = errorMessage(e) ?? "config";
     return NextResponse.redirect(appUrl(`/channels/connect?error=${encodeURIComponent(msg)}`));
   }
   return NextResponse.redirect(url);

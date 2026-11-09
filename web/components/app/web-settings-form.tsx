@@ -1,5 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/action-error";
 import { useRef, useState, useTransition } from "react";
 import {
   Save,
@@ -24,7 +27,7 @@ import { saveWebSettings } from "@/lib/actions";
 import type { WebSettings } from "@/lib/web-settings";
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full text-sm";
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -69,7 +72,7 @@ function ImageUpload({
       onChange(data.url as string);
       gooeyToast.success("Gambar terunggah");
     } catch (err) {
-      gooeyToast.error(err instanceof Error ? err.message : "Gagal mengunggah");
+      gooeyToast.error(errorMessage(err) ?? "Gagal mengunggah");
     } finally {
       setBusy(false);
     }
@@ -147,7 +150,7 @@ export function WebSettingsForm({
         await (action ?? saveWebSettings)(v);
         gooeyToast.success("Pengaturan website tersimpan");
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Gagal menyimpan");
+        gooeyToast.error(errorMessage(err) ?? "Gagal menyimpan");
       }
     });
   }
@@ -162,11 +165,11 @@ export function WebSettingsForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nama Situs"><input value={v.siteName} onChange={(e) => set({ siteName: e.target.value })} className={inputCls} /></Field>
-            <Field label="Tagline"><input value={v.tagline} onChange={(e) => set({ tagline: e.target.value })} className={inputCls} /></Field>
+            <Field label="Nama Situs"><Input value={v.siteName} onChange={(e) => set({ siteName: e.target.value })} className={inputCls} /></Field>
+            <Field label="Tagline"><Input value={v.tagline} onChange={(e) => set({ tagline: e.target.value })} className={inputCls} /></Field>
           </div>
           <Field label="Deskripsi">
-            <textarea value={v.description} onChange={(e) => set({ description: e.target.value })} rows={2} className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10" />
+            <Textarea value={v.description} onChange={(e) => set({ description: e.target.value })} rows={2} className="w-full p-3 text-sm" />
           </Field>
         </CardContent>
       </Card>
@@ -206,12 +209,12 @@ export function WebSettingsForm({
           <CardDescription>Judul, deskripsi, dan gambar share (Open Graph).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Field label="Meta Title"><input value={v.seo.title} onChange={(e) => setSeo({ title: e.target.value })} className={inputCls} /></Field>
+          <Field label="Meta Title"><Input value={v.seo.title} onChange={(e) => setSeo({ title: e.target.value })} className={inputCls} /></Field>
           <Field label="Meta Description" hint="±150–160 karakter ideal.">
-            <textarea value={v.seo.description} onChange={(e) => setSeo({ description: e.target.value })} rows={2} className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10" />
+            <Textarea value={v.seo.description} onChange={(e) => setSeo({ description: e.target.value })} rows={2} className="w-full p-3 text-sm" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Keywords" hint="Pisahkan dengan koma."><input value={v.seo.keywords} onChange={(e) => setSeo({ keywords: e.target.value })} className={inputCls} /></Field>
+            <Field label="Keywords" hint="Pisahkan dengan koma."><Input value={v.seo.keywords} onChange={(e) => setSeo({ keywords: e.target.value })} className={inputCls} /></Field>
             <ImageUpload
               label="OG Image"
               hint="Gambar share sosmed, ideal 1200×630. Maks 2 MB."
@@ -234,7 +237,7 @@ export function WebSettingsForm({
           {SOCIALS.map(({ key, label, icon: Icon, ph }) => (
             <div key={key} className="relative">
               <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input
+              <Input
                 value={v.social[key]}
                 onChange={(e) => setSocial({ [key]: e.target.value })}
                 placeholder={`${label} — ${ph}`}
@@ -256,20 +259,20 @@ export function WebSettingsForm({
             <Field label="Email">
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input value={v.contact.email} onChange={(e) => setContact({ email: e.target.value })} className={`${inputCls} pl-10`} />
+                <Input value={v.contact.email} onChange={(e) => setContact({ email: e.target.value })} className={`${inputCls} pl-10`} />
               </div>
             </Field>
             <Field label="Telepon">
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input value={v.contact.phone} onChange={(e) => setContact({ phone: e.target.value })} className={`${inputCls} pl-10`} />
+                <Input value={v.contact.phone} onChange={(e) => setContact({ phone: e.target.value })} className={`${inputCls} pl-10`} />
               </div>
             </Field>
           </div>
           <Field label="Alamat">
             <div className="relative">
               <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input value={v.contact.address} onChange={(e) => setContact({ address: e.target.value })} className={`${inputCls} pl-10`} />
+              <Input value={v.contact.address} onChange={(e) => setContact({ address: e.target.value })} className={`${inputCls} pl-10`} />
             </div>
           </Field>
         </CardContent>

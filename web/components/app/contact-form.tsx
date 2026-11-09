@@ -1,5 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { errorMessage } from "@/lib/action-error";
 import { useTransition } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -40,7 +43,7 @@ export interface ContactInitial {
 }
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full pl-10 pr-3 text-sm";
 
 export function ContactForm({
   mode,
@@ -78,7 +81,7 @@ export function ContactForm({
         if (mode === "edit" && contactId) await updateContact(contactId, payload);
         else await createContact(payload);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan kontak";
+        const msg = errorMessage(err) ?? "Gagal menyimpan kontak";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -113,7 +116,7 @@ export function ContactForm({
                   </label>
                   <div className="relative">
                     <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="name" {...register("name")} placeholder="Budi Santoso" className={inputCls} />
+                    <Input id="name" {...register("name")} placeholder="Budi Santoso" className={inputCls} />
                   </div>
                   {errors.name && <p className="mt-1.5 text-xs font-medium text-danger">{errors.name.message}</p>}
                 </div>
@@ -123,7 +126,7 @@ export function ContactForm({
                   </label>
                   <div className="relative">
                     <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="phone" {...register("phone")} inputMode="tel" placeholder="628123456789" className={inputCls} />
+                    <Input id="phone" {...register("phone")} inputMode="tel" placeholder="628123456789" className={inputCls} />
                   </div>
                   {errors.phone && <p className="mt-1.5 text-xs font-medium text-danger">{errors.phone.message}</p>}
                 </div>
@@ -143,11 +146,11 @@ export function ContactForm({
                   </label>
                   <div className="relative">
                     <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <select id="optInStatus" {...register("optInStatus")} className={`${inputCls} pr-8`}>
-                      <option value="unknown">Belum diketahui</option>
-                      <option value="opted_in">Opted-in (boleh broadcast)</option>
-                      <option value="opted_out">Opted-out (jangan broadcast)</option>
-                    </select>
+                    <NativeSelect id="optInStatus" {...register("optInStatus")} className={`${inputCls} pr-8`}>
+                      <NativeSelectOption value="unknown">Belum diketahui</NativeSelectOption>
+                      <NativeSelectOption value="opted_in">Opted-in (boleh broadcast)</NativeSelectOption>
+                      <NativeSelectOption value="opted_out">Opted-out (jangan broadcast)</NativeSelectOption>
+                    </NativeSelect>
                   </div>
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     Set <b>Opted-in</b> hanya jika kontak benar-benar setuju dihubungi.
@@ -159,7 +162,7 @@ export function ContactForm({
                   </label>
                   <div className="relative">
                     <Tags className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="tags" {...register("tags")} placeholder="jakarta, reseller" className={inputCls} />
+                    <Input id="tags" {...register("tags")} placeholder="jakarta, reseller" className={inputCls} />
                   </div>
                   <p className="mt-1.5 text-xs text-muted-foreground">Pisahkan dengan koma.</p>
                 </div>

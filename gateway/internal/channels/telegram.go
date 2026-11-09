@@ -35,7 +35,25 @@ func (t *Telegram) Send(ctx context.Context, cmd contracts.OutboundCommand, cred
 		"chat_id": {cmd.To.ExternalId},
 		"text":    {body},
 	}
-	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+	method := "sendMessage"
+	// Media by URL (Telegram fetches it): photo / video / audio / document + caption.
+	if media := outboundMedia(cmd); media != nil {
+		field := "document"
+		method = "sendDocument"
+		switch {
+		case strings.HasPrefix(media.Mime, "image/") && media.Mime != "image/gif":
+			field, method = "photo", "sendPhoto"
+		case strings.HasPrefix(media.Mime, "video/"):
+			field, method = "video", "sendVideo"
+		case strings.HasPrefix(media.Mime, "audio/"):
+			field, method = "audio", "sendAudio"
+		}
+		form = url.Values{"chat_id": {cmd.To.ExternalId}, field: {media.Url}}
+		if body != "" {
+			form.Set("caption", body)
+		}
+	}
+	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err

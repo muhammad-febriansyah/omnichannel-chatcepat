@@ -1,33 +1,15 @@
+import { errorMessage } from "@/lib/action-error";
 import { and, desc, eq } from "drizzle-orm";
-import { Plus, Zap, FileText, FileStack } from "lucide-react";
+import { Plus, FileText, FileStack } from "lucide-react";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { deleteTemplate } from "@/lib/actions";
 import { listWaTemplates, type WaTemplatesResult } from "@/lib/wa-templates";
 import { PageHeader } from "@/components/app/page-header";
+import { WaTemplatesTable, QuickRepliesTable } from "@/components/app/templates-tables";
 import { EmptyState } from "@/components/app/empty-state";
-import { DeleteButton } from "@/components/app/delete-button";
 import { ActionLink } from "@/components/app/action-link";
-import { EditButton } from "@/components/app/action-button";
-import { StatusPill, type PillTone } from "@/components/app/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
-
-// Status review Meta → tampilan.
-const WA_STATUS_TONE: Record<string, PillTone> = {
-  APPROVED: "emerald",
-  PENDING: "amber",
-  REJECTED: "red",
-  PAUSED: "amber",
-  DISABLED: "slate",
-};
-const WA_STATUS_LABEL: Record<string, string> = {
-  APPROVED: "Disetujui",
-  PENDING: "Menunggu Meta",
-  REJECTED: "Ditolak",
-  PAUSED: "Dijeda",
-  DISABLED: "Nonaktif",
-};
 
 async function loadQuickReplies(tenantId: string | null) {
   if (!tenantId) return [];
@@ -47,7 +29,7 @@ async function loadWaTemplates(tenantId: string | null): Promise<WaTemplatesResu
   try {
     return await listWaTemplates(tenantId);
   } catch (e) {
-    return { templates: [], errors: [e instanceof Error ? e.message : "Gagal memuat template WhatsApp"] };
+    return { templates: [], errors: [errorMessage(e) ?? "Gagal memuat template WhatsApp"] };
   }
 }
 
@@ -90,85 +72,31 @@ export default async function TemplatesPage() {
             <div className="space-y-6">
               {/* WhatsApp HSM — dibaca langsung dari WABA tiap channel WA Official (status Meta) */}
               <section>
-                <h2 className="mb-2 text-sm font-semibold text-foreground">Template WhatsApp (Meta)</h2>
+                <h2 className="mb-3 text-sm font-semibold text-foreground">Template WhatsApp (Meta)</h2>
                 {waErrors.length > 0 && (
                   <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                     Sebagian template gagal dimuat dari Meta: {waErrors.join("; ")}
                   </p>
                 )}
-                {waTemplates.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-                    Belum ada template WhatsApp. Buat lewat “Template Baru” → jenis WhatsApp (HSM).
-                  </p>
-                ) : (
-                  <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {waTemplates.map((t, i) => (
-                      <div
-                        key={`${t.channelId}:${t.id || t.name}:${t.language}`}
-                        className={`flex items-center gap-4 px-4 py-3 ${i > 0 ? "border-t border-border" : ""}`}
-                      >
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300">
-                          <FileText className="size-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate text-sm font-semibold">{t.name}</span>
-                            <StatusPill tone="slate" className="shrink-0">
-                              {t.language}
-                            </StatusPill>
-                            {t.category && (
-                              <StatusPill tone="slate" className="shrink-0">
-                                {t.category}
-                              </StatusPill>
-                            )}
-                            <StatusPill tone={WA_STATUS_TONE[t.status] ?? "slate"} className="shrink-0">
-                              {WA_STATUS_LABEL[t.status] ?? t.status}
-                            </StatusPill>
-                            <StatusPill tone="slate" className="shrink-0">
-                              {t.channelName}
-                            </StatusPill>
-                          </div>
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.body}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <WaTemplatesTable
+                  rows={waTemplates.map((t) => ({
+                    key: `${t.channelId}:${t.id || t.name}:${t.language}`,
+                    name: t.name,
+                    language: t.language,
+                    category: t.category,
+                    status: t.status,
+                    body: t.body,
+                    channelName: t.channelName,
+                    buttons: t.buttons.length,
+                  }))}
+                />
               </section>
 
               {/* Balasan cepat — lokal */}
               {quickReplies.length > 0 && (
                 <section>
-                  <h2 className="mb-2 text-sm font-semibold text-foreground">Balasan Cepat</h2>
-                  <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {quickReplies.map((t, i) => (
-                      <div
-                        key={t.id}
-                        className={`flex items-center gap-4 px-4 py-3 ${i > 0 ? "border-t border-border" : ""}`}
-                      >
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300">
-                          <Zap className="size-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="truncate text-sm font-semibold">{t.name}</span>
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.body}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <EditButton href={`/templates/${t.id}/edit`} />
-                          <DeleteButton
-                            onConfirm={deleteTemplate.bind(null, t.id)}
-                            title="Hapus template?"
-                            description={
-                              <>
-                                Template <span className="font-semibold text-foreground">{t.name}</span> akan dihapus permanen.
-                              </>
-                            }
-                            successMessage="Template dihapus"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <h2 className="mb-3 text-sm font-semibold text-foreground">Balasan Cepat</h2>
+                  <QuickRepliesTable rows={quickReplies.map((t) => ({ id: t.id, name: t.name, body: t.body }))} />
                 </section>
               )}
             </div>

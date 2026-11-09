@@ -1,5 +1,9 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { Save, Clock } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
@@ -22,13 +26,13 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
         await saveBusinessHours(bh);
         gooeyToast.success("Jam kerja tersimpan");
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Gagal menyimpan jam kerja");
+        gooeyToast.error(errorMessage(err) ?? "Gagal menyimpan jam kerja");
       }
     });
   }
 
   const timeCls =
-    "h-10 rounded-lg border border-border bg-background px-2.5 text-sm tabular-nums outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10 disabled:cursor-not-allowed disabled:opacity-50";
+    "h-10 text-sm tabular-nums disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
     <div className="w-full p-6">
@@ -49,25 +53,15 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
               return (
                 <div key={key} className="flex flex-wrap items-center gap-3 px-4 py-3">
                   <label className="flex w-32 cursor-pointer select-none items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={d.enabled}
-                      onChange={(e) => setDay(key, { enabled: e.target.checked })}
-                      className="peer absolute size-0 opacity-0"
-                    />
-                    <span className="grid size-[18px] shrink-0 place-items-center rounded-md border-[1.5px] border-muted-foreground/40 bg-card transition-colors peer-checked:border-brand-blue peer-checked:bg-brand-blue">
-                      <svg className="size-3 text-white opacity-0 transition-opacity peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </span>
+                    <Checkbox checked={d.enabled} onCheckedChange={(x) => setDay(key, { enabled: !!x })} />
                     <span className="text-sm font-medium">{label}</span>
                   </label>
 
                   {d.enabled ? (
                     <div className="flex items-center gap-2">
-                      <input type="time" value={d.open} onChange={(e) => setDay(key, { open: e.target.value })} className={timeCls} />
+                      <Input type="time" value={d.open} onChange={(e) => setDay(key, { open: e.target.value })} className={timeCls} />
                       <span className="text-sm text-muted-foreground">s/d</span>
-                      <input type="time" value={d.close} onChange={(e) => setDay(key, { close: e.target.value })} className={timeCls} />
+                      <Input type="time" value={d.close} onChange={(e) => setDay(key, { close: e.target.value })} className={timeCls} />
                     </div>
                   ) : (
                     <span className="text-sm text-muted-foreground">Tutup</span>
@@ -81,13 +75,13 @@ export function BusinessHoursForm({ initial }: { initial: BusinessHours }) {
             <label htmlFor="ooo" className="mb-1.5 block text-sm font-medium text-foreground">
               Pesan di luar jam operasional
             </label>
-            <textarea
+            <Textarea
               id="ooo"
               rows={3}
               value={bh.outOfOffice}
               onChange={(e) => setBh((s) => ({ ...s, outOfOffice: e.target.value }))}
               placeholder="Pesan otomatis saat di luar jam kerja…"
-              className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+              className="w-full p-3 text-sm"
             />
             <p className="mt-1.5 text-xs text-muted-foreground">Dikirim sekali saat kontak menghubungi di luar jam.</p>
           </div>

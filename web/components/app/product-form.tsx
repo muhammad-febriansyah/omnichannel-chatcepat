@@ -1,5 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/action-error";
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Save, Package, Tag, Hash, Boxes, ImagePlus, Loader2, X, Star } from "lucide-react";
@@ -12,7 +15,7 @@ import { createProduct, updateProduct, type ProductInput } from "@/lib/actions";
 
 const MAX_PHOTOS = 10;
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full text-sm";
 
 type Initial = ProductInput;
 
@@ -55,7 +58,7 @@ export function ProductForm({
         setPhotos((p) => [...p, data.url]);
       }
     } catch (err) {
-      gooeyToast.error(err instanceof Error ? err.message : "Gagal mengunggah foto");
+      gooeyToast.error(errorMessage(err) ?? "Gagal mengunggah foto");
     } finally {
       setUploading(false);
     }
@@ -87,7 +90,7 @@ export function ProductForm({
         if (isEdit && productId) await updateProduct(productId, input);
         else await createProduct(input);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan produk";
+        const msg = errorMessage(err) ?? "Gagal menyimpan produk";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -164,7 +167,7 @@ export function ProductForm({
               <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">Nama Produk</label>
               <div className="relative">
                 <Package className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="mis. Kaos Polos Hitam" className={cn(inputCls, "pl-10")} />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="mis. Kaos Polos Hitam" className={cn(inputCls, "pl-10")} />
               </div>
             </div>
 
@@ -172,13 +175,13 @@ export function ProductForm({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="price" className="mb-1.5 block text-sm font-medium text-foreground">Harga (Rp)</label>
-                <input id="price" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder="50000" className={inputCls} />
+                <Input id="price" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder="50000" className={inputCls} />
               </div>
               <div>
                 <label htmlFor="stock" className="mb-1.5 block text-sm font-medium text-foreground">Stok</label>
                 <div className="relative">
                   <Boxes className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input id="stock" inputMode="numeric" value={stock} onChange={(e) => setStock(e.target.value.replace(/[^0-9]/g, ""))} placeholder="0" className={cn(inputCls, "pl-10")} />
+                  <Input id="stock" inputMode="numeric" value={stock} onChange={(e) => setStock(e.target.value.replace(/[^0-9]/g, ""))} placeholder="0" className={cn(inputCls, "pl-10")} />
                 </div>
               </div>
             </div>
@@ -189,14 +192,14 @@ export function ProductForm({
                 <label htmlFor="sku" className="mb-1.5 block text-sm font-medium text-foreground">SKU / Kode <span className="text-muted-foreground">(opsional)</span></label>
                 <div className="relative">
                   <Hash className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="KAOS-HTM-01" className={cn(inputCls, "pl-10")} />
+                  <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="KAOS-HTM-01" className={cn(inputCls, "pl-10")} />
                 </div>
               </div>
               <div>
                 <label htmlFor="category" className="mb-1.5 block text-sm font-medium text-foreground">Kategori <span className="text-muted-foreground">(opsional)</span></label>
                 <div className="relative">
                   <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Pakaian" className={cn(inputCls, "pl-10")} />
+                  <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Pakaian" className={cn(inputCls, "pl-10")} />
                 </div>
               </div>
             </div>
@@ -204,7 +207,7 @@ export function ProductForm({
             {/* Deskripsi */}
             <div>
               <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-foreground">Deskripsi</label>
-              <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Bahan katun combed 30s, nyaman dipakai harian." className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10" />
+              <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Bahan katun combed 30s, nyaman dipakai harian." className="w-full p-3 text-sm" />
             </div>
 
             {/* Aktif */}

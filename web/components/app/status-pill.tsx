@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 // Pill status seragam + dark-safe. Dipakai untuk badge opt-in, status percakapan, dll.
-export type PillTone = "blue" | "amber" | "emerald" | "red" | "slate";
+export type PillTone = "blue" | "amber" | "emerald" | "red" | "slate" | "violet";
 
 const TONES: Record<PillTone, string> = {
   blue: "bg-blue-50 text-brand-blue dark:bg-blue-500/10 dark:text-blue-300",
@@ -9,6 +9,7 @@ const TONES: Record<PillTone, string> = {
   emerald: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
   red: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
   slate: "bg-muted text-muted-foreground",
+  violet: "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
 };
 
 export function StatusPill({

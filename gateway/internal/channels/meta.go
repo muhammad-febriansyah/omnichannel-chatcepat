@@ -180,6 +180,7 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 					IsEcho bool   `json:"is_echo"`
 				} `json:"message"`
 			} `json:"messaging"`
+			Changes []metaChange `json:"changes"`
 		} `json:"entry"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -212,8 +213,83 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 			}
 			out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
 		}
+		for _, ch := range e.Changes {
+			if inb, ok := commentInbound(ct, e.ID, ch); ok {
+				out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
+			}
+		}
 	}
 	return out, nil
+}
+
+// metaChange = entry.changes[] (Page "feed" / Instagram "comments").
+type metaChange struct {
+	Field string `json:"field"`
+	Value struct {
+		// Facebook feed
+		Item      string `json:"item"`
+		Verb      string `json:"verb"`
+		CommentID string `json:"comment_id"`
+		PostID    string `json:"post_id"`
+		ParentID  string `json:"parent_id"`
+		Message   string `json:"message"`
+		// Instagram comments
+		ID    string `json:"id"`
+		Text  string `json:"text"`
+		Media struct {
+			ID string `json:"id"`
+		} `json:"media"`
+		// Both
+		From struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Username string `json:"username"`
+		} `json:"from"`
+	} `json:"value"`
+}
+
+// commentInbound normalises a new comment on our Page/IG post. Our own replies
+// (from.id == account id), edits, deletions and non-comment feed items are skipped.
+func commentInbound(ct contracts.ChannelType, accountID string, ch metaChange) (contracts.InboundMessage, bool) {
+	v := ch.Value
+	var commentID, postID, parentID, text string
+	switch {
+	case ch.Field == "feed" && v.Item == "comment" && v.Verb == "add":
+		commentID, postID, parentID, text = v.CommentID, v.PostID, v.ParentID, v.Message
+		// FB sets parent_id = post_id for top-level comments.
+		if parentID == postID {
+			parentID = ""
+		}
+	case ch.Field == "comments":
+		commentID, postID, parentID, text = v.ID, v.Media.ID, v.ParentID, v.Text
+	default:
+		return contracts.InboundMessage{}, false
+	}
+	if commentID == "" || postID == "" || strings.TrimSpace(text) == "" || v.From.ID == "" || v.From.ID == accountID {
+		return contracts.InboundMessage{}, false
+	}
+	name := v.From.Name
+	if name == "" {
+		name = v.From.Username
+	}
+	comment := contracts.SocialComment{CommentId: commentID, PostId: postID}
+	if parentID != "" {
+		p := parentID
+		comment.ParentId = &p
+	}
+	from := contracts.Party{ExternalId: v.From.ID}
+	if name != "" {
+		from.Name = &name
+	}
+	return contracts.InboundMessage{
+		ChannelType:       ct,
+		ProviderMessageId: commentID,
+		From:              from,
+		Type:              contracts.InboundMessageTypeText,
+		Body:              &text,
+		Comment:           &comment,
+		Timestamp:         time.Now().UTC(),
+	}, true
 }
 
 // --- Outbound (Graph API) ---
@@ -385,13 +461,73 @@ func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundComman
 	if cmd.Body != nil {
 		body = *cmd.Body
 	}
-	if body == "" {
+	media := outboundMedia(cmd)
+	if body == "" && media == nil {
 		return "", fmt.Errorf("messenger: body kosong")
 	}
+	commentID := ""
+	if cmd.CommentId != nil {
+		commentID = *cmd.CommentId
+	}
+	if cmd.ReplyMode != nil && *cmd.ReplyMode == contracts.OutboundCommandReplyModeCommentReply {
+		if commentID == "" {
+			return "", fmt.Errorf("messenger: comment_id kosong")
+		}
+		return m.replyComment(ctx, commentID, body, token)
+	}
+	recipient := map[string]any{"id": cmd.To.ExternalId}
+	if cmd.ReplyMode != nil && *cmd.ReplyMode == contracts.OutboundCommandReplyModePrivateReply {
+		// Private reply: one DM to the commenter, allowed once per comment (7 days).
+		if commentID == "" {
+			return "", fmt.Errorf("messenger: comment_id kosong")
+		}
+		recipient = map[string]any{"comment_id": commentID}
+	}
+
+	// Attachment first (Messenger/IG attachments have no caption), then the text.
+	firstID := ""
+	if media != nil {
+		id, err := m.post(ctx, pageID, token, recipient, map[string]any{
+			"attachment": map[string]any{
+				"type":    messengerAttachmentType(media.Mime),
+				"payload": map[string]any{"url": media.Url, "is_reusable": true},
+			},
+		})
+		if err != nil {
+			return "", err
+		}
+		firstID = id
+	}
+	if body != "" {
+		id, err := m.post(ctx, pageID, token, recipient, map[string]any{"text": body})
+		if err != nil {
+			return "", err
+		}
+		if firstID == "" {
+			firstID = id
+		}
+	}
+	return firstID, nil
+}
+
+// messengerAttachmentType maps a MIME type to Messenger/Instagram attachment types.
+func messengerAttachmentType(mime string) string {
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		return "image"
+	case strings.HasPrefix(mime, "video/"):
+		return "video"
+	case strings.HasPrefix(mime, "audio/"):
+		return "audio"
+	}
+	return "file"
+}
+
+func (m *MessengerSender) post(ctx context.Context, pageID, token string, recipient map[string]any, message map[string]any) (string, error) {
 	reqBody, _ := json.Marshal(map[string]any{
-		"recipient":      map[string]any{"id": cmd.To.ExternalId},
+		"recipient":      recipient,
 		"messaging_type": "RESPONSE",
-		"message":        map[string]any{"text": body},
+		"message":        message,
 	})
 	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", pageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
@@ -420,4 +556,39 @@ func (m *MessengerSender) Send(ctx context.Context, cmd contracts.OutboundComman
 		return "", fmt.Errorf("messenger send gagal: %s", out.Error.Message)
 	}
 	return out.MessageID, nil
+}
+
+// replyComment posts a public reply under a comment. Facebook: /{comment-id}/comments,
+// Instagram: /{ig-comment-id}/replies (both with the Page access token).
+func (m *MessengerSender) replyComment(ctx context.Context, commentID, body, token string) (string, error) {
+	edge := "comments"
+	if m.channelType == contracts.ChannelTypeInstagram {
+		edge = "replies"
+	}
+	reqBody, _ := json.Marshal(map[string]any{"message": body})
+	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/%s", commentID, edge)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		ID    string `json:"id"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 300 || out.ID == "" {
+		return "", fmt.Errorf("balas komentar gagal: %s", out.Error.Message)
+	}
+	return out.ID, nil
 }

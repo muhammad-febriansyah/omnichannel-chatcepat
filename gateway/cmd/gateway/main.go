@@ -118,7 +118,8 @@ func main() {
 	go ow.Run(ctx)
 
 	// HTTP: webhook + WS.
-	wsHandler := ws.NewHandler(b, env("WS_JWT_SECRET", ""))
+	// Same secret as web/lib/realtime-token.ts (falls back to SERVICE_TOKEN).
+	wsHandler := ws.NewHandler(b, env("WS_JWT_SECRET", env("SERVICE_TOKEN", "")))
 	srv := &server.Server{
 		Bus:           b,
 		Omnichannel:   omni,

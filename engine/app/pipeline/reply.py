@@ -13,6 +13,9 @@ class Reply:
     media_url: str | None = None
     # (id, title) pilihan. WA Official → tombol/list asli; channel lain → teks bernomor.
     buttons: list[tuple[str, str]] = field(default_factory=list)
+    # Comment-triggered flows: "comment_reply" = public reply under the comment,
+    # "private_reply" = one DM to the commenter. None = normal chat message.
+    mode: str | None = None
 
 
 def options_as_text(text: str | None, buttons: list[tuple[str, str]]) -> str:

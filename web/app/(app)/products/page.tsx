@@ -33,7 +33,7 @@ async function load(tenantId: string | null) {
 
 export default async function ProductsPage() {
   const session = await requirePageAbility("product.manage");
-  if (!hasFeature(session, "catalog")) {
+  if (!(await hasFeature(session, "catalog"))) {
     return (
       <PlanLock
         title="Produk"
@@ -76,7 +76,7 @@ export default async function ProductsPage() {
               {rows.map((p) => {
                 const photo = p.photos?.[0];
                 return (
-                  <div key={p.id} className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+                  <div key={p.id} className="flex flex-col overflow-hidden rounded-[20px] bg-card">
                     <div className="relative aspect-[4/3] bg-muted">
                       {photo ? (
                         // eslint-disable-next-line @next/next/no-img-element -- foto produk upload tenant

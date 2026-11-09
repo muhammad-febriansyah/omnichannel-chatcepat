@@ -17,6 +17,7 @@ export interface Session extends SessionUser {
   plan: TenantPlan | null; // paket EFEKTIF (lock fitur); "basic" bila langganan habis
   planExpiresAt: string | null; // tanggal berakhir langganan (null = tanpa batas)
   planExpired: boolean; // true bila plan_expires_at sudah lewat (efektif turun ke basic)
+  planTrial: boolean; // masa trial Pro dari pendaftaran (belum pernah bayar)
   isPlatformAdmin: boolean;
   // admin platform god-mode: tenant yang sedang dilihat (impersonasi). null untuk client.
   actingTenantId: string | null;
@@ -57,6 +58,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
   let plan: TenantPlan | null = null;
   let planExpiresAt: string | null = null;
   let planExpired = false;
+  let planTrial = false;
   try {
     if (tenantId) {
       const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
@@ -64,6 +66,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
       tenantName = t?.name ?? null;
       planExpiresAt = t?.planExpiresAt ?? null;
       planExpired = !!planExpiresAt && new Date(planExpiresAt).getTime() < Date.now();
+      planTrial = (t?.settings as { trial?: unknown } | null)?.trial === true;
       // Lazy downgrade: langganan habis → paket efektif "basic" (lock ikut turun),
       // tanpa worker. plan_expires_at NULL = tanpa batas (tak pernah turun).
       plan = planExpired ? "basic" : ((t?.plan as TenantPlan) ?? null);
@@ -83,6 +86,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     plan,
     planExpiresAt,
     planExpired,
+    planTrial,
     isPlatformAdmin,
     actingTenantId,
     // Impersonasi aktif hanya bila admin DAN cookie ada DAN tenant target resolve.

@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Script from "next/script";
 import { unstable_rethrow } from "next/navigation";
@@ -123,7 +125,7 @@ export function WaEmbeddedSignup() {
           } catch (e) {
             // redirect() (mis. dari requireSession) melempar NEXT_REDIRECT → biar Next handle.
             unstable_rethrow(e);
-            gooeyToast.error(e instanceof Error ? e.message : "Gagal menghubungkan WhatsApp");
+            gooeyToast.error(errorMessage(e) ?? "Gagal menghubungkan WhatsApp");
           }
         });
       },
@@ -168,13 +170,13 @@ export function WaEmbeddedSignup() {
         </label>
         <div className="relative">
           <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
+          <Input
             id="wa-pin"
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
             inputMode="numeric"
             placeholder="6 digit"
-            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 font-mono text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+            className="h-11 w-full pl-10 pr-3 font-mono text-sm"
           />
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">

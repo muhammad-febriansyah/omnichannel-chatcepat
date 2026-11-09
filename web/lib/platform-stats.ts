@@ -273,14 +273,14 @@ export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
             SELECT date_trunc('month', now()) - (interval '1 month' * gs) AS m
             FROM generate_series(0, 5) gs
           )
-          SELECT to_char(m, 'YYYY-MM') month,
-                 to_char(m, 'Mon') label,
+          SELECT to_char(m, 'YYYY-MM') AS month,
+                 to_char(m, 'Mon') AS label,
                  coalesce((SELECT sum(amount_idr) FROM orders o
-                    WHERE o.status='paid' AND date_trunc('month', o.paid_at) = months.m),0)::bigint revenue,
+                    WHERE o.status='paid' AND date_trunc('month', o.paid_at) = months.m),0)::bigint AS revenue,
                  (SELECT count(*) FROM tenants t
-                    WHERE date_trunc('month', t.created_at) = months.m)::int tenants,
+                    WHERE date_trunc('month', t.created_at) = months.m)::int AS tenants,
                  (SELECT count(*) FROM messages msg
-                    WHERE date_trunc('month', msg.created_at) = months.m)::int messages
+                    WHERE date_trunc('month', msg.created_at) = months.m)::int AS messages
           FROM months
           ORDER BY m ASC`,
     );
@@ -292,7 +292,8 @@ export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
       tenants: Number(row.tenants ?? 0),
       messages: Number(row.messages ?? 0),
     }));
-  } catch {
+  } catch (e) {
+    console.error("getMonthlyAnalytics failed", e);
     return [];
   }
 }

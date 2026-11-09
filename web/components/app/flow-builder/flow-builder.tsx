@@ -1,7 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import {
@@ -19,7 +20,8 @@ import {
   type Edge,
   type OnBeforeDelete,
 } from "@xyflow/react";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertTriangle, PanelLeft, LayoutGrid, MousePointerClick } from "lucide-react";
+import { ArrowLeft, Save, CheckCircle2, AlertTriangle, PanelLeft, LayoutGrid, MousePointerClick, Maximize2, Pencil, Search, Lock } from "lucide-react";
+import { nodeAllowed } from "@/lib/plan-config";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -31,14 +33,19 @@ import {
   flowVariables,
   loadGraph,
   newId,
+  outputHandles,
   validateGraph,
   type FlowGraph,
   type GraphNode,
+  type NodeDataMap,
   type NodeKind,
 } from "@/lib/flow-graph";
 import { FlowNode, type FlowRFNode } from "./flow-node";
-import { ConfigPanel } from "./config-panel";
+import { ConfigPanel, type ChannelOption } from "./config-panel";
+import type { KnowledgeDoc, PromoItem } from "@/lib/ai-agent-options";
 import { COMING_SOON, DRAG_MIME, NODE_META, PALETTE_GROUPS } from "./meta";
+import { SaveFlowDialog, type SaveSummary } from "./save-dialog";
+import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_META).map((k) => [k, FlowNode]));
 
@@ -62,9 +69,14 @@ function toRF(graph: FlowGraph): { nodes: FlowRFNode[]; edges: Edge[] } {
 }
 
 function fromRF(nodes: FlowRFNode[], edges: Edge[]): FlowGraph {
+  const gNodes = nodes.map((n) => ({ id: n.id, type: n.data.kind, position: n.position, data: n.data.payload }) as GraphNode);
+  // Drop wires whose output vanished (e.g. a removed menu option / template button).
+  const handles = new Map(gNodes.map((n) => [n.id, new Set(outputHandles(n).map((h) => h.id))]));
   return {
-    nodes: nodes.map((n) => ({ id: n.id, type: n.data.kind, position: n.position, data: n.data.payload }) as GraphNode),
-    edges: edges.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? "out", target: e.target })),
+    nodes: gNodes,
+    edges: edges
+      .map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? "out", target: e.target }))
+      .filter((e) => handles.get(e.source)?.has(e.sourceHandle)),
   };
 }
 
@@ -73,9 +85,15 @@ type Props = {
   name: string;
   status: "draft" | "active";
   definition: unknown;
+  docs?: KnowledgeDoc[];
+  promos?: PromoItem[];
+  channels?: ChannelOption[];
+  allowedNodes?: string[] | null; // null = every step (plan entitlements)
+  tags?: string[];
+  templates?: BroadcastTemplateOpt[];
 };
 
-function Builder({ id, name: initialName, status: initialStatus, definition }: Props) {
+function Builder({ id, name: initialName, status: initialStatus, definition, docs = [], promos = [], channels = [], allowedNodes = null, tags = [], templates = [] }: Props) {
   const initial = useMemo(() => toRF(loadGraph(definition)), [definition]);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowRFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -84,7 +102,12 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
-  const [saving, startSave] = useTransition();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  // The dialog remembers the last choice (activate vs draft); first save defaults to activate.
+  const [lastActivate, setLastActivate] = useState(true);
+  const chosen = useRef(true);
+  const [saveKey, setSaveKey] = useState(0);
   const wrapper = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
   const { resolvedTheme } = useTheme();
@@ -133,6 +156,10 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
 
   const addNode = useCallback(
     (kind: NodeKind, position?: { x: number; y: number }) => {
+      if (!nodeAllowed(allowedNodes, kind)) {
+        gooeyToast.error(`${NODE_META[kind].label} tidak termasuk paket Anda`, { description: "Upgrade paket di menu Tagihan & Paket." });
+        return;
+      }
       let pos = position;
       if (!pos) {
         const rect = wrapper.current?.getBoundingClientRect();
@@ -154,7 +181,7 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
       setSelectedId(nodeId);
       markDirty();
     },
-    [rf, setNodes, markDirty],
+    [rf, setNodes, markDirty, allowedNodes],
   );
 
   const onDrop = useCallback(
@@ -226,77 +253,110 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
       }
       return;
     }
-    const compiled = compileGraph(graph);
-    startSave(async () => {
-      try {
-        await saveFlow(id, {
-          name: name.trim(),
-          status,
-          trigger: compiled.trigger,
-          definition: { nodes: compiled.nodes, ui: { nodes: graph.nodes, edges: graph.edges } },
-        });
-        setDirty(false);
-        gooeyToast.success(status === "active" ? "Flow disimpan & aktif" : "Flow disimpan sebagai draft");
-      } catch (e) {
-        gooeyToast.error(e instanceof Error ? e.message : "Gagal menyimpan flow");
-      }
-    });
-  }, [name, graph, nodes, rf, setNodes, id, status]);
+    setSaveKey((k) => k + 1);
+    setConfirmOpen(true);
+  }, [name, graph, nodes, rf, setNodes]);
+
+  // Runs inside the save dialog (it shows the loading steps and errors).
+  const persist = useCallback(
+    async (activate: boolean) => {
+      const compiled = compileGraph(graph);
+      const next = activate ? "active" : "draft";
+      const res = await saveFlow(id, {
+        name: name.trim(),
+        status: next,
+        trigger: compiled.trigger,
+        definition: { nodes: compiled.nodes, ui: { nodes: graph.nodes, edges: graph.edges } },
+      });
+      setStatus(next);
+      chosen.current = activate;
+      setDirty(false);
+      return res;
+    },
+    [graph, id, name],
+  );
+
+  const triggerData = nodes.find((n) => n.data.kind === "trigger")?.data.payload as NodeDataMap["trigger"] | undefined;
+  const summary: SaveSummary = useMemo(
+    () => ({
+      id,
+      name: name.trim(),
+      trigger: triggerData?.kind ?? "keyword",
+      keywords: triggerData?.keywords ?? [],
+      tags: triggerData?.tags ?? [],
+      scheduleAt: triggerData?.scheduleAt ?? null,
+      steps: nodes.filter((n) => n.data.kind !== "trigger").length,
+      aiNodes: nodes.filter((n) => n.data.kind === "ai_agent").length,
+    }),
+    [id, name, triggerData, nodes],
+  );
 
   // Ctrl/Cmd + S
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        save();
+        if (!confirmOpen) save();
       }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [save]);
+  }, [save, confirmOpen]);
 
   const issueCount = nodes.reduce((acc, n) => acc + n.data.issues.length, 0);
+  const q = paletteQuery.trim().toLowerCase();
+  const paletteGroups = PALETTE_GROUPS.map(({ group, kinds }) => ({
+    group,
+    kinds: kinds.filter((k) => !q || `${NODE_META[k].label} ${NODE_META[k].desc}`.toLowerCase().includes(q)),
+  })).filter((g) => g.kinds.length > 0);
 
   return (
     <div className="flex h-full min-h-[560px] flex-col bg-background">
       {/* Top bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2 sm:px-4">
         <Link href="/flows" aria-label="Kembali ke daftar flow" className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
           <ArrowLeft className="size-4" />
         </Link>
-        <input
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            markDirty();
-          }}
-          aria-label="Nama flow"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 text-base font-semibold outline-none hover:border-border focus:border-brand-blue focus:bg-background sm:max-w-sm"
-        />
+        <div className="group/name relative flex min-w-0 flex-1 items-center sm:max-w-md">
+          <input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              markDirty();
+            }}
+            aria-label="Nama flow"
+            placeholder="Nama flow"
+            className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent pl-2 pr-8 text-base font-semibold outline-none hover:border-border focus:border-brand-blue focus:bg-background focus:ring-4 focus:ring-brand-blue/10"
+          />
+          <Pencil className="pointer-events-none absolute right-2.5 size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/name:opacity-100" />
+        </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className={cn("hidden items-center gap-1.5 text-xs sm:flex", dirty ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+          <span
+            className={cn(
+              "hidden h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:inline-flex",
+              dirty ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" : "text-muted-foreground",
+            )}
+          >
             {dirty ? <AlertTriangle className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
             {dirty ? "Belum disimpan" : "Tersimpan"}
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              setStatus((s) => (s === "active" ? "draft" : "active"));
-              markDirty();
-            }}
-            aria-pressed={status === "active"}
+          <span
+            title={status === "active" ? "Flow sedang membalas pelanggan" : "Flow belum dipakai"}
             className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors",
+              "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
               status === "active"
                 ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-                : "border-border text-muted-foreground hover:bg-muted",
+                : "border-border text-muted-foreground",
             )}
           >
-            <span className={cn("size-2 rounded-full", status === "active" ? "bg-emerald-500" : "bg-slate-400")} />
+            <span className={cn("relative flex size-2")}>
+              {status === "active" && <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />}
+              <span className={cn("relative inline-flex size-2 rounded-full", status === "active" ? "bg-emerald-500" : "bg-slate-400")} />
+            </span>
             {status === "active" ? "Aktif" : "Draft"}
-          </button>
-          <Button onClick={save} disabled={saving} size="sm" className="h-9 px-4">
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          </span>
+          <Button onClick={save} size="sm" className="h-9 px-4" title="Simpan (Ctrl/⌘ + S)">
+            <Save className="size-4" />
             Simpan
           </Button>
         </div>
@@ -306,66 +366,92 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
         {/* Palette */}
         <aside
           className={cn(
-            "z-10 flex w-60 shrink-0 flex-col border-r border-border bg-card transition-[margin] duration-200",
+            "z-10 flex w-64 shrink-0 flex-col border-r border-border bg-card transition-[margin] duration-200",
             "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl",
-            !paletteOpen && "-ml-60",
+            !paletteOpen && "-ml-64",
           )}
         >
-          <div className="flex items-center justify-between px-4 pb-2 pt-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Langkah</span>
-            <button type="button" aria-label="Sembunyikan palet" onClick={() => setPaletteOpen(false)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted">
-              <PanelLeft className="size-4" />
-            </button>
+          <div className="space-y-2.5 px-3 pb-2 pt-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Langkah</span>
+              <button type="button" aria-label="Sembunyikan palet" onClick={() => setPaletteOpen(false)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted">
+                <PanelLeft className="size-4" />
+              </button>
+            </div>
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={paletteQuery}
+                onChange={(e) => setPaletteQuery(e.target.value)}
+                placeholder="Cari langkah…"
+                aria-label="Cari langkah"
+                className="h-8 w-full pl-8 pr-2 text-[13px]"
+              />
+            </label>
           </div>
-          <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
-            {PALETTE_GROUPS.map(({ group, kinds }) => (
+          <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-4 pt-1">
+            {paletteGroups.length === 0 && <p className="px-1 py-6 text-center text-xs text-muted-foreground">Tidak ada langkah “{paletteQuery}”</p>}
+            {paletteGroups.map(({ group, kinds }) => (
               <div key={group}>
-                <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">{group}</div>
-                <div className="space-y-1">
+                <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">{group}</div>
+                <div className="space-y-0.5">
                   {kinds.map((kind) => {
                     const m = NODE_META[kind];
                     const Icon = m.icon;
+                    const locked = !nodeAllowed(allowedNodes, kind);
                     return (
                       <button
                         key={kind}
                         type="button"
-                        draggable
+                        draggable={!locked}
+                        aria-disabled={locked}
                         onDragStart={(e) => {
                           e.dataTransfer.setData(DRAG_MIME, kind);
                           e.dataTransfer.effectAllowed = "move";
                         }}
                         onClick={() => addNode(kind)}
-                        title={m.desc}
-                        className="flex w-full cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-muted/60 active:cursor-grabbing"
+                        title={locked ? `${m.label} tidak termasuk paket Anda — upgrade di Tagihan & Paket` : `${m.desc} — klik atau seret ke kanvas`}
+                        className={cn(
+                          "group/item flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors",
+                          locked ? "cursor-not-allowed opacity-50" : "cursor-grab hover:border-border hover:bg-muted/60 active:cursor-grabbing",
+                        )}
                       >
-                        <span className="grid size-7 shrink-0 place-items-center rounded-md text-white" style={{ background: m.color }}>
-                          <Icon className="size-3.5" />
+                        <span className="grid size-8 shrink-0 place-items-center rounded-lg text-white shadow-sm transition-transform group-hover/item:scale-105" style={{ background: m.color }}>
+                          <Icon className="size-4" />
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-[13px] font-medium">{m.label}</span>
-                          <span className="block truncate text-[11px] text-muted-foreground">{m.desc}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground">{locked ? "Butuh paket lebih tinggi" : m.desc}</span>
                         </span>
+                        {locked && <Lock className="ml-auto size-3.5 shrink-0 text-muted-foreground" />}
                       </button>
                     );
                   })}
                 </div>
               </div>
             ))}
-            <div>
-              <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">Segera hadir</div>
-              {COMING_SOON.map(({ label, icon: Icon }) => (
-                <div key={label} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 opacity-50">
-                  <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
-                    <Icon className="size-3.5" />
-                  </span>
-                  <span className="text-[13px] font-medium">{label}</span>
-                </div>
-              ))}
-            </div>
+            {!q && (
+              <div>
+                <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">Segera hadir</div>
+                {COMING_SOON.map(({ label, icon: Icon }) => (
+                  <div key={label} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 opacity-50">
+                    <span className="grid size-8 place-items-center rounded-lg bg-muted text-muted-foreground">
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="text-[13px] font-medium">{label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-            <MousePointerClick className="mb-1 size-3.5" />
-            Seret langkah ke kanvas, lalu tarik titik bulat untuk menyambungkan.
+          <div className="flex items-start gap-2 border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+            <MousePointerClick className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              Seret langkah ke kanvas, lalu tarik titik bulat untuk menyambungkan.{" "}
+              <Link href="/flows?tab=panduan" target="_blank" className="font-medium text-brand-blue hover:underline">
+                Lihat panduan
+              </Link>
+            </span>
           </div>
         </aside>
 
@@ -412,17 +498,22 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
             />
           </ReactFlow>
 
-          <div className="pointer-events-none absolute left-3 top-3 flex gap-2">
-            {!paletteOpen && (
-              <Button type="button" variant="outline" size="sm" className="pointer-events-auto bg-card shadow-sm" onClick={() => setPaletteOpen(true)}>
-                <PanelLeft className="size-3.5" /> Langkah
+          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
+            <div className="pointer-events-auto flex items-center rounded-xl border border-border bg-card p-0.5 shadow-sm">
+              {!paletteOpen && (
+                <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => setPaletteOpen(true)}>
+                  <PanelLeft className="size-3.5" /> Langkah
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" className="h-8" onClick={tidy}>
+                <LayoutGrid className="size-3.5" /> Rapikan
               </Button>
-            )}
-            <Button type="button" variant="outline" size="sm" className="pointer-events-auto bg-card shadow-sm" onClick={tidy}>
-              <LayoutGrid className="size-3.5" /> Rapikan
-            </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => rf.fitView({ padding: 0.25, maxZoom: 1, duration: 300 })}>
+                <Maximize2 className="size-3.5" /> Pas layar
+              </Button>
+            </div>
             {issueCount > 0 && (
-              <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+              <span className="pointer-events-auto inline-flex h-9 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 shadow-sm dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                 <AlertTriangle className="size-3.5" /> {issueCount} masalah
               </span>
             )}
@@ -431,12 +522,23 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
 
         {/* Config panel */}
         {selected && (
-          <aside className="z-10 w-[340px] shrink-0 border-l border-border bg-card max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:shadow-xl max-sm:w-full">
+          <aside
+            className={cn(
+              "z-10 shrink-0 border-l border-border bg-card max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:shadow-xl max-sm:w-full",
+              selected.data.kind === "ai_agent" ? "w-[400px]" : "w-[340px]",
+            )}
+          >
             <ConfigPanel
               key={selected.id}
               node={{ id: selected.id, type: selected.data.kind, position: selected.position, data: selected.data.payload } as GraphNode}
               issues={selected.data.issues}
               variables={variables}
+              docs={docs}
+              promos={promos}
+              channels={channels}
+              tags={tags}
+              templates={templates}
+              broadcastChannelId={triggerData?.kind === "broadcast" ? (triggerData.channels?.[0] ?? null) : null}
               onChange={(payload) => updatePayload(selected.id, payload)}
               onDelete={() => deleteNode(selected.id)}
               onDuplicate={() => duplicateNode(selected.id)}
@@ -445,6 +547,19 @@ function Builder({ id, name: initialName, status: initialStatus, definition }: P
           </aside>
         )}
       </div>
+
+      <SaveFlowDialog
+        key={saveKey}
+        open={confirmOpen}
+        onOpenChange={(o) => {
+          setConfirmOpen(o);
+          // Applied on close so the open dialog isn't reset mid-save.
+          if (!o) setLastActivate(chosen.current);
+        }}
+        summary={summary}
+        initialActivate={lastActivate}
+        onSave={persist}
+      />
     </div>
   );
 }

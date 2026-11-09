@@ -1,5 +1,7 @@
 "use client";
 
+import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/action-error";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Upload, FileUp } from "lucide-react";
@@ -53,7 +55,7 @@ export default function ImportContactsPage() {
         );
         router.push("/contacts");
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Gagal import kontak");
+        gooeyToast.error(errorMessage(err) ?? "Gagal import kontak");
       }
     });
   }
@@ -91,13 +93,13 @@ export default function ImportContactsPage() {
         }
       >
         <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} className="hidden" />
-        <textarea
+        <Textarea
           id="csv"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={10}
           placeholder={"Budi Santoso,628111111111\nSari Indah,628122222222"}
-          className="w-full rounded-xl border border-border bg-background p-3 font-mono text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+          className="w-full p-3 font-mono text-sm"
         />
 
         {rows.length > 0 && (

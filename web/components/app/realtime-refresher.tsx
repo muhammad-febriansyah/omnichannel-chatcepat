@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 // Subscribe WS gateway (realtime.<tenant>), refresh data saat ada event.
 // Events: message.new, conversation.updated, conversation.assigned, channel.status (08).
 export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token: string }) {
   const router = useRouter();
+  // Latest token without re-running the effect (a new token must not drop the socket).
+  const tokenRef = useRef(token);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     // Prod: WS same-origin (ikut host yang dibuka) → hindari mismatch www/apex +
@@ -15,7 +20,7 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
     const isLocal = loc.hostname === "localhost" || loc.hostname === "127.0.0.1";
     const sameOrigin = `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws`;
     const base = isLocal ? (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws") : sameOrigin;
-    const url = `${base}?tenant=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
+    const url = () => `${base}?tenant=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(tokenRef.current)}`;
     let ws: WebSocket | null = null;
     let stopped = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -49,7 +54,7 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
     const connect = () => {
       if (stopped) return;
       try {
-        ws = new WebSocket(url);
+        ws = new WebSocket(url());
       } catch {
         return; // WS belum tersedia — polling fallback tetap jalan
       }
@@ -79,7 +84,7 @@ export function RealtimeRefresher({ tenantId, token }: { tenantId: string; token
         ws.close();
       }
     };
-  }, [tenantId, token, router]);
+  }, [tenantId, router]);
 
   return null;
 }

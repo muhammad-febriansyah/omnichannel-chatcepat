@@ -19,7 +19,7 @@ export async function getConversations(session: Session) {
         channel: { columns: { id: true, type: true, name: true } },
       },
       orderBy: [desc(conversations.lastMessageAt)],
-      limit: 50,
+      limit: 300, // enough for per-account filtering in the list
     });
   } catch {
     return [];

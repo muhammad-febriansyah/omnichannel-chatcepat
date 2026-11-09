@@ -6,7 +6,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <GooeyToaster position="top-right" />
+      <GooeyToaster position="bottom-right" />
     </>
   );
 }

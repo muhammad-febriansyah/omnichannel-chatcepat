@@ -85,8 +85,33 @@ async def _publish_conv_updated(tenant_id: str, conv: Conversation) -> None:
     await publish_realtime(tenant_id, json.dumps(payload))
 
 
+def comment_replies(replies: list[Reply]) -> list[Reply]:
+    """Shape a comment flow's output for Meta's rules: public replies stay as they are;
+    everything else becomes ONE private reply (Meta allows a single DM per comment,
+    text only), joined in order."""
+    public = [r for r in replies if r and r.mode == "comment_reply" and r.text]
+    private_parts = []
+    for r in replies:
+        if not r or r.mode == "comment_reply":
+            continue
+        text = options_as_text(r.text, r.buttons) if r.buttons else (r.text or "")
+        if r.media_url and not text:
+            continue
+        if text.strip():
+            private_parts.append(text.strip())
+    out = list(public)
+    if private_parts:
+        out.append(Reply(text="\n\n".join(private_parts), mode="private_reply"))
+    return out
+
+
 async def _publish_outbound(
-    channel: Channel, contact: Contact, conv: Conversation, reply: Reply, idem: str
+    channel: Channel,
+    contact: Contact,
+    conv: Conversation,
+    reply: Reply,
+    idem: str,
+    comment_id: str | None = None,
 ) -> None:
     is_media = bool(reply.media_url)
     # Real WA buttons only exist on the Cloud API; elsewhere options go into the text.
@@ -113,6 +138,8 @@ async def _publish_outbound(
         media=Media(url=urljoin(APP_BASE_URL + "/", reply.media_url), mime=_guess_mime(reply.media_url)) if is_media else None,
         buttons=[Button(id=i, title=t) for i, t in reply.buttons] if interactive else None,
         conversation_id=conv.id,
+        comment_id=comment_id if reply.mode else None,
+        reply_mode=reply.mode if comment_id else None,
     )
     await publish_outbound(cmd.model_dump_json(by_alias=True))
 
@@ -149,7 +176,8 @@ async def handle(inbound: InboundMessage) -> None:
                 conversation_id=conv.id,
                 channel_id=channel.id,
                 msg_type=inbound.type.value,
-                body=inbound.body,
+                # Comments share the thread with DMs; label them so agents can tell.
+                body=f"💬 Komentar: {inbound.body}" if inbound.comment else inbound.body,
                 media=inbound.media.model_dump() if inbound.media else None,
                 provider_message_id=inbound.provider_message_id,
             )
@@ -160,7 +188,8 @@ async def handle(inbound: InboundMessage) -> None:
             # Window layanan 24 jam berlaku untuk semua platform Meta: WA official +
             # Messenger + Instagram. Di luar window, free-form ditolak Meta → balasan
             # agen/lanjutan harus dalam window ini (di-enforce di send_agent_reply).
-            if channel.type in ("wa_official", "instagram", "facebook"):
+            # Komentar publik TIDAK membuka window (hanya private reply 1x yang boleh).
+            if channel.type in ("wa_official", "instagram", "facebook") and not inbound.comment:
                 conv.service_window_expires_at = now + timedelta(hours=SERVICE_WINDOW_HOURS)
 
             # Opt-out otomatis (07): kontak balas STOP/BERHENTI → opted_out.
@@ -198,7 +227,9 @@ async def handle(inbound: InboundMessage) -> None:
         if decision.stop:
             return
 
-        for i, reply in enumerate(decision.replies):
+        comment_id = inbound.comment.comment_id if inbound.comment else None
+        replies = comment_replies(decision.replies) if comment_id else decision.replies
+        for i, reply in enumerate(replies):
             if not reply or (not reply.text and not reply.media_url):
                 continue
             is_media = bool(reply.media_url)
@@ -210,14 +241,14 @@ async def handle(inbound: InboundMessage) -> None:
                     conversation_id=conv.id,
                     channel_id=channel.id,
                     sender="bot",
-                    body=reply.text,
+                    body=f"↪ Balas komentar: {reply.text}" if reply.mode == "comment_reply" else reply.text,
                     idempotency_key=idem,
                     msg_type="image" if is_media else "text",
                     media={"url": reply.media_url} if is_media else None,
                 )
                 conv.last_message_at = _now()
                 conv.last_message_preview = _preview(reply.text, "foto" if is_media else "text")
-            await _publish_outbound(channel, contact, conv, reply, idem)
+            await _publish_outbound(channel, contact, conv, reply, idem, comment_id)
             await _publish_message_new(tenant_str, conv.id, out_msg, "bot")
 
         # Handoff: bot serahkan ke agen (set handler=agent) + realtime.

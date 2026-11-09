@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, User, Building2, Inbox, Bot, ShieldCheck } from "lucide-react";
@@ -12,12 +13,12 @@ const TX = {
   ID: {
     headline: "Mulai Layani Pelanggan Hari Ini",
     sub: "Buat akun ChatCepat gratis dan satukan semua channel obrolan bisnis Anda dalam hitungan menit.",
-    f1: "Gratis, tanpa kartu kredit",
+    f1: "Trial Pro 14 hari gratis, tanpa kartu kredit",
     f2: "AI agent siap 24 jam",
     f3: "Data aman & terisolasi",
     trust: "Bergabung dengan 1.000+ UMKM Indonesia",
     title: "Buat Akun Gratis ",
-    tsub: "Daftar dan mulai dalam hitungan menit",
+    tsub: "Semua fitur Pro gratis 14 hari — tanpa kartu kredit",
     business: "Nama Bisnis",
     businessPh: "Toko Maju Jaya",
     name: "Nama Lengkap",
@@ -39,12 +40,12 @@ const TX = {
   EN: {
     headline: "Start Serving Customers Today",
     sub: "Create a free ChatCepat account and unify all your business chat channels in minutes.",
-    f1: "Free, no credit card",
+    f1: "14-day free Pro trial, no credit card",
     f2: "24/7 AI agent",
     f3: "Secure, isolated data",
     trust: "Join 1,000+ Indonesian SMBs",
     title: "Create Free Account ",
-    tsub: "Sign up and get started in minutes",
+    tsub: "All Pro features free for 14 days — no credit card",
     business: "Business Name",
     businessPh: "Acme Store",
     name: "Full Name",
@@ -101,7 +102,7 @@ export default function RegisterForm({ logoUrl, siteName }: { logoUrl?: string |
       try {
         await register({ business, name, email, password: pw });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal mendaftar";
+        const msg = errorMessage(err) ?? "Gagal mendaftar";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });

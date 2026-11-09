@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/action-error";
 import { useTransition } from "react";
 import { Hand, Bot, CheckCircle2, RotateCcw, UserPlus, ChevronDown } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
@@ -38,7 +39,7 @@ export function ConversationActions({ conversationId, status, handler, canAssign
         await fn();
         gooeyToast.success(okMsg);
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Aksi gagal");
+        gooeyToast.error(errorMessage(err) ?? "Aksi gagal");
       }
     });
   }

@@ -1,16 +1,18 @@
 "use server";
 
+import { userError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { plans, orders } from "./db/schema";
+import { aiCreditPacks, plans, orders, tenants } from "./db/schema";
 import { requireSession } from "./session";
 import { requireAbility } from "./rbac";
 import { createInvoice } from "./duitku";
 import { writeAudit } from "./audit";
+import { CHANNEL_KINDS, PLAN_FEATURES, type PlanFeature, type PlanLimitsConfig } from "./plan-config";
 
-export type Tier = "pro" | "business" | "enterprise";
+export type Tier = "basic" | "pro" | "business" | "enterprise";
 
 export interface PlanInput {
   tier: Tier;
@@ -24,7 +26,13 @@ export interface PlanInput {
   isActive: boolean;
   highlight: boolean;
   sortOrder: number;
+  aiTokensMonthly: number;
+  limits: PlanLimitsConfig;
+  featureFlags: Record<PlanFeature, boolean>;
+  flowNodes: string[] | null; // null = semua langkah flow
 }
+
+const lim = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? null : Math.max(0, Math.round(n)));
 
 function clean(input: PlanInput) {
   return {
@@ -39,6 +47,16 @@ function clean(input: PlanInput) {
     isActive: !!input.isActive,
     highlight: !!input.highlight,
     sortOrder: Math.round(input.sortOrder || 0),
+    aiTokensMonthly: Math.max(0, Math.round(input.aiTokensMonthly || 0)),
+    limits: {
+      maxChannels: lim(input.limits?.maxChannels),
+      channels: Object.fromEntries(CHANNEL_KINDS.map((c) => [c.value, lim(input.limits?.channels?.[c.value])])),
+      maxAgents: lim(input.limits?.maxAgents),
+      maxKbDocs: lim(input.limits?.maxKbDocs),
+      broadcastPerMonth: lim(input.limits?.broadcastPerMonth),
+    },
+    featureFlags: Object.fromEntries(PLAN_FEATURES.map((f) => [f.value, !!input.featureFlags?.[f.value]])),
+    flowNodes: input.flowNodes === null ? null : [...new Set((input.flowNodes ?? []).map(String))],
   };
 }
 
@@ -47,8 +65,8 @@ export async function createPlan(input: PlanInput) {
   const session = await requireSession();
   requireAbility(session, "tenant.manage");
   const v = clean(input);
-  if (!v.name) throw new Error("Nama paket wajib diisi");
-  if (!v.slug) throw new Error("Slug wajib diisi");
+  if (!v.name) throw userError("Nama paket wajib diisi");
+  if (!v.slug) throw userError("Slug wajib diisi");
   await db.insert(plans).values(v);
   await writeAudit(session, { action: "plan.create", targetType: "plan", targetLabel: v.name });
   revalidatePath("/admin/plans");
@@ -60,7 +78,7 @@ export async function updatePlan(id: string, input: PlanInput) {
   const session = await requireSession();
   requireAbility(session, "tenant.manage");
   const v = clean(input);
-  if (!v.name) throw new Error("Nama paket wajib diisi");
+  if (!v.name) throw userError("Nama paket wajib diisi");
   await db.update(plans).set({ ...v, updatedAt: new Date().toISOString() }).where(eq(plans.id, id));
   await writeAudit(session, { action: "plan.update", targetType: "plan", targetId: id, targetLabel: v.name });
   revalidatePath("/admin/plans");
@@ -91,10 +109,10 @@ export async function setPlanActive(id: string, active: boolean) {
 export async function startCheckout(planId: string) {
   const session = await requireSession();
   requireAbility(session, "billing.tenant");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
   const plan = await db.query.plans.findFirst({ where: and(eq(plans.id, planId), eq(plans.isActive, true)) });
-  if (!plan) throw new Error("Paket tidak ditemukan / tidak aktif");
+  if (!plan) throw userError("Paket tidak ditemukan / tidak aktif");
 
   const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
   // ID order unik & tak tertebak (hindari koleksi/enumerasi) — crypto, bukan Math.random.
@@ -131,6 +149,53 @@ export async function startCheckout(planId: string) {
     .set({ duitkuReference: inv.reference, paymentUrl: inv.paymentUrl, updatedAt: new Date().toISOString() })
     .where(eq(orders.id, order.id));
 
+  redirect(inv.paymentUrl);
+}
+
+// --- Top-up token AI: order kind 'ai_topup' (nilai paket di-snapshot ke order). ---
+export async function startTopup(packId: string) {
+  const session = await requireSession();
+  requireAbility(session, "billing.tenant");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const pack = await db.query.aiCreditPacks.findFirst({ where: and(eq(aiCreditPacks.id, packId), eq(aiCreditPacks.isActive, true)) });
+  if (!pack) throw userError("Paket top-up tidak ditemukan / tidak dijual");
+  if (pack.priceIdr <= 0) throw userError("Paket ini belum punya harga");
+  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId), columns: { plan: true } });
+
+  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+  const merchantOrderId = `CT-${crypto.randomUUID().replace(/-/g, "").slice(0, 18).toUpperCase()}`;
+  const [order] = await db
+    .insert(orders)
+    .values({
+      tenantId: session.tenantId,
+      planName: `Top-up ${pack.name}`,
+      period: "once",
+      tier: tenant?.plan ?? "basic",
+      kind: "ai_topup",
+      aiPackId: pack.id,
+      aiTokens: pack.tokens,
+      aiValidDays: pack.validDays,
+      amountIdr: pack.priceIdr,
+      merchantOrderId,
+      status: "pending",
+      customerName: session.name,
+      customerEmail: session.email,
+    })
+    .returning({ id: orders.id });
+
+  const inv = await createInvoice({
+    merchantOrderId,
+    amount: pack.priceIdr,
+    productDetails: `ChatCepat Top-up ${pack.tokens.toLocaleString("id-ID")} token AI`,
+    email: session.email,
+    customerName: session.name,
+    callbackUrl: `${base}/api/duitku/callback`,
+    returnUrl: `${base}/checkout/return`,
+  });
+  await db
+    .update(orders)
+    .set({ duitkuReference: inv.reference, paymentUrl: inv.paymentUrl, updatedAt: new Date().toISOString() })
+    .where(eq(orders.id, order.id));
   redirect(inv.paymentUrl);
 }
 

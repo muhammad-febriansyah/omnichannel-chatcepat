@@ -1,3 +1,4 @@
+import { userError } from "@/lib/action-error";
 // WhatsApp Cloud API — Embedded Signup helper (server-only).
 // Flow: tombol "Hubungkan WhatsApp" → FB JS SDK luncurkan Embedded Signup (user pilih/
 // buat WABA + nomor) → SDK balikan `code` + sessionInfo (waba_id, phone_number_id) →
@@ -12,12 +13,12 @@ export const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 function appId(): string {
   const v = process.env.FB_APP_ID || process.env.META_APP_ID;
-  if (!v) throw new Error("FB_APP_ID belum di-set");
+  if (!v) throw userError("FB_APP_ID belum di-set");
   return v;
 }
 function appSecret(): string {
   const v = process.env.FB_APP_SECRET || process.env.META_APP_SECRET;
-  if (!v) throw new Error("FB_APP_SECRET belum di-set");
+  if (!v) throw userError("FB_APP_SECRET belum di-set");
   return v;
 }
 
@@ -29,7 +30,7 @@ export async function graphError(res: Response): Promise<never> {
   } catch {
     /* non-JSON */
   }
-  throw new Error(`Graph API: ${msg}`);
+  throw userError(`Graph API: ${msg}`);
 }
 
 // Tukar code Embedded Signup → business integration system-user token (non-expiring).
@@ -97,7 +98,7 @@ export async function ensureWaPhoneRegistered(
   const info = await getWaPhoneInfo(phoneNumberId, token);
   if (info.platformType === "CLOUD_API") return info;
   if (!pin || !/^\d{6}$/.test(pin)) {
-    throw new Error("Nomor belum terdaftar di Cloud API. Isi PIN verifikasi dua langkah (6 digit).");
+    throw userError("Nomor belum terdaftar di Cloud API. Isi PIN verifikasi dua langkah (6 digit).");
   }
   await registerWaPhone(phoneNumberId, token, pin);
   return { ...info, platformType: "CLOUD_API" };

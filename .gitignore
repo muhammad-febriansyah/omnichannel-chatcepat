@@ -34,3 +34,9 @@ docker-compose.override.yml
 # test artifacts
 .playwright-mcp/
 contact-form-new.png
+
+# Local tool state (may contain secrets)
+.claude/settings.local.json
+.rtk/
+.playwright-cli/
+.playwright-mcp/

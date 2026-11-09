@@ -70,6 +70,9 @@ type InboundMessage struct {
 	// ChannelType corresponds to the JSON schema field "channel_type".
 	ChannelType ChannelType `json:"channel_type" yaml:"channel_type" mapstructure:"channel_type"`
 
+	// Diisi bila inbound adalah komentar postingan FB/IG (bukan DM)
+	Comment *SocialComment `json:"comment,omitempty,omitzero" yaml:"comment,omitempty" mapstructure:"comment,omitempty"`
+
 	// <channel_id>:<provider_message_id>
 	DedupKey string `json:"dedup_key" yaml:"dedup_key" mapstructure:"dedup_key"`
 
@@ -302,6 +305,9 @@ type OutboundCommand struct {
 	// ChannelId corresponds to the JSON schema field "channel_id".
 	ChannelId string `json:"channel_id" yaml:"channel_id" mapstructure:"channel_id"`
 
+	// Balas komentar FB/IG ini (reply_mode wajib)
+	CommentId *string `json:"comment_id,omitempty,omitzero" yaml:"comment_id,omitempty" mapstructure:"comment_id,omitempty"`
+
 	// ConversationId corresponds to the JSON schema field "conversation_id".
 	ConversationId string `json:"conversation_id" yaml:"conversation_id" mapstructure:"conversation_id"`
 
@@ -313,6 +319,10 @@ type OutboundCommand struct {
 
 	// Media corresponds to the JSON schema field "media".
 	Media interface{} `json:"media,omitempty,omitzero" yaml:"media,omitempty" mapstructure:"media,omitempty"`
+
+	// comment_reply = balas publik di komentar; private_reply = DM ke pemberi
+	// komentar
+	ReplyMode *OutboundCommandReplyMode `json:"reply_mode,omitempty,omitzero" yaml:"reply_mode,omitempty" mapstructure:"reply_mode,omitempty"`
 
 	// Template corresponds to the JSON schema field "template".
 	Template *OutboundCommandTemplate `json:"template,omitempty,omitzero" yaml:"template,omitempty" mapstructure:"template,omitempty"`
@@ -333,6 +343,36 @@ type OutboundCommandButtons []struct {
 
 	// Title corresponds to the JSON schema field "title".
 	Title string `json:"title" yaml:"title" mapstructure:"title"`
+}
+
+type OutboundCommandReplyMode string
+
+const OutboundCommandReplyModeCommentReply OutboundCommandReplyMode = "comment_reply"
+const OutboundCommandReplyModePrivateReply OutboundCommandReplyMode = "private_reply"
+
+var enumValues_OutboundCommandReplyMode = []interface{}{
+	"comment_reply",
+	"private_reply",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *OutboundCommandReplyMode) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_OutboundCommandReplyMode {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_OutboundCommandReplyMode, v)
+	}
+	*j = OutboundCommandReplyMode(v)
+	return nil
 }
 
 type OutboundCommandTemplate struct {
@@ -509,5 +549,41 @@ func (j *RealtimeEvent) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	*j = RealtimeEvent(plain)
+	return nil
+}
+
+// Komentar postingan Facebook Page / Instagram (webhook feed/comments).
+type SocialComment struct {
+	// CommentId corresponds to the JSON schema field "comment_id".
+	CommentId string `json:"comment_id" yaml:"comment_id" mapstructure:"comment_id"`
+
+	// Diisi bila balasan atas komentar lain
+	ParentId SocialCommentParentId `json:"parent_id,omitempty,omitzero" yaml:"parent_id,omitempty" mapstructure:"parent_id,omitempty"`
+
+	// PostId corresponds to the JSON schema field "post_id".
+	PostId string `json:"post_id" yaml:"post_id" mapstructure:"post_id"`
+}
+
+// Diisi bila balasan atas komentar lain
+type SocialCommentParentId *string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SocialComment) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["comment_id"]; raw != nil && !ok {
+		return fmt.Errorf("field comment_id in SocialComment: required")
+	}
+	if _, ok := raw["post_id"]; raw != nil && !ok {
+		return fmt.Errorf("field post_id in SocialComment: required")
+	}
+	type Plain SocialComment
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = SocialComment(plain)
 	return nil
 }

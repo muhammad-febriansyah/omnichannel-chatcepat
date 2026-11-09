@@ -13,10 +13,13 @@ import logging
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urljoin
+
 from sqlalchemy import text
 
 from ..bus import publish_outbound
 from ..config import (
+    APP_BASE_URL,
     BROADCAST_BATCH,
     BROADCAST_REST_EVERY,
     BROADCAST_REST_MAX_S,
@@ -27,12 +30,14 @@ from ..config import (
     WARMUP_DAILY_CAPS,
     WARMUP_WINDOW_S,
 )
-from ..contracts.events import OutboundCommand, Party, Template
+from ..contracts.events import Media, OutboundCommand, Party, Template
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal, engine
 from ..models import Broadcast, BroadcastRecipient, Channel, Contact
+from ..pipeline.flow_engine import render, start_broadcast_state
 from ..repositories import broadcasts, channels, conversations, messages
 from . import warmup
+from .inbound import _guess_mime
 
 log = logging.getLogger("engine.broadcast")
 
@@ -180,15 +185,34 @@ def _build_command(
             ),
             conversation_id=conv_id,
         )
+    media_url = _media_url(b)
+    body = personal_body(b, contact)
     return OutboundCommand(
         event_id=uuid.uuid4().hex,
         idempotency_key=idem,
         channel_id=b.channel_id,
         to=Party(external_id=contact.external_id or contact.phone or "", phone=contact.phone),
-        type=OutboundType.text,
-        body=b.body_snapshot or "",
+        type=OutboundType.media if media_url else OutboundType.text,
+        body=(body or None) if media_url else body,
+        media=Media(url=media_url, mime=_guess_mime(media_url)) if media_url else None,
         conversation_id=conv_id,
     )
+
+
+def _media_url(b: Broadcast) -> str | None:
+    """Optional image for text broadcasts (WA unofficial), absolute for the gateway."""
+    url = str((b.template_params or {}).get("media_url") or "").strip()
+    if not url:
+        return None
+    return urljoin(APP_BASE_URL + "/", url)
+
+
+def personal_body(b: Broadcast, contact: Contact) -> str:
+    """Text broadcast with {{nama}} filled per recipient (flow broadcasts)."""
+    body = b.body_snapshot or ""
+    if not b.flow_id or b.template_id:
+        return body
+    return render(body, {"nama": (contact.name or "").strip() or "Kak"})
 
 
 async def dispatch(
@@ -272,20 +296,26 @@ async def _dispatch_locked(
                         conv = await conversations.get_or_create_active(
                             session, b.tenant_id, b.channel_id, r.contact_id
                         )
+                        body = personal_body(b, r.contact)
+                        media_url = _media_url(b) if mtype == "text" else None
                         msg = await messages.add_outbound(
                             session,
                             tenant_id=b.tenant_id,
                             conversation_id=conv.id,
                             channel_id=b.channel_id,
                             sender="system",
-                            body=b.body_snapshot or "",
+                            body=body,
                             idempotency_key=idem,
-                            msg_type=mtype,
+                            msg_type="image" if media_url else mtype,
+                            media={"url": media_url} if media_url else None,
                         )
                         r.status = "sent"
                         r.message_id = msg.id
                         conv.last_message_at = datetime.now(timezone.utc)
-                        conv.last_message_preview = (b.body_snapshot or "[template]")[:120]
+                        conv.last_message_preview = (body or ("[foto]" if media_url else "[template]"))[:120]
+                        if b.flow_id and b.flow_node_id:
+                            # Reply / button tap continues the flow from this step.
+                            await start_broadcast_state(session, conv, b, r.contact)
                         cmd = _build_command(b, channel, r.contact, conv.id, idem)
                     await publish_outbound(cmd.model_dump_json(by_alias=True))
                     sent += 1

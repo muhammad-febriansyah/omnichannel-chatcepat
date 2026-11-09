@@ -1,5 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -16,7 +19,7 @@ export type ComposeChannel = { id: string; name: string; type: string; status: s
 export type ComposeTemplate = { name: string; body: string; language: string; channelId: string };
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full pl-10 pr-3 text-sm";
 
 export function ComposeForm({
   channels,
@@ -73,7 +76,7 @@ export function ComposeForm({
         gooeyToast.success("Percakapan dimulai");
         router.push(`/inbox/${conversationId}`);
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Gagal memulai percakapan");
+        gooeyToast.error(errorMessage(err) ?? "Gagal memulai percakapan");
       }
     });
   }
@@ -107,18 +110,18 @@ export function ComposeForm({
                 </label>
                 <div className="relative">
                   <Radio className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <select
+                  <NativeSelect
                     id="channel"
                     value={channelId}
                     onChange={(e) => setChannelId(e.target.value)}
                     className={`${inputCls} appearance-none pr-8`}
                   >
                     {channels.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <NativeSelectOption key={c.id} value={c.id}>
                         {c.name} · {CHANNEL_META[c.type as ChannelType]?.label ?? c.type}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               </div>
 
@@ -130,7 +133,7 @@ export function ComposeForm({
                   </label>
                   <div className="relative">
                     <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
+                    <Input
                       id="phone"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
@@ -147,7 +150,7 @@ export function ComposeForm({
                   </label>
                   <div className="relative">
                     <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
+                    <Input
                       id="name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
@@ -205,18 +208,18 @@ export function ComposeForm({
                   <label htmlFor="template" className="mb-1.5 block text-sm font-medium text-foreground">
                     Template
                   </label>
-                  <select
+                  <NativeSelect
                     id="template"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+                    className="h-11 w-full text-sm"
                   >
                     {templates.map((t) => (
-                      <option key={t.name} value={t.name}>
+                      <NativeSelectOption key={t.name} value={t.name}>
                         {t.name}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
+                  </NativeSelect>
                   {tpl && (
                     <p className="mt-2 whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-muted-foreground">
                       {tpl.body}

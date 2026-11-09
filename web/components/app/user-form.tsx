@@ -1,5 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { errorMessage } from "@/lib/action-error";
 import { useTransition } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -44,7 +47,7 @@ export interface UserInitial {
 }
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-11 w-full pl-10 pr-3 text-sm disabled:cursor-not-allowed disabled:opacity-60";
 
 export function UserForm({
   mode,
@@ -81,7 +84,7 @@ export function UserForm({
           await createUser({ name: v.name, email: v.email, password: v.password });
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan user";
+        const msg = errorMessage(err) ?? "Gagal menyimpan user";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -113,7 +116,7 @@ export function UserForm({
                   <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">Nama</label>
                   <div className="relative">
                     <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="name" {...register("name")} placeholder="Budi Santoso" className={inputCls} />
+                    <Input id="name" {...register("name")} placeholder="Budi Santoso" className={inputCls} />
                   </div>
                   {errors.name && <p className="mt-1.5 text-xs font-medium text-danger">{errors.name.message}</p>}
                 </div>
@@ -121,7 +124,7 @@ export function UserForm({
                   <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">Email</label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input id="email" {...register("email")} disabled={isEdit} type="email" placeholder="budi@bisnis.com" className={inputCls} />
+                    <Input id="email" {...register("email")} disabled={isEdit} type="email" placeholder="budi@bisnis.com" className={inputCls} />
                   </div>
                   {errors.email && <p className="mt-1.5 text-xs font-medium text-danger">{errors.email.message}</p>}
                   {isEdit && <p className="mt-1.5 text-xs text-muted-foreground">Email tidak bisa diubah.</p>}
@@ -136,11 +139,11 @@ export function UserForm({
                   <label htmlFor="status" className="mb-1.5 block text-sm font-medium text-foreground">Status</label>
                   <div className="relative">
                     <Activity className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <select id="status" {...register("status")} className={`${inputCls} pr-8`}>
-                      <option value="active">Aktif</option>
-                      <option value="invited">Diundang</option>
-                      <option value="disabled">Nonaktif</option>
-                    </select>
+                    <NativeSelect id="status" {...register("status")} className={`${inputCls} pr-8`}>
+                      <NativeSelectOption value="active">Aktif</NativeSelectOption>
+                      <NativeSelectOption value="invited">Diundang</NativeSelectOption>
+                      <NativeSelectOption value="disabled">Nonaktif</NativeSelectOption>
+                    </NativeSelect>
                   </div>
                 </div>
               </div>
@@ -156,7 +159,7 @@ export function UserForm({
                 </label>
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input id="password" {...register("password")} type="password" placeholder="••••••••" className={inputCls} />
+                  <Input id="password" {...register("password")} type="password" placeholder="••••••••" className={inputCls} />
                 </div>
                 {errors.password && <p className="mt-1.5 text-xs font-medium text-danger">{errors.password.message}</p>}
                 <p className="mt-1.5 text-xs text-muted-foreground">

@@ -7,15 +7,32 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export type TriggerKind = "keyword" | "button" | "welcome" | "fallback";
+import { DEFAULT_AI_CONFIG, normalizeAiConfig, type AiConfig } from "./ai-agent-options";
+
+export type TriggerKind = "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast";
 export type ConditionOp = "equals" | "not_equals" | "contains" | "starts_with" | "is_empty" | "not_empty";
 
 export type MenuOption = { id: string; code: string; label: string };
 export type ConditionRule = { id: string; op: ConditionOp; value: string };
 export type VarPair = { id: string; key: string; value: string };
+// How a WA template variable {{n}} is filled per recipient.
+export type TemplateParamSource = "static" | "contact_name" | "contact_phone";
+export type TemplateParam = { id: string; source: TemplateParamSource; value: string; fallback: string };
+// Quick-reply button of the chosen template (index = position among ALL its buttons).
+export type BroadcastButton = { id: string; index: number; text: string };
 
 export type NodeDataMap = {
-  trigger: { kind: TriggerKind; keywords: string[] };
+  // channels: limit to these accounts (empty/absent = all). posts: comment trigger only.
+  // broadcast: channels = the one WA account that sends, tags = audience (empty = all
+  // opted-in contacts), scheduleAt = ISO time (null = send right after activating).
+  trigger: {
+    kind: TriggerKind;
+    keywords: string[];
+    channels?: string[];
+    posts?: string[];
+    tags?: string[];
+    scheduleAt?: string | null;
+  };
   send_text: { text: string };
   send_media: { url: string; caption: string };
   send_catalog: { category: string; intro: string };
@@ -24,8 +41,23 @@ export type NodeDataMap = {
   condition: { variable: string; rules: ConditionRule[] };
   set_var: { pairs: VarPair[] };
   add_tag: { tags: string[] };
-  ai_agent: Record<string, never>;
+  ai_agent: { ai: AiConfig }; // AI settings live on the node (n8n style)
   handoff: Record<string, never>;
+  reply_comment: { texts: string[] }; // public reply under a FB/IG comment (one picked at random)
+  private_reply: { text: string }; // one DM to the commenter
+  // First message of a broadcast flow. WA unofficial: text (+ optional image);
+  // WA official: approved template (+ header media, variables, quick-reply buttons).
+  broadcast_message: {
+    text: string;
+    mediaUrl: string;
+    template: string;
+    language: string;
+    headerFormat: string;
+    headerUrl: string;
+    params: TemplateParam[];
+    buttons: BroadcastButton[];
+    saveAs: string;
+  };
 };
 
 export type NodeKind = keyof NodeDataMap;
@@ -68,6 +100,9 @@ export const KNOWN_RUNTIME_TYPES = new Set([
   "wait_reply",
   "handoff",
   "call_tool",
+  "reply_comment",
+  "private_reply",
+  "broadcast_message",
 ]);
 
 let seq = 0;
@@ -95,8 +130,21 @@ export function defaultData<K extends NodeKind>(kind: K): NodeDataMap[K] {
     condition: { variable: "pesan", rules: [{ id: newId("r"), op: "contains", value: "" }] },
     set_var: { pairs: [{ id: newId("v"), key: "", value: "" }] },
     add_tag: { tags: [] },
-    ai_agent: {},
+    ai_agent: { ai: DEFAULT_AI_CONFIG },
     handoff: {},
+    reply_comment: { texts: ["Terima kasih kak {{nama}}! Info lengkapnya sudah kami kirim lewat DM ya 🙏"] },
+    private_reply: { text: "Halo kak {{nama}}, terima kasih sudah berkomentar! Ini info yang kakak tanyakan:" },
+    broadcast_message: {
+      text: "Halo kak {{nama}} 👋 ada promo spesial minggu ini! Balas *MAU* untuk info lengkapnya ya.",
+      mediaUrl: "",
+      template: "",
+      language: "",
+      headerFormat: "",
+      headerUrl: "",
+      params: [],
+      buttons: [],
+      saveAs: "balasan",
+    },
   };
   return structuredClone(d[kind]);
 }
@@ -123,6 +171,20 @@ export function outputHandles(node: GraphNode): OutputHandle[] {
         { id: "else", label: "Lainnya", tone: "muted" as const },
       ];
     }
+    case "broadcast_message": {
+      const d = node.data as NodeDataMap["broadcast_message"];
+      if (!d.buttons.length) return [{ id: "out", label: "Saat dibalas" }];
+      return [
+        ...d.buttons.map((b) => ({ id: `btn:${b.id}`, label: `🔘 ${b.text}` })),
+        { id: "out", label: "Balasan lain", tone: "muted" as const },
+      ];
+    }
+    case "ai_agent":
+      // n8n style: answered → continue; needs a human → own branch (default: hand over).
+      return [
+        { id: "out", label: "Terjawab" },
+        { id: "handoff", label: "Perlu CS", tone: "muted" as const },
+      ];
     default:
       return [{ id: "out", label: "" }];
   }
@@ -132,6 +194,50 @@ export function ruleLabel(variable: string, r: ConditionRule): string {
   const op = CONDITION_OPS.find((o) => o.value === r.op);
   const v = variable || "?";
   return op?.needsValue ? `${v} ${op.label} "${r.value}"` : `${v} ${op?.label ?? r.op}`;
+}
+
+// --- AI node settings ⇄ engine (snake_case, matches engine AgentSpec) -----------------
+
+export function aiToEngine(raw: unknown): Record<string, unknown> {
+  const c = normalizeAiConfig(raw);
+  return {
+    role: c.role,
+    tone: c.tone,
+    emoji: c.emoji,
+    length: c.length,
+    greeting: c.greeting,
+    language: c.language,
+    goal: c.goal || null,
+    instructions: c.instructions || null,
+    examples: c.examples.filter((x) => x.q.trim() && x.a.trim()),
+    handoff_rules: c.handoffRules || null,
+    fallback_message: c.fallbackMessage || null,
+    knowledge_all: c.knowledgeAll,
+    document_ids: c.knowledgeAll ? [] : c.documentIds,
+    use_catalog: c.useCatalog,
+    use_promos: c.usePromos,
+  };
+}
+
+function aiFromEngine(raw: any): AiConfig {
+  if (!raw || typeof raw !== "object") return DEFAULT_AI_CONFIG;
+  return normalizeAiConfig({
+    role: raw.role,
+    tone: raw.tone,
+    emoji: raw.emoji,
+    length: raw.length,
+    greeting: raw.greeting,
+    language: raw.language,
+    goal: raw.goal ?? "",
+    instructions: raw.instructions ?? "",
+    examples: raw.examples,
+    handoffRules: raw.handoff_rules ?? "",
+    fallbackMessage: raw.fallback_message ?? "",
+    knowledgeAll: raw.knowledge_all ?? true,
+    documentIds: raw.document_ids,
+    useCatalog: raw.use_catalog ?? true,
+    usePromos: raw.use_promos ?? true,
+  });
 }
 
 // --- Compile graph → runtime ----------------------------------------------------------
@@ -157,7 +263,35 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         out.push({
           id: node.id,
           type: "trigger",
-          trigger: { kind: d.kind, match: d.kind === "keyword" || d.kind === "button" ? d.keywords : [] },
+          trigger: {
+            kind: d.kind,
+            match: d.kind === "keyword" || d.kind === "button" || d.kind === "comment" ? d.keywords : [],
+            ...(d.channels?.length ? { channels: d.channels } : {}),
+            ...(d.kind === "comment" && d.posts?.length ? { posts: d.posts } : {}),
+            ...(d.kind === "broadcast" ? { tags: d.tags ?? [], schedule_at: d.scheduleAt || null } : {}),
+          },
+          next,
+        });
+        break;
+      }
+      case "broadcast_message": {
+        const d = node.data as NodeDataMap["broadcast_message"];
+        out.push({
+          id: node.id,
+          type: "broadcast_message",
+          text: d.text,
+          media_url: d.mediaUrl.trim() || undefined,
+          template: d.template
+            ? {
+                name: d.template,
+                lang: d.language,
+                header_format: d.headerFormat || undefined,
+                header_url: d.headerUrl.trim() || undefined,
+                params: d.params.map((p) => ({ source: p.source, value: p.value, fallback: p.fallback })),
+              }
+            : undefined,
+          buttons: d.buttons.map((b) => ({ index: b.index, text: b.text, next: target(node.id, `btn:${b.id}`) })),
+          save_as: d.saveAs || "balasan",
           next,
         });
         break;
@@ -183,6 +317,17 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
       }
       case "wait_reply":
         out.push({ id: node.id, type: "wait_reply", save_as: (node.data as NodeDataMap["wait_reply"]).saveAs, next });
+        break;
+      case "reply_comment":
+        out.push({
+          id: node.id,
+          type: "reply_comment",
+          texts: (node.data as NodeDataMap["reply_comment"]).texts.map((t) => t.trim()).filter(Boolean),
+          next,
+        });
+        break;
+      case "private_reply":
+        out.push({ id: node.id, type: "private_reply", text: (node.data as NodeDataMap["private_reply"]).text, next });
         break;
       case "add_tag":
         out.push({ id: node.id, type: "add_tag", tags: (node.data as NodeDataMap["add_tag"]).tags, next });
@@ -238,7 +383,13 @@ export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger:
         break;
       }
       case "ai_agent":
-        out.push({ id: node.id, type: "ai_agent", next });
+        out.push({
+          id: node.id,
+          type: "ai_agent",
+          ai: aiToEngine((node.data as NodeDataMap["ai_agent"]).ai),
+          next,
+          handoff_next: target(node.id, "handoff"),
+        });
         break;
       case "handoff":
         out.push({ id: node.id, type: "handoff", to: "agent" });
@@ -258,6 +409,9 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
   if (triggers.length > 1) triggers.slice(1).forEach((t) => add(t.id, "Hanya boleh satu Pemicu"));
 
   const hasEdge = (id: string, handle: string) => graph.edges.some((e) => e.source === id && e.sourceHandle === handle);
+  const isComment = triggers.some((t) => (t.data as NodeDataMap["trigger"]).kind === "comment");
+  const isBroadcast = triggers.some((t) => (t.data as NodeDataMap["trigger"]).kind === "broadcast");
+  const firstStep = (t: GraphNode) => graph.nodes.find((n) => n.id === graph.edges.find((e) => e.source === t.id && e.sourceHandle === "out")?.target);
 
   for (const node of graph.nodes) {
     switch (node.type) {
@@ -265,7 +419,27 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
         const d = node.data as NodeDataMap["trigger"];
         if (d.kind === "keyword" && d.keywords.length === 0) add(node.id, "Tambahkan minimal satu keyword");
         if (d.kind === "button" && d.keywords.length === 0) add(node.id, "Tambahkan label tombol yang memicu flow");
+        if (d.kind === "comment" && !graph.nodes.some((n) => n.type === "reply_comment" || n.type === "private_reply"))
+          add(node.id, "Flow komentar butuh langkah Balas Komentar atau Kirim DM");
+        if (d.kind === "broadcast") {
+          if ((d.channels ?? []).length !== 1) add(node.id, "Pilih satu akun WhatsApp pengirim");
+          if (hasEdge(node.id, "out") && firstStep(node)?.type !== "broadcast_message")
+            add(node.id, "Langkah pertama broadcast harus Pesan Broadcast");
+        }
         if (!hasEdge(node.id, "out")) add(node.id, "Sambungkan Pemicu ke langkah pertama");
+        break;
+      }
+      case "broadcast_message": {
+        const d = node.data as NodeDataMap["broadcast_message"];
+        const trig = triggers[0];
+        if (!isBroadcast || !trig || firstStep(trig)?.id !== node.id)
+          add(node.id, "Hanya dipakai tepat setelah Pemicu Broadcast");
+        if (!d.template && !d.text.trim()) add(node.id, "Isi pesan broadcast atau pilih template");
+        if (d.mediaUrl.trim() && !/^(https?:\/\/|\/uploads\/)/.test(d.mediaUrl.trim())) add(node.id, "URL gambar harus diawali https://");
+        if (d.template && d.params.some((p) => p.source === "static" && !p.value.trim())) add(node.id, "Isi semua variabel template");
+        if (d.template && ["IMAGE", "VIDEO", "DOCUMENT"].includes(d.headerFormat) && !/^https:\/\//.test(d.headerUrl.trim()))
+          add(node.id, "Template ini butuh media header (URL https)");
+        if (!VAR_RE.test(d.saveAs || "balasan")) add(node.id, "Nama variabel hanya huruf, angka, underscore");
         break;
       }
       case "send_text":
@@ -274,6 +448,14 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       case "send_media":
         if (!/^https?:\/\//.test((node.data as NodeDataMap["send_media"]).url.trim()))
           add(node.id, "URL media harus diawali http(s)://");
+        break;
+      case "reply_comment":
+        if (!(node.data as NodeDataMap["reply_comment"]).texts.some((t) => t.trim())) add(node.id, "Isi minimal satu variasi balasan");
+        if (!isComment) add(node.id, "Hanya berfungsi bila Pemicu = Komentar");
+        break;
+      case "private_reply":
+        if (!(node.data as NodeDataMap["private_reply"]).text.trim()) add(node.id, "Isi pesan DM masih kosong");
+        if (!isComment) add(node.id, "Hanya berfungsi bila Pemicu = Komentar");
         break;
       case "add_tag":
         if ((node.data as NodeDataMap["add_tag"]).tags.length === 0) add(node.id, "Tambahkan minimal satu tag");
@@ -349,6 +531,11 @@ export function validateRuntimeNodes(nodes: unknown): string | null {
   const refOk = (ref: unknown) => ref == null || (typeof ref === "string" && ids.has(ref));
   for (const n of nodes as RuntimeNode[]) {
     if (!refOk(n.next)) return `Sambungan ke langkah yang tidak ada (${n.id})`;
+    if (n.type === "ai_agent" && !refOk(n.handoff_next)) return `Cabang 'Perlu CS' tidak valid (${n.id})`;
+    if (n.type === "broadcast_message") {
+      if (!Array.isArray(n.buttons)) return `Tombol broadcast tidak valid (${n.id})`;
+      for (const b of n.buttons) if (!Number.isInteger(b?.index) || !refOk(b.next)) return `Cabang tombol tidak valid (${n.id})`;
+    }
     if (n.type === "condition") {
       if (!Array.isArray(n.branches)) return `Kondisi tanpa cabang (${n.id})`;
       for (const b of n.branches) {
@@ -466,7 +653,20 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
   for (const n of nodes) {
     switch (n.type) {
       case "trigger":
-        gNodes.push({ id: n.id, type: "trigger", position: at, data: { kind: n.trigger?.kind ?? "keyword", keywords: n.trigger?.match ?? [] } });
+        gNodes.push({
+          id: n.id,
+          type: "trigger",
+          position: at,
+          data: {
+            kind: n.trigger?.kind ?? "keyword",
+            keywords: n.trigger?.match ?? [],
+            channels: Array.isArray(n.trigger?.channels) ? n.trigger.channels.map(String) : [],
+            posts: Array.isArray(n.trigger?.posts) ? n.trigger.posts.map(String) : [],
+            ...(n.trigger?.kind === "broadcast"
+              ? { tags: Array.isArray(n.trigger?.tags) ? n.trigger.tags.map(String) : [], scheduleAt: n.trigger?.schedule_at ?? null }
+              : {}),
+          },
+        });
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "send_text":
@@ -483,6 +683,14 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         break;
       case "wait_reply":
         gNodes.push({ id: n.id, type: "wait_reply", position: at, data: { saveAs: String(n.save_as ?? "jawaban") } });
+        edges.push(...edge(n.id, "out", n.next));
+        break;
+      case "reply_comment":
+        gNodes.push({ id: n.id, type: "reply_comment", position: at, data: { texts: Array.isArray(n.texts) ? n.texts.map(String) : [] } });
+        edges.push(...edge(n.id, "out", n.next));
+        break;
+      case "private_reply":
+        gNodes.push({ id: n.id, type: "private_reply", position: at, data: { text: String(n.text ?? "") } });
         edges.push(...edge(n.id, "out", n.next));
         break;
       case "add_tag":
@@ -507,12 +715,44 @@ function fromRuntime(nodes: RuntimeNode[]): FlowGraph {
         break;
       }
       case "ai_agent":
-        gNodes.push({ id: n.id, type: "ai_agent", position: at, data: {} });
+        gNodes.push({ id: n.id, type: "ai_agent", position: at, data: { ai: aiFromEngine(n.ai) } });
         edges.push(...edge(n.id, "out", n.next));
+        edges.push(...edge(n.id, "handoff", n.handoff_next));
         break;
       case "handoff":
         gNodes.push({ id: n.id, type: "handoff", position: at, data: {} });
         break;
+      case "broadcast_message": {
+        const buttons: BroadcastButton[] = (Array.isArray(n.buttons) ? n.buttons : []).map((b: any) => ({
+          id: newId("b"),
+          index: Number(b.index) || 0,
+          text: String(b.text ?? ""),
+        }));
+        gNodes.push({
+          id: n.id,
+          type: "broadcast_message",
+          position: at,
+          data: {
+            text: String(n.text ?? ""),
+            mediaUrl: String(n.media_url ?? ""),
+            template: String(n.template?.name ?? ""),
+            language: String(n.template?.lang ?? ""),
+            headerFormat: String(n.template?.header_format ?? ""),
+            headerUrl: String(n.template?.header_url ?? ""),
+            params: (Array.isArray(n.template?.params) ? n.template.params : []).map((p: any) => ({
+              id: newId("p"),
+              source: p.source ?? "static",
+              value: String(p.value ?? ""),
+              fallback: String(p.fallback ?? ""),
+            })),
+            buttons,
+            saveAs: String(n.save_as ?? "balasan"),
+          },
+        });
+        edges.push(...edge(n.id, "out", n.next));
+        buttons.forEach((b, i) => edges.push(...edge(n.id, `btn:${b.id}`, n.buttons[i]?.next)));
+        break;
+      }
     }
   }
   return autoLayout({ nodes: gNodes, edges });
@@ -541,7 +781,15 @@ export function loadGraph(definition: any): FlowGraph {
 export function flowVariables(graph: FlowGraph): string[] {
   const vars = new Set<string>(["nama", "pesan"]);
   for (const n of graph.nodes) {
+    if (n.type === "trigger" && (n.data as NodeDataMap["trigger"]).kind === "comment") {
+      vars.add("komentar");
+      vars.add("post_id");
+    }
     if (n.type === "wait_reply") vars.add((n.data as NodeDataMap["wait_reply"]).saveAs);
+    if (n.type === "broadcast_message") {
+      vars.add((n.data as NodeDataMap["broadcast_message"]).saveAs || "balasan");
+      if ((n.data as NodeDataMap["broadcast_message"]).buttons.length) vars.add("tombol");
+    }
     if (n.type === "menu") vars.add((n.data as NodeDataMap["menu"]).saveAs);
     if (n.type === "set_var") (n.data as NodeDataMap["set_var"]).pairs.forEach((p) => p.key.trim() && vars.add(p.key.trim()));
   }

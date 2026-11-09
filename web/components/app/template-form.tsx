@@ -1,5 +1,9 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { errorMessage } from "@/lib/action-error";
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,7 +47,7 @@ const HEADER_OPTS: { value: HeaderFormat; label: string; accept?: string }[] = [
 ];
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full text-sm";
 
 let btnSeq = 0;
 
@@ -106,7 +110,7 @@ export function TemplateForm({
       gooeyToast.success("Contoh media terunggah ke Meta");
     } catch (err) {
       setHeaderPreview(null);
-      gooeyToast.error(err instanceof Error ? err.message : "Gagal mengunggah media");
+      gooeyToast.error(errorMessage(err) ?? "Gagal mengunggah media");
     } finally {
       setUploading(false);
     }
@@ -170,7 +174,7 @@ export function TemplateForm({
           gooeyToast.success(`Template disubmit ke Meta — status ${res.status}. Tunggu approval.`);
           router.push("/templates");
         } catch (err) {
-          gooeyToast.error(err instanceof Error ? err.message : "Gagal membuat template");
+          gooeyToast.error(errorMessage(err) ?? "Gagal membuat template");
         }
       });
       return;
@@ -183,7 +187,7 @@ export function TemplateForm({
         if (isEdit && templateId) await updateTemplate(templateId, input);
         else await createTemplate(input);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan template";
+        const msg = errorMessage(err) ?? "Gagal menyimpan template";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -255,24 +259,24 @@ export function TemplateForm({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
                       <label htmlFor="waChannel" className="mb-1.5 block text-sm font-medium">Channel WhatsApp Official</label>
-                      <select id="waChannel" value={waChannelId} onChange={(e) => setWaChannelId(e.target.value)} className={inputCls}>
+                      <NativeSelect id="waChannel" value={waChannelId} onChange={(e) => setWaChannelId(e.target.value)} className={inputCls}>
                         {waChannels.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                          <NativeSelectOption key={c.id} value={c.id}>{c.name}</NativeSelectOption>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label htmlFor="category" className="mb-1.5 block text-sm font-medium">Kategori</label>
-                        <select id="category" value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
+                        <NativeSelect id="category" value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
                           {HSM_CATEGORIES.map((c) => (
-                            <option key={c} value={c}>{c}</option>
+                            <NativeSelectOption key={c} value={c}>{c}</NativeSelectOption>
                           ))}
-                        </select>
+                        </NativeSelect>
                       </div>
                       <div>
                         <label htmlFor="language" className="mb-1.5 block text-sm font-medium">Bahasa</label>
-                        <input id="language" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="id / en_US" className={inputCls} />
+                        <Input id="language" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="id / en_US" className={inputCls} />
                       </div>
                     </div>
                   </div>
@@ -283,7 +287,7 @@ export function TemplateForm({
                 <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">Nama Template</label>
                 <div className="relative">
                   <MessageSquareText className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
+                  <Input
                     id="name"
                     value={name}
                     onChange={(e) => setName(isHsm ? e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") : e.target.value)}
@@ -319,7 +323,7 @@ export function TemplateForm({
                     ))}
                   </div>
                   {headerFormat === "TEXT" && (
-                    <input value={headerText} maxLength={60} onChange={(e) => setHeaderText(e.target.value)} placeholder="Judul pesan (maks 60)" className={inputCls} />
+                    <Input value={headerText} maxLength={60} onChange={(e) => setHeaderText(e.target.value)} placeholder="Judul pesan (maks 60)" className={inputCls} />
                   )}
                   {headerAccept && (
                     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-3">
@@ -342,13 +346,13 @@ export function TemplateForm({
 
               <div>
                 <label htmlFor="body" className="mb-1.5 block text-sm font-medium text-foreground">Isi Pesan</label>
-                <textarea
+                <Textarea
                   id="body"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   rows={6}
                   placeholder={isHsm ? "Hai {{1}}, undangan Masterclass {{2}} sudah dibuka. Pilih cara ikut di bawah ya 👇" : "Halo! Ada yang bisa kami bantu?"}
-                  className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+                  className="w-full p-3 text-sm"
                 />
                 {isHsm && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
@@ -363,11 +367,11 @@ export function TemplateForm({
                   {placeholders.map((n) => (
                     <div key={n} className="flex items-center gap-2">
                       <span className="w-10 shrink-0 text-xs font-semibold text-muted-foreground">{`{{${n}}}`}</span>
-                      <input
+                      <Input
                         value={vars[n] ?? ""}
                         onChange={(e) => setVars((p) => ({ ...p, [n]: e.target.value }))}
                         placeholder={n === 1 ? "Budi" : "19 November"}
-                        className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
+                        className="h-9 w-full text-sm"
                       />
                     </div>
                   ))}
@@ -379,7 +383,7 @@ export function TemplateForm({
                   <label htmlFor="footer" className="mb-1.5 block text-sm font-medium text-foreground">
                     Footer <span className="text-muted-foreground">(opsional, maks 60)</span>
                   </label>
-                  <input id="footer" value={footer} maxLength={60} onChange={(e) => setFooter(e.target.value)} placeholder="Balas STOP untuk berhenti" className={inputCls} />
+                  <Input id="footer" value={footer} maxLength={60} onChange={(e) => setFooter(e.target.value)} placeholder="Balas STOP untuk berhenti" className={inputCls} />
                 </div>
               )}
 
@@ -404,18 +408,18 @@ export function TemplateForm({
                         <span className="grid size-8 shrink-0 place-items-center rounded-md bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
                           <Icon className="size-4" />
                         </span>
-                        <input
+                        <Input
                           value={b.text}
                           maxLength={25}
                           onChange={(e) => update({ text: e.target.value })}
                           placeholder={b.type === "QUICK_REPLY" ? "Teks tombol (maks 25)" : "Label tombol"}
-                          className="h-9 min-w-[140px] flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue"
+                          className="h-9 min-w-[140px] flex-1 text-sm"
                         />
                         {b.type === "URL" && (
-                          <input value={b.url} onChange={(e) => update({ url: e.target.value })} placeholder="https://…" className="h-9 min-w-[160px] flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue" />
+                          <Input value={b.url} onChange={(e) => update({ url: e.target.value })} placeholder="https://…" className="h-9 min-w-[160px] flex-1 text-sm" />
                         )}
                         {b.type === "PHONE_NUMBER" && (
-                          <input value={b.phone} onChange={(e) => update({ phone: e.target.value })} placeholder="+62812…" className="h-9 min-w-[140px] flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand-blue" />
+                          <Input value={b.phone} onChange={(e) => update({ phone: e.target.value })} placeholder="+62812…" className="h-9 min-w-[140px] flex-1 text-sm" />
                         )}
                         <button type="button" aria-label="Hapus tombol" onClick={() => setButtons((bs) => bs.filter((_, j) => j !== i))} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-red-500">
                           <Trash2 className="size-4" />

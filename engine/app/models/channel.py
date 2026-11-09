@@ -40,3 +40,7 @@ class Channel(UUIDPkMixin, TimestampMixin, Base):
     default_flow_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.Uuid, sa.ForeignKey("flows.id", ondelete="SET NULL")
     )
+    # Agent that answers on this channel; null = tenant default agent.
+    ai_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("ai_agents.id", ondelete="SET NULL")
+    )

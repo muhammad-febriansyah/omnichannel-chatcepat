@@ -12,15 +12,19 @@ import {
   UserPlus,
   Globe,
   Timer,
+  MessageCircleReply,
+  Send,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import type { NodeKind } from "@/lib/flow-graph";
 
-export type NodeGroup = "Pemicu" | "Pesan" | "Logika" | "AI & Agen";
+export type NodeGroup = "Pemicu" | "Pesan" | "Sosial Media" | "Logika" | "AI & Agen";
 
 export const NODE_META: Record<NodeKind, { label: string; desc: string; icon: LucideIcon; color: string; group: NodeGroup }> = {
-  trigger: { label: "Pemicu", desc: "Awal flow: keyword, klik tombol, pesan pertama, atau cadangan", icon: Zap, color: "#f59e0b", group: "Pemicu" },
-  send_text: { label: "Kirim Teks", desc: "Balas dengan pesan teks", icon: MessageSquare, color: "#3b82f6", group: "Pesan" },
+  trigger: { label: "Pemicu", desc: "Awal flow: keyword, komentar, broadcast terjadwal, klik tombol, pesan pertama, atau cadangan", icon: Zap, color: "#f59e0b", group: "Pemicu" },
+  broadcast_message: { label: "Pesan Broadcast", desc: "Pesan massal WhatsApp ke kontak opt-in (langkah pertama flow broadcast)", icon: Megaphone, color: "#7c3aed", group: "Pesan" },
+  send_text: { label: "Kirim Teks", desc: "Balas dengan pesan teks", icon: MessageSquare, color: "#2547f9", group: "Pesan" },
   send_media: { label: "Kirim Media", desc: "Gambar/dokumen dari URL + caption", icon: ImageIcon, color: "#06b6d4", group: "Pesan" },
   send_catalog: { label: "Kirim Katalog", desc: "Foto + harga produk aktif", icon: ShoppingBag, color: "#0ea5e9", group: "Pesan" },
   menu: { label: "Menu Pilihan", desc: "Tampilkan opsi, cabang per jawaban", icon: ListChecks, color: "#6366f1", group: "Logika" },
@@ -30,10 +34,13 @@ export const NODE_META: Record<NodeKind, { label: string; desc: string; icon: Lu
   add_tag: { label: "Beri Tag", desc: "Tandai kontak untuk segmen & broadcast", icon: Tag, color: "#14b8a6", group: "Logika" },
   ai_agent: { label: "AI Agent", desc: "Jawab otomatis dari knowledge base", icon: Sparkles, color: "#8b5cf6", group: "AI & Agen" },
   handoff: { label: "Alihkan ke Agen", desc: "Serahkan ke CS manusia, flow selesai", icon: UserPlus, color: "#10b981", group: "AI & Agen" },
+  reply_comment: { label: "Balas Komentar", desc: "Balasan publik di bawah komentar FB/IG", icon: MessageCircleReply, color: "#e1306c", group: "Sosial Media" },
+  private_reply: { label: "Kirim DM", desc: "Pesan pribadi ke pemberi komentar", icon: Send, color: "#1877f2", group: "Sosial Media" },
 };
 
 export const PALETTE_GROUPS: { group: NodeGroup; kinds: NodeKind[] }[] = [
-  { group: "Pesan", kinds: ["send_text", "send_media", "send_catalog"] },
+  { group: "Pesan", kinds: ["broadcast_message", "send_text", "send_media", "send_catalog"] },
+  { group: "Sosial Media", kinds: ["reply_comment", "private_reply"] },
   { group: "Logika", kinds: ["menu", "wait_reply", "condition", "set_var", "add_tag"] },
   { group: "AI & Agen", kinds: ["ai_agent", "handoff"] },
 ];

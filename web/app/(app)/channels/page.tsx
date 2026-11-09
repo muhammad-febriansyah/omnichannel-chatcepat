@@ -3,7 +3,7 @@ import { Plus, Plug, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
 import { channels, flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { CHANNEL_META, ChannelType, statusLabel } from "@/lib/format";
+import { CHANNEL_META, ChannelType, statusLabel, timeAgo } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { ActionLink } from "@/components/app/action-link";
@@ -75,9 +75,9 @@ export default async function ChannelsPage() {
         }
       />
 
-      <Card>
-        <CardContent className="pt-6">
-          {rows.length === 0 ? (
+      {rows.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6">
             <EmptyState
               icon={Plug}
               title="Belum ada channel"
@@ -88,86 +88,90 @@ export default async function ChannelsPage() {
                 </ActionLink>
               }
             />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {rows.map((c) => {
-                const meta = CHANNEL_META[c.type as ChannelType];
-                const tone = STATUS_TONE[c.status] ?? "slate";
-                const dot = DOT_CLS[c.status] ?? "bg-slate-400";
-                return (
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {rows.map((c) => {
+            const meta = CHANNEL_META[c.type as ChannelType];
+            const tone = STATUS_TONE[c.status] ?? "slate";
+            const dot = DOT_CLS[c.status] ?? "bg-slate-400";
+            const needsPairing = c.type === "wa_unofficial" && c.status !== "connected";
+            return (
+              <div
+                key={c.id}
+                className="flex flex-col overflow-hidden rounded-[20px] bg-card transition-shadow hover:shadow-md"
+              >
+                {/* Identity */}
+                <div className="flex items-start gap-3 p-4">
                   <div
-                    key={c.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:shadow-md"
+                    className="grid size-11 shrink-0 place-items-center rounded-xl text-white shadow-sm"
+                    style={{ background: meta?.color ?? "#94a3b8" }}
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-                        style={{ background: meta?.color ?? "#94a3b8" }}
-                      >
-                        <ChannelIcon
-                          type={c.type as ChannelType}
-                          className="size-6 text-white"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">
-                          {c.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {meta?.label}
-                        </div>
-                      </div>
-                      <StatusPill tone={tone} className="shrink-0 gap-1.5">
-                        <span className={`size-1.5 rounded-full ${dot}`} />
-                        {statusLabel(c.status)}
-                      </StatusPill>
-                    </div>
-                    <div className="mt-auto flex items-center justify-end gap-2 border-t border-border pt-3">
-                      <ChannelAutomationSettings
-                        channelId={c.id}
-                        type={c.type}
-                        enabled={c.autoReplyEnabled}
-                        mode={c.autoReplyMode as "menu" | "ai" | "hybrid"}
-                        defaultFlowId={c.defaultFlowId}
-                        flows={menuFlows}
-                      />
-                      {c.type === "wa_unofficial" &&
-                        c.status !== "connected" && (
-                          <ActionLink
-                            href={`/channels/${c.id}/pair`}
-                            variant="outline"
-                            size="sm"
-                            aria-label="Scan QR untuk pairing"
-                            title="Scan QR untuk pairing"
-                          >
-                            <QrCode className="size-4" /> Scan QR
-                          </ActionLink>
-                        )}
-                      <DeleteButton
-                        onConfirm={async () => {
-                          "use server";
-                          await disconnectChannel(c.id);
-                        }}
-                        title="Putuskan channel?"
-                        description={
-                          <>
-                            Channel{" "}
-                            <span className="font-semibold">{c.name}</span> akan
-                            diputus. Pesan masuk berhenti dan kredensial
-                            dihapus. Hubungkan ulang untuk mengaktifkan lagi.
-                          </>
-                        }
-                        successMessage="Channel diputus"
-                        triggerLabel="Putuskan"
-                      />
+                    <ChannelIcon type={c.type as ChannelType} className="size-6 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-semibold text-foreground">{c.name}</div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {meta?.label} · ditambahkan {timeAgo(c.createdAt)}
+                      {timeAgo(c.createdAt) === "baru saja" ? "" : " lalu"}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  <StatusPill tone={tone} className="shrink-0 gap-1.5">
+                    <span className={`size-1.5 rounded-full ${dot}`} />
+                    {statusLabel(c.status)}
+                  </StatusPill>
+                </div>
+
+                {/* Automation */}
+                <div className="border-t border-border px-4 py-3.5">
+                  <ChannelAutomationSettings
+                    channelId={c.id}
+                    type={c.type}
+                    enabled={c.autoReplyEnabled}
+                    defaultFlowId={c.defaultFlowId}
+                    flows={menuFlows}
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-4 py-2.5">
+                  {needsPairing ? (
+                    <ActionLink
+                      href={`/channels/${c.id}/pair`}
+                      variant="outline"
+                      size="sm"
+                      aria-label="Scan QR untuk pairing"
+                      title="Scan QR untuk pairing"
+                    >
+                      <QrCode className="size-4" /> Scan QR
+                    </ActionLink>
+                  ) : (
+                    <span className="text-[11.5px] text-muted-foreground">
+                      {c.status === "connected" ? "Siap menerima & mengirim pesan" : "Perlu dihubungkan ulang"}
+                    </span>
+                  )}
+                  <DeleteButton
+                    onConfirm={async () => {
+                      "use server";
+                      await disconnectChannel(c.id);
+                    }}
+                    title="Putuskan channel?"
+                    description={
+                      <>
+                        Channel <span className="font-semibold">{c.name}</span> akan diputus. Pesan masuk berhenti dan
+                        kredensial dihapus. Hubungkan ulang untuk mengaktifkan lagi.
+                      </>
+                    }
+                    successMessage="Channel diputus"
+                    triggerLabel="Putuskan"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

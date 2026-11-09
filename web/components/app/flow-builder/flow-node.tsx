@@ -5,7 +5,9 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { outputHandles, type GraphNode, type NodeDataMap, type NodeKind } from "@/lib/flow-graph";
+import { normalizeAiConfig, roleLabel, toneMeta } from "@/lib/ai-agent-options";
 import { NODE_META } from "./meta";
+import { formatWib } from "@/lib/broadcast-flow";
 
 export type FlowNodeData = { kind: NodeKind; payload: GraphNode["data"]; issues: string[] };
 export type FlowRFNode = Node<FlowNodeData>;
@@ -18,6 +20,12 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
       if (d.kind === "welcome") return "Pesan pertama dari pelanggan";
       if (d.kind === "fallback") return "Pesan yang tidak cocok flow lain";
       if (d.kind === "button") return d.keywords.length ? "" : "Belum ada label tombol";
+      if (d.kind === "comment") return d.keywords.length ? "" : "Semua komentar FB/IG";
+      if (d.kind === "broadcast") {
+        const who = d.tags?.length ? `Tag: ${d.tags.join(", ")}` : "Semua kontak opt-in";
+        const when = d.scheduleAt ? formatWib(d.scheduleAt) : "segera saat diaktifkan";
+        return `${who} · ${when}`;
+      }
       return d.keywords.length ? "" : "Belum ada keyword";
     }
     case "send_text":
@@ -45,9 +53,24 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
       return tags.length ? "" : "Belum ada tag";
     }
     case "ai_agent":
-      return "Jawab dari knowledge base & katalog";
+    {
+      const ai = normalizeAiConfig((payload as NodeDataMap["ai_agent"])?.ai);
+      const t = toneMeta(ai.tone);
+      return `${t.emoji} ${t.label} · ${roleLabel(ai.role)}`;
+    }
     case "handoff":
       return "Percakapan diteruskan ke CS";
+    case "reply_comment": {
+      const texts = (payload as NodeDataMap["reply_comment"]).texts.filter((t) => t.trim());
+      return texts.length ? `${texts[0]}${texts.length > 1 ? ` (+${texts.length - 1} variasi)` : ""}` : "Balasan kosong";
+    }
+    case "private_reply":
+      return (payload as NodeDataMap["private_reply"]).text.split("\n").find((l) => l.trim()) ?? "DM kosong";
+    case "broadcast_message": {
+      const d = payload as NodeDataMap["broadcast_message"];
+      if (d.template) return `Template: ${d.template}`;
+      return d.text.split("\n").find((l) => l.trim()) ?? "Pesan kosong";
+    }
   }
 }
 
@@ -59,12 +82,14 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
   const hasIssue = data.issues.length > 0;
   const trig = data.kind === "trigger" ? (data.payload as NodeDataMap["trigger"]) : null;
   const keywords = trig ? trig.keywords : data.kind === "add_tag" ? (data.payload as NodeDataMap["add_tag"]).tags : [];
-  const isKeyword = (trig !== null && (trig.kind === "keyword" || trig.kind === "button")) || data.kind === "add_tag";
+  const isKeyword = (trig !== null && (trig.kind === "keyword" || trig.kind === "button" || trig.kind === "comment")) || data.kind === "add_tag";
   const chipCls =
     data.kind === "add_tag"
       ? "bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300"
       : trig?.kind === "button"
         ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300"
+        : trig?.kind === "comment"
+          ? "bg-pink-100 text-pink-800 dark:bg-pink-500/15 dark:text-pink-300"
         : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
   const text = summary(data.kind, data.payload);
 
@@ -107,7 +132,7 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
           <div className="flex flex-wrap gap-1">
             {keywords.slice(0, 6).map((k) => (
               <span key={k} className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium", chipCls)}>
-                {trig?.kind === "button" ? "🔘 " : data.kind === "add_tag" ? "#" : ""}
+                {trig?.kind === "button" ? "🔘 " : trig?.kind === "comment" ? "💬 " : data.kind === "add_tag" ? "#" : ""}
                 {k}
               </span>
             ))}

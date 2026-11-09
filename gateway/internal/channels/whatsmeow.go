@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"io"
 	"math/rand"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +91,23 @@ func NewWhatsmeow(ctx context.Context, dsn string, b EventBus, store Resolver) (
 	// pakai brand "ChatCepat". Hanya berlaku untuk pairing baru (perangkat lama tetap).
 	wstore.DeviceProps.Os = proto.String("ChatCepat")
 
+	// WhatsApp rejects old client versions ("Client outdated (405)"), which blocks every
+	// QR pairing and reconnect. Use the current WhatsApp Web version instead of the one
+	// compiled into the library, and keep it fresh.
+	refreshWAVersion(ctx)
+	go func() {
+		t := time.NewTicker(6 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				refreshWAVersion(ctx)
+			}
+		}
+	}()
+
 	logger := waLog.Stdout("whatsmeow", "WARN", true)
 	container, err := sqlstore.New(ctx, "postgres", dsn, logger)
 	if err != nil {
@@ -146,6 +166,26 @@ func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, er
 	device := w.container.NewDevice()
 	cli := whatsmeow.NewClient(device, w.log)
 	cli.AddEventHandler(w.handler(cli, channelID, tenantID))
+	// Connection refused by WhatsApp before any QR (e.g. client outdated, temp ban):
+	// the QR channel stays silent, so surface it to the pairing page explicitly.
+	failCh := make(chan error, 1)
+	cli.AddEventHandler(func(evt any) {
+		var err error
+		switch e := evt.(type) {
+		case *events.ClientOutdated:
+			err = fmt.Errorf("WhatsApp menolak versi klien (client outdated). Coba lagi beberapa menit lagi")
+		case *events.ConnectFailure:
+			err = fmt.Errorf("WhatsApp menolak koneksi (%s)", e.Reason.String())
+		case *events.TemporaryBan:
+			err = fmt.Errorf("nomor sedang diblokir sementara oleh WhatsApp: %s", e.String())
+		}
+		if err != nil {
+			select {
+			case failCh <- err:
+			default:
+			}
+		}
+	})
 
 	// QR loop hidup di luar request (background), jadi pakai context sendiri.
 	qrChan, err := cli.GetQRChannel(context.Background())
@@ -159,7 +199,19 @@ func (w *Whatsmeow) PairDevice(channelID, tenantID string) (<-chan PairEvent, er
 	out := make(chan PairEvent)
 	go func() {
 		defer close(out)
-		for item := range qrChan {
+		for {
+			var item whatsmeow.QRChannelItem
+			var ok bool
+			select {
+			case err := <-failCh:
+				out <- PairEvent{Err: err}
+				cli.Disconnect()
+				return
+			case item, ok = <-qrChan:
+				if !ok {
+					return
+				}
+			}
 			switch {
 			case item.Event == "code":
 				out <- PairEvent{QR: item.Code}
@@ -201,7 +253,8 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 	if cmd.Body != nil {
 		body = *cmd.Body
 	}
-	if body == "" {
+	media := outboundMedia(cmd)
+	if body == "" && media == nil {
 		return "", fmt.Errorf("whatsmeow: body kosong")
 	}
 
@@ -210,7 +263,14 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 	// diatur engine (07); ini menambah realisme per-pesan. Best-effort.
 	simulateTyping(ctx, sess.cli, to, len(body))
 
-	resp, err := sess.cli.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(body)})
+	msg := &waE2E.Message{Conversation: proto.String(body)}
+	if media != nil {
+		msg, err = buildMediaMessage(ctx, sess.cli, media, body)
+		if err != nil {
+			return "", err
+		}
+	}
+	resp, err := sess.cli.SendMessage(ctx, to, msg)
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow send: %w", err)
 	}
@@ -600,3 +660,103 @@ func optName(s string) *string {
 
 // memastikan Bus memenuhi EventBus (compile-time).
 var _ EventBus = (*bus.Bus)(nil)
+
+// refreshWAVersion asks web.whatsapp.com for its current client version and makes
+// whatsmeow announce that version. On failure the built-in version stays.
+func refreshWAVersion(ctx context.Context) {
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	v, err := whatsmeow.GetLatestVersion(cctx, &http.Client{Timeout: 15 * time.Second})
+	if err != nil || v == nil {
+		log.Printf("whatsmeow: gagal ambil versi WhatsApp Web terbaru (%v) — pakai versi bawaan %s", err, wstore.GetWAVersion())
+		return
+	}
+	wstore.SetWAVersion(*v)
+	log.Printf("whatsmeow: versi klien WhatsApp Web %s", v)
+}
+
+// maxMediaBytes caps what the gateway downloads for one WhatsApp attachment.
+const maxMediaBytes = 16 << 20
+
+// buildMediaMessage downloads the attachment, uploads it (encrypted) to WhatsApp and
+// returns the image / video / audio / document message (caption = text body).
+func buildMediaMessage(ctx context.Context, cli *whatsmeow.Client, m *contracts.Media, caption string) (*waE2E.Message, error) {
+	data, err := fetchMedia(ctx, m.Url)
+	if err != nil {
+		return nil, err
+	}
+	kind := whatsmeow.MediaDocument
+	switch {
+	case strings.HasPrefix(m.Mime, "image/"):
+		kind = whatsmeow.MediaImage
+	case strings.HasPrefix(m.Mime, "video/"):
+		kind = whatsmeow.MediaVideo
+	case strings.HasPrefix(m.Mime, "audio/"):
+		kind = whatsmeow.MediaAudio
+	}
+	up, err := cli.Upload(ctx, data, kind)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow upload media: %w", err)
+	}
+	var capPtr *string
+	if caption != "" {
+		capPtr = proto.String(caption)
+	}
+	switch kind {
+	case whatsmeow.MediaImage:
+		return &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+			Caption: capPtr, Mimetype: proto.String(m.Mime), URL: proto.String(up.URL), DirectPath: proto.String(up.DirectPath),
+			MediaKey: up.MediaKey, FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: proto.Uint64(up.FileLength),
+		}}, nil
+	case whatsmeow.MediaVideo:
+		return &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
+			Caption: capPtr, Mimetype: proto.String(m.Mime), URL: proto.String(up.URL), DirectPath: proto.String(up.DirectPath),
+			MediaKey: up.MediaKey, FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: proto.Uint64(up.FileLength),
+		}}, nil
+	case whatsmeow.MediaAudio:
+		// Audio has no caption on WhatsApp; a text body is dropped here by design.
+		return &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+			Mimetype: proto.String(m.Mime), URL: proto.String(up.URL), DirectPath: proto.String(up.DirectPath),
+			MediaKey: up.MediaKey, FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: proto.Uint64(up.FileLength),
+		}}, nil
+	}
+	name := "dokumen"
+	if m.Filename != nil && *m.Filename != "" {
+		name = *m.Filename
+	}
+	return &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+		Caption: capPtr, Mimetype: proto.String(m.Mime), FileName: proto.String(name), Title: proto.String(name),
+		URL: proto.String(up.URL), DirectPath: proto.String(up.DirectPath),
+		MediaKey: up.MediaKey, FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: proto.Uint64(up.FileLength),
+	}}, nil
+}
+
+// fetchMedia downloads an attachment. Files live on the web app; inside Docker the
+// public APP_BASE_URL may not resolve, so it is rewritten to WEB_INTERNAL_URL.
+func fetchMedia(ctx context.Context, rawURL string) ([]byte, error) {
+	if pub, internal := strings.TrimRight(os.Getenv("APP_BASE_URL"), "/"), strings.TrimRight(os.Getenv("WEB_INTERNAL_URL"), "/"); pub != "" && internal != "" && strings.HasPrefix(rawURL, pub+"/") {
+		rawURL = internal + strings.TrimPrefix(rawURL, pub)
+	}
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unduh lampiran: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unduh lampiran: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMediaBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("unduh lampiran: %w", err)
+	}
+	if len(data) > maxMediaBytes {
+		return nil, fmt.Errorf("lampiran melebihi 16 MB")
+	}
+	return data, nil
+}

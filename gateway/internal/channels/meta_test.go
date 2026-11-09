@@ -147,3 +147,51 @@ func TestWAMessagePayloadTemplateMissingName(t *testing.T) {
 		t.Fatal("harus error kalau template name kosong")
 	}
 }
+
+func TestParseMessengerComments(t *testing.T) {
+	fb := []byte(`{"object":"page","entry":[{"id":"PAGE1","changes":[
+		{"field":"feed","value":{"item":"comment","verb":"add","comment_id":"C1","post_id":"PAGE1_P9","parent_id":"PAGE1_P9","message":"harga?","from":{"id":"U7","name":"Budi"}}},
+		{"field":"feed","value":{"item":"comment","verb":"add","comment_id":"C2","post_id":"PAGE1_P9","message":"ini balasan kami","from":{"id":"PAGE1"}}},
+		{"field":"feed","value":{"item":"comment","verb":"edited","comment_id":"C3","post_id":"PAGE1_P9","message":"x","from":{"id":"U8"}}},
+		{"field":"feed","value":{"item":"reaction","verb":"add","post_id":"PAGE1_P9","from":{"id":"U9"}}}]}]}`)
+	parsed, err := ParseMessenger(fb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("only the new customer comment counts, got %d", len(parsed))
+	}
+	in := parsed[0].Inbound
+	if in.Comment == nil || in.Comment.CommentId != "C1" || in.Comment.PostId != "PAGE1_P9" || in.Comment.ParentId != nil {
+		t.Fatalf("fb comment salah: %+v", in.Comment)
+	}
+	if in.ProviderMessageId != "C1" || in.From.ExternalId != "U7" || in.Body == nil || *in.Body != "harga?" {
+		t.Fatalf("fb normalisasi salah: %+v", in)
+	}
+
+	ig := []byte(`{"object":"instagram","entry":[{"id":"IG1","changes":[
+		{"field":"comments","value":{"id":"IC1","text":"info dong","from":{"id":"IGU1","username":"sari"},"media":{"id":"M5"}}}]}]}`)
+	parsed, err = ParseMessenger(ig)
+	if err != nil || len(parsed) != 1 {
+		t.Fatalf("ig comment: err=%v n=%d", err, len(parsed))
+	}
+	in = parsed[0].Inbound
+	if in.ChannelType != contracts.ChannelTypeInstagram || in.Comment.CommentId != "IC1" || in.Comment.PostId != "M5" || in.From.Name == nil || *in.From.Name != "sari" {
+		t.Fatalf("ig normalisasi salah: %+v", in)
+	}
+}
+
+func TestMessengerAttachmentType(t *testing.T) {
+	cases := map[string]string{
+		"image/png":       "image",
+		"video/mp4":       "video",
+		"audio/ogg":       "audio",
+		"application/pdf": "file",
+		"":                "file",
+	}
+	for mime, want := range cases {
+		if got := messengerAttachmentType(mime); got != want {
+			t.Fatalf("%q: got %q want %q", mime, got, want)
+		}
+	}
+}

@@ -1,9 +1,33 @@
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { flows } from "@/lib/db/schema";
+import { channels, flows, tags as tagsTable } from "@/lib/db/schema";
+import { listWaTemplates } from "@/lib/wa-templates";
+import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
+import { loadDocs, loadPromos } from "@/lib/automation-data";
+import { allowedFlowNodes } from "@/lib/entitlements";
 import { requirePageAbility } from "@/lib/session";
 import { FlowBuilder } from "@/components/app/flow-builder/flow-builder";
+
+// Approved WA Official templates for the "Pesan Broadcast" step (live from Meta).
+async function loadTemplates(tenantId: string): Promise<BroadcastTemplateOpt[]> {
+  try {
+    const { templates } = await listWaTemplates(tenantId, { status: "APPROVED" });
+    return templates.map((r) => ({
+      name: r.name,
+      body: r.body,
+      language: r.language,
+      channelId: r.channelId,
+      variableCount: r.variableCount,
+      headerFormat: r.headerFormat,
+      headerText: r.headerText,
+      footer: r.footer,
+      buttons: r.buttons.map((b) => ({ type: b.type, text: b.text })),
+    }));
+  } catch {
+    return [];
+  }
+}
 
 export default async function FlowEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,6 +37,18 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
     where: and(eq(flows.id, id), eq(flows.tenantId, session.tenantId)),
   });
   if (!flow) notFound();
+  const tenantId = session.tenantId;
+  const [docs, promos, accounts, allowedNodes, tagRows, templates] = await Promise.all([
+    loadDocs(session.tenantId),
+    loadPromos(session.tenantId),
+    db.query.channels.findMany({
+      where: eq(channels.tenantId, session.tenantId),
+      columns: { id: true, name: true, type: true, autoReplyEnabled: true },
+    }),
+    allowedFlowNodes(session),
+    db.query.tags.findMany({ where: eq(tagsTable.tenantId, tenantId), columns: { name: true } }),
+    loadTemplates(tenantId),
+  ]);
 
   return (
     <FlowBuilder
@@ -20,6 +56,12 @@ export default async function FlowEditorPage({ params }: { params: Promise<{ id:
       name={flow.name}
       status={flow.status as "draft" | "active"}
       definition={flow.definition ?? { nodes: [] }}
+      docs={docs}
+      promos={promos}
+      allowedNodes={allowedNodes}
+      channels={accounts.map((c) => ({ id: c.id, name: c.name, type: c.type, autoReply: c.autoReplyEnabled }))}
+      tags={tagRows.map((t) => t.name)}
+      templates={templates}
     />
   );
 }

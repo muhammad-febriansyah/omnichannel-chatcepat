@@ -1,5 +1,6 @@
 "use server";
 
+import { userError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireAbility } from "./rbac";
 import { requireSession } from "./session";
@@ -79,7 +80,7 @@ export type AutomationActivity = {
 };
 
 async function socialRequest<T>(session: Awaited<ReturnType<typeof requireSession>>, path: string, init?: RequestInit): Promise<T> {
-  if (!session.tenantId) throw new Error("Tenant aktif tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant aktif tidak ditemukan");
   requireAbility(session, "flow.manage");
   const headers = new Headers(init?.headers);
   headers.set("X-Workspace-ID", session.tenantId);
@@ -87,7 +88,7 @@ async function socialRequest<T>(session: Awaited<ReturnType<typeof requireSessio
   if (init?.body) headers.set("Content-Type", "application/json");
   const response = await fetch(`${gateway}${path}`, { ...init, headers, cache: "no-store" });
   const body = (await response.json().catch(() => ({}))) as { success?: boolean; message?: string; data?: T };
-  if (!response.ok || body.success === false) throw new Error(body.message ?? "Permintaan automation gagal");
+  if (!response.ok || body.success === false) throw userError(body.message ?? "Permintaan automation gagal");
   return body.data as T;
 }
 

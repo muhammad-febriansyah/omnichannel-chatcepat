@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { CheckCircle2, User, Phone, Send } from "lucide-react";
 import { createOptIn } from "@/lib/actions";
@@ -22,13 +24,13 @@ export function OptInForm({ slug, workspaceName }: { slug: string; workspaceName
         await createOptIn(slug, { name, phone });
         setDone(true);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal mengirim");
+        setError(errorMessage(err) ?? "Gagal mengirim");
       }
     });
   }
 
   const inputCls =
-    "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-brand-navy outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10 dark:text-foreground";
+    "h-11 w-full pl-10 pr-3 text-sm text-brand-navy dark:text-foreground";
 
   if (done) {
     return (
@@ -50,14 +52,14 @@ export function OptInForm({ slug, workspaceName }: { slug: string; workspaceName
         <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-brand-navy dark:text-foreground">Nama</label>
         <div className="relative">
           <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama kamu" className={inputCls} />
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama kamu" className={inputCls} />
         </div>
       </div>
       <div>
         <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-brand-navy dark:text-foreground">Nomor WhatsApp</label>
         <div className="relative">
           <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="0812xxxxxxx" className={inputCls} />
+          <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="0812xxxxxxx" className={inputCls} />
         </div>
       </div>
 

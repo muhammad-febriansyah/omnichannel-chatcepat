@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { unstable_rethrow, useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
+import { Suspense, useEffect, useState, useTransition } from "react";
+import { unstable_rethrow, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -17,7 +19,7 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { createChannel } from "@/lib/actions";
 import { CHANNEL_META, ChannelType } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ChannelIcon } from "@/components/app/channel-icon";
 import { WaEmbeddedSignup } from "./wa-embedded-signup";
 
@@ -45,14 +47,14 @@ const TYPES: { value: ChannelType; label: string; desc: string; tag: Tag }[] = [
   {
     value: "instagram",
     label: "Instagram",
-    desc: "Kelola akun dan balasan Instagram di Automation",
-    tag: { label: "Tersedia", tone: "green" },
+    desc: "DM & komentar Instagram Professional (resmi Meta)",
+    tag: { label: "Resmi", tone: "green" },
   },
   {
     value: "facebook",
     label: "Facebook",
-    desc: "Kelola akun dan balasan Facebook di Automation",
-    tag: { label: "Tersedia", tone: "green" },
+    desc: "Messenger & komentar Facebook Page (resmi Meta)",
+    tag: { label: "Resmi", tone: "green" },
   },
 ];
 
@@ -94,21 +96,39 @@ const FIELDS: Record<
     },
   ],
   instagram: [
-    { key: "page_id", label: "Page/IG ID", placeholder: "1789…" },
-    { key: "access_token", label: "Access Token", placeholder: "EAAG…" },
+    { key: "page_id", label: "Facebook Page ID", placeholder: "1789…", hint: "ID Page Facebook yang tertaut ke akun Instagram Professional." },
+    { key: "access_token", label: "Page Access Token", placeholder: "EAAG…", hint: "Token Page dengan izin instagram_basic, instagram_manage_messages, instagram_manage_comments." },
   ],
   facebook: [
     { key: "page_id", label: "Page ID", placeholder: "1789…" },
-    { key: "access_token", label: "Access Token", placeholder: "EAAG…" },
+    { key: "access_token", label: "Page Access Token", placeholder: "EAAG…", hint: "Token Page dengan izin pages_messaging, pages_manage_metadata, pages_manage_engagement." },
   ],
   wa_unofficial: [],
 };
 
 export default function ConnectChannelPage() {
-  const router = useRouter();
-  const [type, setType] = useState<ChannelType>("wa_official");
-  // WA Official: Embedded Signup (disarankan) atau input manual ID + token.
+  return (
+    <Suspense>
+      <ConnectChannel />
+    </Suspense>
+  );
+}
+
+function ConnectChannel() {
+  const params = useSearchParams();
+  const [type, setType] = useState<ChannelType>(() => {
+    const t = params.get("type");
+    return TYPES.some((x) => x.value === t) ? (t as ChannelType) : "wa_official";
+  });
+  // WA Official / Facebook / Instagram: login Meta (disarankan) atau input manual ID + token.
   const [waMode, setWaMode] = useState<"embedded" | "manual">("embedded");
+  const isMeta = type === "facebook" || type === "instagram";
+
+  // Errors from the Facebook login callback arrive as ?error=… — show them once.
+  const oauthError = params.get("error");
+  useEffect(() => {
+    if (oauthError) gooeyToast.error(oauthError === "forbidden" ? "Anda tidak punya akses menghubungkan channel" : oauthError);
+  }, [oauthError]);
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
@@ -137,7 +157,7 @@ export default function ConnectChannelPage() {
       } catch (e) {
         unstable_rethrow(e);
         gooeyToast.error(
-          e instanceof Error ? e.message : "Gagal menghubungkan channel",
+          errorMessage(e) ?? "Gagal menghubungkan channel",
         );
       }
     });
@@ -147,7 +167,7 @@ export default function ConnectChannelPage() {
   const selectedType = TYPES.find((t) => t.value === type);
 
   const inputCls =
-    "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+    "h-11 w-full pl-10 pr-3 text-sm";
 
   return (
     <div className="p-6">
@@ -178,10 +198,6 @@ export default function ConnectChannelPage() {
                 <button
                   key={t.value}
                   onClick={() => {
-                    if (t.value === "instagram" || t.value === "facebook") {
-                      router.push("/automation");
-                      return;
-                    }
                     setType(t.value);
                     setCreds({});
                   }}
@@ -238,7 +254,7 @@ export default function ConnectChannelPage() {
 
         {/* Credential form */}
         <div className="lg:sticky lg:top-6 lg:self-start">
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="overflow-hidden rounded-[20px] bg-card">
             {/* Header bertema warna channel */}
             <div
               className="flex items-center gap-3 border-b border-border px-5 py-4"
@@ -260,7 +276,7 @@ export default function ConnectChannelPage() {
               </div>
             </div>
 
-            {type === "wa_official" && (
+            {(type === "wa_official" || isMeta) && (
               <div className="flex gap-2 px-5 pt-5">
                 {(["embedded", "manual"] as const).map((m) => (
                   <button
@@ -274,7 +290,7 @@ export default function ConnectChannelPage() {
                         : "border-border text-muted-foreground hover:bg-muted/50",
                     )}
                   >
-                    {m === "embedded" ? "Login Meta" : "Input Manual"}
+                    {m === "embedded" ? (isMeta ? "Login Facebook" : "Login Meta") : "Input Manual"}
                   </button>
                 ))}
               </div>
@@ -284,6 +300,25 @@ export default function ConnectChannelPage() {
               <div className="p-5">
                 <WaEmbeddedSignup />
               </div>
+            ) : isMeta && waMode === "embedded" ? (
+              <div className="space-y-4 p-5">
+                <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+                  <li>Klik tombol di bawah lalu login dengan akun Facebook pengelola Page.</li>
+                  <li>Izinkan akses yang diminta (pesan{type === "instagram" ? ", Instagram" : ""}, dan komentar).</li>
+                  <li>Pilih {type === "instagram" ? "Page yang tertaut ke akun Instagram Anda" : "Page"} — channel langsung aktif.</li>
+                </ol>
+                {type === "instagram" && (
+                  <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                    Akun Instagram harus <b>Professional</b> (Bisnis/Kreator) dan sudah ditautkan ke Facebook Page.
+                  </p>
+                )}
+                <a
+                  href={`/api/channels/facebook/oauth/start?platform=${type}`}
+                  className={cn(buttonVariants({ size: "lg" }), "w-full")}
+                >
+                  <ChannelIcon type="facebook" className="size-4" /> Login dengan Facebook
+                </a>
+              </div>
             ) : (
             <div className="space-y-4 p-5">
               <div>
@@ -292,7 +327,7 @@ export default function ConnectChannelPage() {
                 </label>
                 <div className="relative">
                   <Plug className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
+                  <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="mis. WA Toko Utama"
@@ -308,7 +343,7 @@ export default function ConnectChannelPage() {
                     </label>
                     <div className="relative">
                       <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <input
+                      <Input
                         value={creds[f.key] ?? ""}
                         onChange={(e) =>
                           setCreds((c) => ({ ...c, [f.key]: e.target.value }))

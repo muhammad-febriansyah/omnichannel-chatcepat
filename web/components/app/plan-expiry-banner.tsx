@@ -7,14 +7,17 @@ export function PlanExpiryBanner({
   expiresAt,
   expired,
   now,
+  trial = false,
 }: {
   expiresAt: string | null;
   expired: boolean;
   now: number;
+  trial?: boolean;
 }) {
   if (!expiresAt) return null;
   const daysLeft = Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000);
-  if (!expired && daysLeft > 7) return null;
+  // Trial: always show the countdown. Paid: from 7 days before expiry.
+  if (!expired && !trial && daysLeft > 7) return null;
 
   return (
     <div
@@ -31,14 +34,18 @@ export function PlanExpiryBanner({
       )}
       <span className="font-medium">
         {expired
-          ? "Langganan berakhir — fitur turun ke paket Basic."
-          : `Langganan habis dalam ${daysLeft} hari.`}
+          ? trial
+            ? "Masa trial Pro berakhir — fitur turun ke paket Basic."
+            : "Langganan berakhir — fitur turun ke paket Basic."
+          : trial
+            ? `Trial Pro gratis — tersisa ${daysLeft} hari. Semua fitur Pro aktif.`
+            : `Langganan habis dalam ${daysLeft} hari.`}
       </span>
       <Link
         href="/billing"
         className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:no-underline"
       >
-        Perpanjang sekarang <ArrowRight className="size-3.5" />
+        {trial ? "Pilih paket" : "Perpanjang sekarang"} <ArrowRight className="size-3.5" />
       </Link>
     </div>
   );

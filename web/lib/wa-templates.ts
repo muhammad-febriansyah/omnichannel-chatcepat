@@ -1,4 +1,5 @@
 import "server-only";
+import { errorMessage, userError } from "@/lib/action-error";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { channels } from "./db/schema";
@@ -141,7 +142,7 @@ export async function listWaTemplates(
   const errors: string[] = [];
   results.forEach((r, i) => {
     if (r.status === "fulfilled") templates.push(...r.value);
-    else errors.push(`${chans[i].name}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+    else errors.push(`${chans[i].name}: ${errorMessage(r.reason) ?? String(r.reason)}`);
   });
   const status = opts?.status?.toUpperCase();
   return {
@@ -176,7 +177,7 @@ export async function createWaTemplateOnMeta(
   if (h?.format === "TEXT" && h.text?.trim()) {
     components.push({ type: "HEADER", format: "TEXT", text: h.text.trim() });
   } else if (h && ["IMAGE", "VIDEO", "DOCUMENT"].includes(h.format)) {
-    if (!h.handle) throw new Error("Contoh media header wajib diunggah");
+    if (!h.handle) throw userError("Contoh media header wajib diunggah");
     components.push({ type: "HEADER", format: h.format, example: { header_handle: [h.handle] } });
   }
   components.push(bodyComponent);
@@ -214,7 +215,7 @@ export async function createWaTemplateOnMeta(
 // submitting an IMAGE/VIDEO/DOCUMENT header template for review.
 export async function uploadTemplateSample(token: string, file: File): Promise<string> {
   const appId = process.env.META_APP_ID || process.env.FB_APP_ID;
-  if (!appId) throw new Error("META_APP_ID belum di-set");
+  if (!appId) throw userError("META_APP_ID belum di-set");
   const start = new URL(`${GRAPH}/${appId}/uploads`);
   start.searchParams.set("file_name", file.name || "header");
   start.searchParams.set("file_length", String(file.size));
@@ -222,7 +223,7 @@ export async function uploadTemplateSample(token: string, file: File): Promise<s
   const s1 = await fetch(start, { method: "POST", headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!s1.ok) await graphError(s1);
   const { id } = (await s1.json()) as { id?: string };
-  if (!id) throw new Error("Upload ke Meta gagal dimulai");
+  if (!id) throw userError("Upload ke Meta gagal dimulai");
   const s2 = await fetch(`${GRAPH}/${id}`, {
     method: "POST",
     headers: { Authorization: `OAuth ${token}`, file_offset: "0" },
@@ -231,6 +232,6 @@ export async function uploadTemplateSample(token: string, file: File): Promise<s
   });
   if (!s2.ok) await graphError(s2);
   const { h } = (await s2.json()) as { h?: string };
-  if (!h) throw new Error("Meta tidak mengembalikan handle media");
+  if (!h) throw userError("Meta tidak mengembalikan handle media");
   return h;
 }

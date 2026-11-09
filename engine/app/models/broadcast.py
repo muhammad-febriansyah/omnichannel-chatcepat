@@ -48,6 +48,12 @@ class Broadcast(UUIDPkMixin, TimestampMixin, Base):
     stats: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
     )
+    # Broadcast started by a flow (trigger "broadcast"): the flow + the step it sent.
+    # Replies / button taps continue the flow from that step.
+    flow_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("flows.id", ondelete="SET NULL")
+    )
+    flow_node_id: Mapped[str | None] = mapped_column(sa.Text)
 
     recipients: Mapped[list["BroadcastRecipient"]] = relationship(
         back_populates="broadcast", cascade="all, delete-orphan"

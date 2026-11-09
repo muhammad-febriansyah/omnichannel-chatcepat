@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
@@ -119,9 +121,16 @@ async def broadcasts_run(
     return {"data": result}
 
 
+class ReplyMediaIn(BaseModel):
+    url: str  # /uploads/<tenant>/chat/<file> (web upload)
+    mime: str
+    filename: str | None = None
+
+
 class ReplyIn(BaseModel):
-    body: str
+    body: str = ""
     agent_id: uuid.UUID | None = None
+    media: ReplyMediaIn | None = None
 
 
 @router.post("/conversations/{conversation_id}/reply")
@@ -135,11 +144,15 @@ async def conversation_reply(
     """Agen balas percakapan (takeover + kirim). Butuh conversation.takeover."""
     _auth(x_service_token)
     _require(x_actor_role, "conversation.takeover")
-    if not payload.body.strip():
+    if not payload.body.strip() and payload.media is None:
         raise HTTPException(status_code=422, detail="pesan kosong")
     try:
         result = await send_agent_reply(
-            conversation_id, payload.body.strip(), payload.agent_id, _tenant(x_tenant_id)
+            conversation_id,
+            payload.body.strip(),
+            payload.agent_id,
+            _tenant(x_tenant_id),
+            media=payload.media.model_dump() if payload.media else None,
         )
     except ServiceWindowClosed as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
@@ -322,11 +335,13 @@ async def knowledge_delete(
     return {"data": {"deleted": str(document_id)}}
 
 
-# --- AI agent preview (06) ---
+# --- AI agent simulator (06) ---
 class PreviewIn(BaseModel):
     tenant_id: uuid.UUID
     message: str
-    persona: str | None = None
+    persona: str | None = None  # legacy single-persona preview
+    agent: dict | None = None  # unsaved agent form values (AgentSpec fields)
+    tones: list[str] | None = None  # answer once per tone to compare styles
 
 
 @router.post("/ai-agent/preview")
@@ -335,38 +350,60 @@ async def ai_preview(
     x_service_token: str | None = Header(default=None),
     x_actor_role: str | None = Header(default=None),
 ) -> dict:
-    """Uji jawaban AI agent (RAG + LLM). Butuh knowledge.manage."""
+    """Try an agent (style + knowledge + promos) without saving. Needs knowledge.manage."""
     _auth(x_service_token)
     _require(x_actor_role, "knowledge.manage")
-    from ..ai import rag
-    from ..ai.agent import DEFAULT_PERSONA
-    from ..ai.llm import get_provider
+    from dataclasses import replace
+
+    from ..ai import registry
+    from ..ai.agent import build_system_prompt
+    from ..ai.llm import run_chat
+    from ..ai.styles import TONE_GUIDE, AgentSpec
     from ..db import AsyncSessionLocal
+    from ..repositories import ai_billing
 
-    provider = get_provider()
-    if provider is None:
-        return {"data": {"enabled": False, "answer": None}}
+    message = payload.message.strip()[:1000]
+    if not message:
+        raise HTTPException(status_code=400, detail="pesan kosong")
+    spec = AgentSpec.from_dict(payload.agent) if payload.agent else AgentSpec(role="sales", instructions=payload.persona)
+    tones = [t for t in (payload.tones or []) if t in TONE_GUIDE][:4] or [spec.tone]
 
-    kb = ""
-    try:
-        vec = await provider.embed(payload.message)
-        async with AsyncSessionLocal() as session:
-            chunks = await rag.retrieve(session, payload.tenant_id, vec, 5)
-        kb = "\n\n".join(c.content for c in chunks)
-    except NotImplementedError:
-        pass
-
-    system = payload.persona or DEFAULT_PERSONA
-    if kb:
-        system += f"\n\nPengetahuan (jawab hanya dari sini):\n{kb}"
-    answer = await provider.complete(system, payload.message)
-    return {"data": {"enabled": True, "answer": answer, "kb_used": bool(kb)}}
+    async with AsyncSessionLocal() as session, session.begin():
+        model = await registry.resolve(session, "simulator")
+        if model is None:
+            return {"data": {"enabled": False, "answer": None, "answers": []}}
+        if await ai_billing.remaining(session, payload.tenant_id) <= 0:
+            return {"data": {"enabled": True, "quota_exceeded": True, "answer": None, "answers": []}}
+        # Prompts need the DB (sequential); the LLM calls run in parallel; then charge.
+        prompts = []
+        for tone in tones:
+            prompts.append(await build_system_prompt(session, payload.tenant_id, replace(spec, tone=tone), message))
+        results = await asyncio.gather(*(run_chat(model.provider, system, message) for system, _ in prompts))
+        for r in results:
+            await ai_billing.charge(
+                session,
+                payload.tenant_id,
+                feature="simulator",
+                model=model.model,
+                input_tokens=r.input_tokens,
+                output_tokens=r.output_tokens,
+                input_mult=model.input_mult,
+                output_mult=model.output_mult,
+            )
+    replies = [r.text for r in results]
+    kb_used = any(used for _, used in prompts)
+    answers = [{"tone": t, "answer": (r or "").strip()} for t, r in zip(tones, replies)]
+    return {
+        "data": {"enabled": True, "answer": answers[0]["answer"], "answers": answers, "kb_used": kb_used}
+    }
 
 
 @router.get("/ai-agent/status")
 async def ai_status(x_service_token: str | None = Header(default=None)) -> dict:
     """Status AI: apakah LLM provider terkonfigurasi (env engine). Untuk indikator UI."""
     _auth(x_service_token)
-    from ..ai.llm import get_provider
+    from ..ai import registry
+    from ..db import AsyncSessionLocal
 
-    return {"data": {"enabled": get_provider() is not None}}
+    async with AsyncSessionLocal() as session:
+        return {"data": {"enabled": await registry.resolve(session, "flow_reply") is not None}}

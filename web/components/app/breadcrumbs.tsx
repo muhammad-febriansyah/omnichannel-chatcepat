@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 // Label per segment route. Segmen tak dikenal: id (uuid/angka) → "Detail", lainnya Title Case.
 const LABELS: Record<string, string> = {
@@ -11,7 +11,7 @@ const LABELS: Record<string, string> = {
   contacts: "Kontak",
   broadcasts: "Broadcast",
   templates: "Template Pesan",
-  flows: "Otomasi",
+  flows: "Automation",
   "ai-agent": "AI Agent",
   reports: "Laporan",
   channels: "Channel",
@@ -27,6 +27,20 @@ const LABELS: Record<string, string> = {
   pair: "Pairing",
   import: "Impor",
   acquire: "Akuisisi",
+  admin: "Konsol",
+  agents: "Agent",
+  promos: "Promo",
+  activity: "Aktivitas",
+  analytics: "Analitik",
+  transactions: "Transaksi",
+  plans: "Paket",
+  ai: "AI & Token",
+  tenants: "Tenant",
+  products: "Produk",
+  billing: "Tagihan & Paket",
+  automation: "Otomasi Sosial",
+  checkout: "Checkout",
+  profile: "Profil",
 };
 
 function labelFor(seg: string): string {
@@ -35,10 +49,14 @@ function labelFor(seg: string): string {
   return seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " ");
 }
 
-export function Breadcrumbs() {
+// Rendered inside the scrolling content, right above the page title (admin panel
+// pattern): negative bottom margin cancels most of the page's own top padding.
+export function Breadcrumbs({ rootLabel = "ChatCepat" }: { rootLabel?: string }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) return null;
+  // Full-bleed workspaces (chat panes, flow canvas) have their own header.
+  if (segments[0] === "inbox" || (segments[0] === "flows" && segments.length > 1)) return null;
 
   const crumbs = segments.map((seg, i) => ({
     label: labelFor(seg),
@@ -49,18 +67,14 @@ export function Breadcrumbs() {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-6 py-2.5 text-[13px]"
+      className="-mb-4 flex flex-wrap items-center gap-1.5 px-6 pt-6 text-[12px]"
     >
-      <Link
-        href="/dashboard"
-        className="flex items-center text-muted-foreground transition-colors hover:text-foreground"
-        aria-label="Beranda"
-      >
-        <Home className="size-3.5" />
+      <Link href="/dashboard" className="text-muted-foreground/80 transition-colors hover:text-foreground">
+        {rootLabel}
       </Link>
       {crumbs.map((c) => (
         <span key={c.href} className="flex items-center gap-1.5">
-          <ChevronRight className="size-3.5 text-muted-foreground/40" />
+          <ChevronRight className="size-3 text-muted-foreground/50" />
           {c.last ? (
             <span className="font-medium text-foreground">{c.label}</span>
           ) : (

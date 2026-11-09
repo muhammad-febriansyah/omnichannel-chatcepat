@@ -24,6 +24,7 @@ from .order import Order
 from .product import Product
 from .social import SocialAccount, SocialActivityLog, SocialJob
 from .email_notification import EmailNotification
+from .ai_agent import AiAgent, AiAgentKnowledge, Promo
 
 __all__ = [
     "Base",
@@ -49,4 +50,7 @@ __all__ = [
     "SocialJob",
     "SocialActivityLog",
     "EmailNotification",
+    "AiAgent",
+    "AiAgentKnowledge",
+    "Promo",
 ]

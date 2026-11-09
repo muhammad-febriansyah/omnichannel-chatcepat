@@ -31,6 +31,34 @@ def _trigger_node(flow: Flow) -> dict | None:
     return None
 
 
+def _channel_ok(flow: Flow, channel_id: uuid.UUID | None) -> bool:
+    """Trigger limited to some accounts (trigger.channels) → only those channels."""
+    node = _trigger_node(flow) or {}
+    allowed = [str(c) for c in (node.get("trigger", {}).get("channels") or [])]
+    return not allowed or channel_id is None or str(channel_id) in allowed
+
+
+def _match_comment(active: list[Flow], text: str, post_id: str) -> Flow | None:
+    """Comment flows: keyword filter (empty = every comment) + optional post filter.
+    A flow with keywords wins over a catch-all one."""
+    catch_all: Flow | None = None
+    for flow in active:
+        node = _trigger_node(flow) or {}
+        trig = node.get("trigger", {})
+        if (trig.get("kind") or flow.trigger) != "comment":
+            continue
+        posts = [str(p).strip() for p in trig.get("posts") or [] if str(p).strip()]
+        # FB post ids are "<page>_<post>"; accept either form.
+        if posts and not any(post_id == p or post_id.endswith("_" + p) for p in posts):
+            continue
+        words = [w.lower() for w in trig.get("match", []) if str(w).strip()]
+        if not words:
+            catch_all = catch_all or flow
+        elif any(w in text for w in words):
+            return flow
+    return catch_all
+
+
 async def match_trigger(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -38,14 +66,21 @@ async def match_trigger(
     is_first: bool,
     preferred_flow_id: uuid.UUID | None = None,
     button_text: str | None = None,
+    channel_id: uuid.UUID | None = None,
+    comment_post_id: str | None = None,
 ) -> Flow | None:
     """Cari flow aktif yang trigger-nya cocok. Urutan: klik tombol (label persis) →
-    keyword (substring) → welcome (pesan pertama) → fallback."""
+    keyword (substring) → welcome (pesan pertama) → fallback.
+
+    Komentar postingan (comment_post_id diisi) hanya cocok ke pemicu "comment".
+    Pemicu dengan daftar `channels` hanya berlaku untuk akun/channel itu."""
     text = (body or "").lower()
     clicked = " ".join((button_text or "").casefold().split())
     welcome: Flow | None = None
     fallback: Flow | None = None
-    active = await list_active(session, tenant_id)
+    active = [f for f in await list_active(session, tenant_id) if _channel_ok(f, channel_id)]
+    if comment_post_id is not None:
+        return _match_comment(active, text, comment_post_id)
     if preferred_flow_id is not None:
         preferred = next((f for f in active if f.id == preferred_flow_id), None)
         if preferred is not None:

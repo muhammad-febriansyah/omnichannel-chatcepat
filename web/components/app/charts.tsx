@@ -147,13 +147,16 @@ export function Sparkline({
 
 /* Bar chart: message volume per channel */
 export function ChannelVolumeChart({ data }: { data: { ch: ChannelKey; value: number }[] }) {
-  const max = Math.max(...data.map((d) => d.value));
+  const max = Math.max(1, ...data.map((d) => d.value));
   const yTicks = 5;
-  const step = Math.ceil(max / yTicks / 500) * 500;
-  const yMax = step * yTicks || 1;
+  // "Nice" step (1, 2, 5 × 10^k) so 9 messages don't get a 0–2.500 axis.
+  const raw = max / yTicks;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * mag).find((x) => x >= raw) ?? 10 * mag);
+  const yMax = step * yTicks;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 sm:px-6">
+    <div className="rounded-[20px] bg-card p-5 sm:px-6">
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h3 className="text-base font-semibold tracking-tight text-foreground">Volume Pesan per Channel</h3>
@@ -218,7 +221,7 @@ export function ChannelDonut({ data }: { data: { ch: ChannelKey; value: number }
     return { ...d, len, offset };
   });
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 sm:px-6">
+    <div className="rounded-[20px] bg-card p-5 sm:px-6">
       <div className="mb-4">
         <h3 className="text-base font-semibold tracking-tight text-foreground">Distribusi Channel</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">Total {cleanIDR(total)} pesan</p>

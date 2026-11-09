@@ -1,13 +1,14 @@
 import { and, eq, sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Send, CheckCheck, XCircle, ShieldOff, Clock, MousePointerClick, Tag } from "lucide-react";
+import { ArrowLeft, Send, CheckCheck, XCircle, ShieldOff, Clock, MousePointerClick, Tag, Workflow, AlertTriangle } from "lucide-react";
 import { db } from "@/lib/db";
-import { broadcasts, channels } from "@/lib/db/schema";
+import { broadcasts, channels, flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
-import { cleanIDR, CHANNEL_META, timeAgo, type ChannelType } from "@/lib/format";
+import { cleanIDR, CHANNEL_META, type ChannelType } from "@/lib/format";
 import { ActionLink } from "@/components/app/action-link";
 import { StatusPill } from "@/components/app/status-pill";
 import { SectionCard } from "@/components/app/section-card";
+import { BroadcastClicksTable } from "@/components/app/broadcast-clicks-table";
 
 const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "red" | "slate"> = {
   draft: "slate",
@@ -15,6 +16,7 @@ const STATUS_TONE: Record<string, "blue" | "amber" | "emerald" | "red" | "slate"
   running: "amber",
   done: "emerald",
   failed: "red",
+  cancelled: "slate",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -23,6 +25,7 @@ const STATUS_LABEL: Record<string, string> = {
   running: "Berjalan",
   done: "Selesai",
   failed: "Gagal",
+  cancelled: "Dibatalkan",
 };
 
 function fmtDateTime(iso: string | null) {
@@ -89,13 +92,17 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
   });
   if (!b) notFound();
 
-  const [channel, counts, clicks] = await Promise.all([
+  const [channel, counts, clicks, flow] = await Promise.all([
     db.query.channels.findFirst({
       where: and(eq(channels.id, b.channelId), eq(channels.tenantId, session.tenantId)),
     }),
     recipientCounts(session.tenantId, id),
     buttonClicks(session.tenantId, id),
+    b.flowId
+      ? db.query.flows.findFirst({ where: and(eq(flows.id, b.flowId), eq(flows.tenantId, session.tenantId)), columns: { id: true, name: true } })
+      : Promise.resolve(undefined),
   ]);
+  const error = (b.stats as { error?: unknown } | null)?.error;
   // Tombol dari snapshot template, supaya tombol yang belum diklik tetap tampil (0).
   const snapButtons = ((b.templateParams as { buttons?: { text?: string }[] })?.buttons ?? [])
     .map((x) => x.text ?? "")
@@ -113,7 +120,7 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
   const chMeta = channel ? CHANNEL_META[channel.type as ChannelType] : null;
 
   const cards = [
-    { label: "Total Penerima", value: total, icon: Send, tone: "#3b82f6" },
+    { label: "Total Penerima", value: total, icon: Send, tone: "#2547f9" },
     { label: "Terkirim", value: sent, icon: Send, tone: "#10b981" },
     { label: "Delivered", value: delivered, icon: CheckCheck, tone: "#0ea5e9" },
     { label: "Gagal", value: failed, icon: XCircle, tone: "#ef4444" },
@@ -123,8 +130,8 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
 
   return (
     <div className="p-6">
-      <ActionLink href="/broadcasts" variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
-        <ArrowLeft className="size-4" /> Kembali ke Broadcast
+      <ActionLink href="/flows?tab=broadcast" variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
+        <ArrowLeft className="size-4" /> Kembali ke Riwayat Broadcast
       </ActionLink>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -137,16 +144,26 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {chMeta ? `${chMeta.label} · ` : ""}
-            {b.status === "scheduled" ? `Dijadwalkan ${fmtDateTime(b.scheduledAt)}` : `Dibuat ${fmtDateTime(b.createdAt)}`}
+            {b.scheduledAt ? `${b.status === "scheduled" ? "Dijadwalkan" : "Jadwal"} ${fmtDateTime(b.scheduledAt)} WIB` : `Dibuat ${fmtDateTime(b.createdAt)}`}
           </p>
+          {typeof error === "string" && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300">
+              <AlertTriangle className="size-3.5" /> {error}
+            </p>
+          )}
         </div>
+        {flow && (
+          <ActionLink href={`/flows/${flow.id}`} variant="outline">
+            <Workflow className="size-4" /> Buka flow {flow.name}
+          </ActionLink>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.label} className="rounded-xl border border-border bg-card p-4">
+            <div key={c.label} className="rounded-[20px] bg-card p-4">
               <span className="flex size-9 items-center justify-center rounded-lg" style={{ background: `${c.tone}1a`, color: c.tone }}>
                 <Icon className="size-[18px]" />
               </span>
@@ -208,32 +225,8 @@ export default async function BroadcastDetailPage({ params }: { params: Promise<
           </div>
 
           {clicks.recent.length > 0 && (
-            <div className="mt-6 overflow-hidden rounded-xl border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Kontak</th>
-                    <th className="px-3 py-2 font-medium">Tombol</th>
-                    <th className="px-3 py-2 text-right font-medium">Waktu</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clicks.recent.map((c, i) => (
-                    <tr key={i} className="border-t border-border">
-                      <td className="px-3 py-2">
-                        <div className="font-medium">{c.name || "Tanpa nama"}</div>
-                        <div className="text-xs text-muted-foreground">{c.phone ?? ""}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
-                          {c.button}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs text-muted-foreground">{timeAgo(c.at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-6">
+              <BroadcastClicksTable rows={clicks.recent.map((c) => ({ ...c, at: String(c.at) }))} />
             </div>
           )}
           <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">

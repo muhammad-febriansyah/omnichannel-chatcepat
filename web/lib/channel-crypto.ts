@@ -1,3 +1,4 @@
+import { userError } from "@/lib/action-error";
 // Enkripsi at-rest kredensial channel (AES-256-GCM). Per-value, ditandai prefix
 // `enc:v1:`. Value plaintext (legacy / dev tanpa key) dibiarkan → migrasi mulus:
 // value lama ke-enkripsi otomatis saat channel di-save ulang.
@@ -12,12 +13,12 @@ function key(): Buffer | null {
   const raw = process.env.CHANNEL_CRED_KEY;
   if (!raw) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("CHANNEL_CRED_KEY wajib di-set (base64 32-byte) di production");
+      throw userError("CHANNEL_CRED_KEY wajib di-set (base64 32-byte) di production");
     }
     return null; // dev: plaintext passthrough
   }
   const k = Buffer.from(raw, "base64");
-  if (k.length !== 32) throw new Error("CHANNEL_CRED_KEY harus 32 byte (base64)");
+  if (k.length !== 32) throw userError("CHANNEL_CRED_KEY harus 32 byte (base64)");
   return k;
 }
 

@@ -1,3 +1,4 @@
+import { userError } from "@/lib/action-error";
 // Facebook/Instagram OAuth + Graph API helper (server-only).
 // Flow: user klik "Login dengan Facebook" → dialog OAuth Meta → callback tukar code
 // jadi user token long-lived → list Page (beserta Page Access Token) → user pilih Page →
@@ -17,15 +18,20 @@ export const FB_OAUTH_COOKIE = "cc_fb_oauth";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 // Webhook field yang di-subscribe per Page. Sinkron dgn yang di-handle gateway
-// (handleMessenger) + dashboard Meta. messages = pesan masuk (wajib).
-const SUBSCRIBED_FIELDS = "messages,messaging_postbacks,message_deliveries,message_reads";
+// (handleMessenger) + dashboard Meta. messages = pesan masuk (wajib); feed = komentar
+// postingan Page (pemicu "Komentar" di Automation). Komentar Instagram diatur di
+// App Dashboard → Webhooks → Instagram → field "comments".
+const SUBSCRIBED_FIELDS = "messages,messaging_postbacks,message_deliveries,message_reads,feed";
 
 // Scope OAuth minimal per platform. pages_show_list + pages_messaging wajib;
 // pages_manage_metadata untuk subscribe webhook; pages_read_engagement untuk profil.
+// Balas komentar: pages_read_user_content + pages_manage_engagement (FB),
+// instagram_manage_comments (IG).
 const SCOPES: Record<"facebook" | "instagram", string> = {
-  facebook: "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement",
+  facebook:
+    "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_read_user_content,pages_manage_engagement",
   instagram:
-    "pages_show_list,pages_manage_metadata,instagram_basic,instagram_manage_messages,pages_messaging",
+    "pages_show_list,pages_manage_metadata,pages_read_engagement,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_messaging",
 };
 
 export type MetaPlatform = "facebook" | "instagram";
@@ -39,13 +45,13 @@ export interface FbPage {
 
 function appId(): string {
   const v = process.env.FB_APP_ID || process.env.META_APP_ID;
-  if (!v) throw new Error("FB_APP_ID belum di-set");
+  if (!v) throw userError("FB_APP_ID belum di-set");
   return v;
 }
 
 function appSecret(): string {
   const v = process.env.FB_APP_SECRET || process.env.META_APP_SECRET;
-  if (!v) throw new Error("FB_APP_SECRET belum di-set");
+  if (!v) throw userError("FB_APP_SECRET belum di-set");
   return v;
 }
 
@@ -68,7 +74,7 @@ export function appUrl(path: string): string {
 function stateSecret(): Uint8Array {
   const s = process.env.NEXTAUTH_SECRET;
   if (!s) {
-    if (process.env.NODE_ENV === "production") throw new Error("NEXTAUTH_SECRET wajib di production");
+    if (process.env.NODE_ENV === "production") throw userError("NEXTAUTH_SECRET wajib di production");
     return new TextEncoder().encode("dev-secret-change-me-in-production");
   }
   return new TextEncoder().encode(s);
@@ -145,7 +151,7 @@ async function graphError(res: Response): Promise<never> {
   } catch {
     /* non-JSON */
   }
-  throw new Error(`Graph API: ${msg}`);
+  throw userError(`Graph API: ${msg}`);
 }
 
 // Tukar code → token user short-lived → long-lived (page token turunannya jadi non-expiring).
@@ -191,6 +197,18 @@ export async function listPages(userToken: string): Promise<FbPage[]> {
 
 // IG Business Account ID yang ter-link ke Page (null kalau Page tak punya IG Professional).
 // Dipakai sbg external_id channel instagram — resolver gateway match pakai id ini.
+// Validate a Page access token and read the Page's name (manual connect).
+export async function getPageInfo(pageId: string, pageToken: string): Promise<{ id: string; name: string }> {
+  const url = new URL(`${GRAPH}/${encodeURIComponent(pageId)}`);
+  url.searchParams.set("fields", "id,name");
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) await graphError(res);
+  const j = (await res.json()) as { id?: string; name?: string };
+  if (!j.id) throw userError("Page tidak ditemukan untuk token ini");
+  return { id: j.id, name: j.name ?? "" };
+}
+
 export async function getInstagramAccount(pageId: string, pageToken: string): Promise<string | null> {
   const url = new URL(`${GRAPH}/${pageId}`);
   url.searchParams.set("fields", "instagram_business_account{id}");

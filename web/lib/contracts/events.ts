@@ -43,6 +43,7 @@ export interface InboundMessage {
    * provider_message_id pesan yang dibalas / tombolnya diklik
    */
   reply_to?: string | null;
+  comment?: SocialComment;
   provider_message_id: string;
   timestamp: string;
   [k: string]: unknown;
@@ -57,6 +58,18 @@ export interface Media {
   url: string;
   mime: string;
   filename?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * Diisi bila inbound adalah komentar postingan FB/IG (bukan DM)
+ */
+export interface SocialComment {
+  comment_id: string;
+  post_id: string;
+  /**
+   * Diisi bila balasan atas komentar lain
+   */
+  parent_id?: string | null;
   [k: string]: unknown;
 }
 /**
@@ -93,6 +106,14 @@ export interface OutboundCommand {
       }[]
     | null;
   conversation_id: string;
+  /**
+   * Balas komentar FB/IG ini (reply_mode wajib)
+   */
+  comment_id?: string;
+  /**
+   * comment_reply = balas publik di komentar; private_reply = DM ke pemberi komentar
+   */
+  reply_mode?: "comment_reply" | "private_reply";
   [k: string]: unknown;
 }
 /**

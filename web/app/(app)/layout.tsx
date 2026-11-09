@@ -35,8 +35,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       logoUrl={logoUrl}
       siteName={siteName}
       tenants={tenants}
+      banner={
+        <PlanExpiryBanner expiresAt={session.planExpiresAt} expired={session.planExpired} now={session.evaluatedAt} trial={session.planTrial} />
+      }
     >
-      <PlanExpiryBanner expiresAt={session.planExpiresAt} expired={session.planExpired} now={session.evaluatedAt} />
       {children}
     </AppShell>
   );

@@ -33,7 +33,7 @@ export default async function CheckoutReturnPage({
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center">
+      <div className="w-full max-w-md rounded-[20px] bg-card p-8 text-center">
         <Icon className={`mx-auto size-14 ${meta.tone}`} />
         <h1 className="mt-4 text-xl font-bold text-foreground">{meta.title}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{meta.desc}</p>

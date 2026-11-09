@@ -1,5 +1,6 @@
 "use server";
 
+import { errorMessage, userError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -10,19 +11,23 @@ import { db } from "./db";
 import { broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import {
-  assertBroadcastQuota,
   assertCanAddAgent,
   assertCanAddChannel,
   assertCanAddKb,
+  assertFlowNodesAllowed,
+  hasFeature,
   requireFeature,
 } from "./entitlements";
 import { requireSession, type Session } from "./session";
+import { findTemplate } from "./flow-templates";
+import { CHAT_MIME } from "./chat-attachments";
 import { normalizePhone } from "./phone";
-import { registerTelegramWebhook, deleteTelegramWebhook } from "./telegram";
+import { registerTelegramWebhook, deleteTelegramWebhook, getTelegramBot } from "./telegram";
 import { encryptCreds, decryptCreds } from "./channel-crypto";
-import { createWaTemplateOnMeta, listWaChannelCreds, listWaTemplates, uploadTemplateSample, type CreateWaTemplateInput } from "./wa-templates";
+import { createWaTemplateOnMeta, listWaChannelCreds, uploadTemplateSample, type CreateWaTemplateInput } from "./wa-templates";
 import { getConversation } from "./queries";
-import { compileGraph, starterGraph, validateRuntimeNodes } from "./flow-graph";
+import { compileGraph, starterGraph, validateRuntimeNodes, type RuntimeNode } from "./flow-graph";
+import { applyFlowBroadcast, prepareFlowBroadcast, type FlowBroadcastInfo, type FlowBroadcastResult } from "./flow-broadcast";
 import { ACTING_TENANT_COOKIE, COOKIE_MAX_AGE, IMPERSONATE_COOKIE, SESSION_COOKIE, signSession, authCookieOptions, authCookieDelete } from "./auth";
 import { normalizeBusinessHours, type BusinessHours } from "./business-hours";
 import { normalizeWebSettings, type WebSettings } from "./web-settings";
@@ -31,6 +36,7 @@ import { writeAudit } from "./audit";
 import {
   FB_OAUTH_COOKIE,
   getInstagramAccount,
+  getPageInfo,
   listPages,
   subscribePageToApp,
   unsubscribePageFromApp,
@@ -126,19 +132,19 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true; r
       cache: "no-store",
       signal: AbortSignal.timeout(25_000),
     });
-    if (!response.ok) throw new Error("email unavailable");
+    if (!response.ok) throw userError("email unavailable");
   } catch {
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
-    throw new Error("Layanan email reset belum tersedia. Coba lagi nanti.");
+    throw userError("Layanan email reset belum tersedia. Coba lagi nanti.");
   }
   return { ok: true };
 }
 
 export async function resetPassword(token: string, password: string): Promise<{ ok: true }> {
   if (!token || token.length !== 64 || !/^[a-f0-9]+$/i.test(token)) {
-    throw new Error("Link reset password tidak valid atau sudah kedaluwarsa");
+    throw userError("Link reset password tidak valid atau sudah kedaluwarsa");
   }
-  if (!password || password.length < 6) throw new Error("Password minimal 6 karakter");
+  if (!password || password.length < 6) throw userError("Password minimal 6 karakter");
 
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const now = new Date().toISOString();
@@ -148,7 +154,7 @@ export async function resetPassword(token: string, password: string): Promise<{ 
     .where(and(eq(passwordResetTokens.tokenHash, tokenHash), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
     .limit(1);
 
-  if (!validToken) throw new Error("Link reset password tidak valid atau sudah kedaluwarsa");
+  if (!validToken) throw userError("Link reset password tidak valid atau sudah kedaluwarsa");
 
   const passwordHash = await bcrypt.hash(password, 10);
   await db.transaction(async (tx) => {
@@ -156,7 +162,7 @@ export async function resetPassword(token: string, password: string): Promise<{ 
       .set({ usedAt: now })
       .where(and(eq(passwordResetTokens.id, validToken.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
       .returning({ id: passwordResetTokens.id });
-    if (!claimed) throw new Error("Link reset password sudah dipakai atau kedaluwarsa");
+    if (!claimed) throw userError("Link reset password sudah dipakai atau kedaluwarsa");
     await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, validToken.userId));
     await tx.delete(passwordResetTokens).where(and(eq(passwordResetTokens.userId, validToken.userId), isNull(passwordResetTokens.usedAt)));
   });
@@ -164,18 +170,20 @@ export async function resetPassword(token: string, password: string): Promise<{ 
   return { ok: true };
 }
 
+const TRIAL_DAYS = 14;
+
 // Self-signup: bikin tenant baru + user owner (role client), lalu login otomatis.
 export async function register(input: { business: string; name: string; email: string; password: string }) {
   const business = input.business.trim();
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
-  if (!business) throw new Error("Nama bisnis wajib diisi");
-  if (!name) throw new Error("Nama wajib diisi");
-  if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
-  if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
+  if (!business) throw userError("Nama bisnis wajib diisi");
+  if (!name) throw userError("Nama wajib diisi");
+  if (!EMAIL_RE.test(email)) throw userError("Email tidak valid");
+  if (!input.password || input.password.length < 6) throw userError("Password minimal 6 karakter");
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
-  if (existing) throw new Error("Email sudah terdaftar");
+  if (existing) throw userError("Email sudah terdaftar");
 
   // Slug unik dari nama bisnis (fallback "tenant"), tambah sufiks -2, -3, ... bila bentrok.
   const base = business.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "tenant";
@@ -191,15 +199,26 @@ export async function register(input: { business: string; name: string; email: s
   let user: typeof users.$inferSelect;
   try {
     user = await db.transaction(async (tx) => {
-      const [tenant] = await tx.insert(tenants).values({ name: business, slug }).returning();
+      // New signups: 14-day Pro trial, then the session drops them to Basic until they pay.
+      const [tenant] = await tx
+        .insert(tenants)
+        .values({
+          name: business,
+          slug,
+          plan: "pro",
+          planExpiresAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString(),
+          settings: { trial: true },
+        })
+        .returning();
       const [u] = await tx
         .insert(users)
         .values({ tenantId: tenant.id, name, email, passwordHash, role: "client", status: "active" })
         .returning();
       return u;
     });
-  } catch {
-    throw new Error("Gagal mendaftar. Coba lagi.");
+  } catch (e) {
+    console.error("register failed", e);
+    throw userError("Gagal mendaftar. Coba lagi beberapa saat lagi.");
   }
 
   await queueWelcomeEmail({
@@ -248,9 +267,9 @@ export async function listTenants(): Promise<{ id: string; name: string; slug: s
 // Set tenant aktif yang dilihat admin platform (impersonasi). Hanya admin.
 export async function setActingTenant(tenantId: string) {
   const session = await requireSession();
-  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  if (!session.isPlatformAdmin) throw userError("Hanya admin platform");
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
-  if (!t) throw new Error("Tenant tidak ditemukan");
+  if (!t) throw userError("Tenant tidak ditemukan");
   const store = await cookies();
   store.set(ACTING_TENANT_COOKIE, tenantId, authCookieOptions(COOKIE_MAX_AGE));
   revalidatePath("/", "layout");
@@ -260,9 +279,9 @@ export async function setActingTenant(tenantId: string) {
 // Set acting tenant + flag impersonasi, lalu arahkan ke dashboard tenant.
 export async function startImpersonation(tenantId: string) {
   const session = await requireSession();
-  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  if (!session.isPlatformAdmin) throw userError("Hanya admin platform");
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) });
-  if (!t) throw new Error("Tenant tidak ditemukan");
+  if (!t) throw userError("Tenant tidak ditemukan");
   const store = await cookies();
   const opts = authCookieOptions(COOKIE_MAX_AGE);
   store.set(ACTING_TENANT_COOKIE, tenantId, opts);
@@ -281,7 +300,7 @@ export async function startImpersonation(tenantId: string) {
 // Keluar impersonasi: hapus flag, kembali ke konsol platform.
 export async function stopImpersonation() {
   const session = await requireSession();
-  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  if (!session.isPlatformAdmin) throw userError("Hanya admin platform");
   const store = await cookies();
   store.delete(authCookieDelete(IMPERSONATE_COOKIE));
   revalidatePath("/", "layout");
@@ -315,11 +334,11 @@ export async function updateProfile(input: {
 }) {
   const session = await requireSession();
   const name = input.name.trim();
-  if (!name) throw new Error("Nama wajib diisi");
-  if (name.length > 120) throw new Error("Nama maksimal 120 karakter");
+  if (!name) throw userError("Nama wajib diisi");
+  if (name.length > 120) throw userError("Nama maksimal 120 karakter");
 
   const current = await db.query.users.findFirst({ where: eq(users.id, session.id) });
-  if (!current) throw new Error("User tidak ditemukan");
+  if (!current) throw userError("User tidak ditemukan");
 
   const patch: Record<string, unknown> = { name, updatedAt: new Date().toISOString() };
 
@@ -328,7 +347,7 @@ export async function updateProfile(input: {
   if (avatarChanged) patch.avatarUrl = newAvatar;
 
   if (input.password) {
-    if (input.password.length < 6) throw new Error("Password minimal 6 karakter");
+    if (input.password.length < 6) throw userError("Password minimal 6 karakter");
     patch.passwordHash = await bcrypt.hash(input.password, 10);
   }
 
@@ -358,9 +377,9 @@ export async function createChannel(input: {
 }) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (!input.name.trim()) throw new Error("Nama channel wajib");
-  await assertCanAddChannel(session); // lock: batas channel per paket (admin bypass)
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  if (!input.name.trim()) throw userError("Nama channel wajib");
+  await assertCanAddChannel(session, input.type); // lock: batas channel per paket & per jenis (admin bypass)
 
   // WA Official (input manual): validasi token ke Graph, pastikan nomor ter-register,
   // subscribe app ke WABA (tanpa ini webhook tak pernah datang), dan pakai
@@ -370,11 +389,42 @@ export async function createChannel(input: {
     const wabaId = input.credentials.waba_id?.trim() ?? "";
     const token = input.credentials.access_token?.trim() ?? "";
     if (!phoneNumberId || !wabaId || !token) {
-      throw new Error("Phone Number ID, WABA ID, dan Access Token wajib diisi");
+      throw userError("Phone Number ID, WABA ID, dan Access Token wajib diisi");
     }
     await prepareWaOfficial({ phoneNumberId, wabaId, token, pin: input.credentials.pin?.trim() });
     input.credentials = { phone_number_id: phoneNumberId, waba_id: wabaId, access_token: token };
     input.externalId = phoneNumberId;
+  }
+
+  // Facebook / Instagram (input manual): same result as "Login dengan Facebook" —
+  // token checked against the Page, webhook subscribed, and external_id set to what
+  // Meta sends as entry.id (Page ID for FB, Instagram account ID for IG). Without it
+  // the gateway can't match incoming messages to this channel.
+  if (input.type === "facebook" || input.type === "instagram") {
+    const pageId = input.credentials.page_id?.trim() ?? "";
+    const token = input.credentials.access_token?.trim() ?? "";
+    if (!pageId || !token) throw userError("Page ID dan Page Access Token wajib diisi");
+    const page = await getPageInfo(pageId, token);
+    let externalId = page.id;
+    if (input.type === "instagram") {
+      const igId = await getInstagramAccount(page.id, token);
+      if (!igId) throw userError(`Page "${page.name}" belum tertaut akun Instagram Professional. Tautkan dulu di Meta Business.`);
+      externalId = igId;
+    }
+    await assertChannelNotLinked(input.type, externalId);
+    await subscribePageToApp(page.id, token);
+    input.credentials = { page_id: page.id, access_token: token };
+    input.externalId = externalId;
+  }
+
+  // Telegram: verify the bot token first, and refuse a bot that is already connected
+  // (Telegram keeps one webhook per bot — a second channel would silently steal it).
+  if (input.type === "telegram") {
+    const token = input.credentials.bot_token?.trim() ?? "";
+    const bot = await getTelegramBot(token);
+    await assertChannelNotLinked("telegram", bot.id);
+    input.credentials = { bot_token: token };
+    input.externalId = bot.id;
   }
 
   // unofficial butuh scan QR (gateway) → pending; lainnya langsung connected kalau creds ada.
@@ -408,7 +458,7 @@ export async function createChannel(input: {
         .set({ status: "pending" })
         .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
       revalidatePath("/channels");
-      throw new Error(
+      throw userError(
         "Channel dibuat (pending), tapi webhook Telegram belum didaftarkan: TELEGRAM_WEBHOOK_BASE belum diset.",
       );
     }
@@ -423,8 +473,8 @@ export async function createChannel(input: {
         .update(channels)
         .set({ status: "pending" })
         .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
-      const msg = e instanceof Error ? e.message : "tidak diketahui";
-      throw new Error(
+      const msg = errorMessage(e) ?? "tidak diketahui";
+      throw userError(
         `Channel dibuat, tapi webhook Telegram gagal didaftarkan: ${msg}. Cek TELEGRAM_WEBHOOK_BASE & bot token.`,
       );
     }
@@ -433,6 +483,15 @@ export async function createChannel(input: {
   revalidatePath("/channels");
   // wa_unofficial → lanjut ke halaman pairing QR; lainnya langsung selesai.
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
+}
+
+// One account = one channel, platform-wide (the webhook resolver matches on external_id).
+async function assertChannelNotLinked(type: ChannelType, externalId: string): Promise<void> {
+  const dup = await db.query.channels.findFirst({
+    where: and(eq(channels.type, type), eq(channels.externalId, externalId)),
+    columns: { id: true },
+  });
+  if (dup) throw userError("Akun ini sudah terhubung sebagai channel. Putuskan dulu channel lama bila ingin menghubungkan ulang.");
 }
 
 // Validasi + siapkan nomor WA Official sebelum disimpan sebagai channel:
@@ -449,7 +508,7 @@ async function prepareWaOfficial(input: {
     where: and(eq(channels.type, "wa_official"), eq(channels.externalId, input.phoneNumberId)),
     columns: { id: true },
   });
-  if (dup) throw new Error("Nomor WhatsApp ini sudah terhubung sebagai channel");
+  if (dup) throw userError("Nomor WhatsApp ini sudah terhubung sebagai channel");
 
   const info = await ensureWaPhoneRegistered(input.phoneNumberId, input.token, input.pin);
   await subscribeWabaToApp(input.wabaId, input.token);
@@ -461,7 +520,7 @@ async function prepareWaOfficial(input: {
 export async function setChannelAutoReply(channelId: string, enabled: boolean) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await db
     .update(channels)
     .set({ autoReplyEnabled: enabled, updatedAt: sql`now()` })
@@ -471,30 +530,28 @@ export async function setChannelAutoReply(channelId: string, enabled: boolean) {
 
 export async function setChannelAutomation(
   channelId: string,
-  input: { enabled: boolean; mode: "menu" | "ai" | "hybrid"; flowId: string | null },
+  input: { enabled: boolean; flowId: string | null },
 ) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (!["menu", "ai", "hybrid"].includes(input.mode)) throw new Error("Mode balasan tidak valid");
-  if (input.enabled && input.mode === "menu" && !input.flowId) throw new Error("Pilih menu untuk mode Menu otomatis");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
+  // Optional "flow utama": checked first for this channel (e.g. its main menu).
   if (input.flowId) {
     const flow = await db.query.flows.findFirst({
       where: and(eq(flows.id, input.flowId), eq(flows.tenantId, session.tenantId)),
       columns: { id: true, status: true },
     });
-    if (!flow) throw new Error("Menu tidak ditemukan");
-    if (input.mode !== "ai" && flow.status !== "active") {
-      throw new Error("Menu harus berstatus aktif sebelum dipakai sebagai balasan otomatis");
-    }
+    if (!flow) throw userError("Flow tidak ditemukan");
+    if (flow.status !== "active") throw userError("Aktifkan flow itu dulu sebelum dijadikan flow utama");
   }
 
   await db
     .update(channels)
     .set({
       autoReplyEnabled: input.enabled,
-      autoReplyMode: input.mode,
+      // Mode is legacy: everything is flow-first now (AI = AI Agent node in a flow).
+      autoReplyMode: "hybrid",
       defaultFlowId: input.flowId,
       updatedAt: sql`now()`,
     })
@@ -508,22 +565,21 @@ export async function setChannelAutomation(
 export async function connectMetaPage(pageId: string): Promise<void> {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
   const store = await cookies();
   const sealed = store.get(FB_OAUTH_COOKIE)?.value;
   const oauth = sealed ? await verifyOAuthSession(sealed) : null;
   if (!oauth || oauth.tenantId !== session.tenantId) {
-    throw new Error("Sesi OAuth kedaluwarsa, ulangi Login dengan Facebook");
+    throw userError("Sesi OAuth kedaluwarsa, ulangi Login dengan Facebook");
   }
 
   // Ambil ulang daftar Page pakai user token → temukan Page Access Token utk pageId.
   const pages = await listPages(oauth.userToken);
   const page = pages.find((p) => p.id === pageId);
-  if (!page) throw new Error("Page tidak ditemukan atau akses dicabut");
+  if (!page) throw userError("Page tidak ditemukan atau akses dicabut");
+  await assertCanAddChannel(session, oauth.platform); // lock: maks akun FB/IG per paket
 
-  // Subscribe app ke webhook Page — wajib supaya pesan masuk diteruskan ke gateway.
-  await subscribePageToApp(page.id, page.access_token);
 
   // Resolver gateway match inbound pakai entry.id webhook:
   //   facebook  → entry.id = Page ID
@@ -533,12 +589,16 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   if (oauth.platform === "instagram") {
     const igId = await getInstagramAccount(page.id, page.access_token);
     if (!igId) {
-      throw new Error(
+      throw userError(
         `Page "${page.name}" belum tertaut akun Instagram Professional. Tautkan IG ke Page dulu di Meta Business.`,
       );
     }
     externalId = igId;
   }
+  await assertChannelNotLinked(oauth.platform, externalId);
+
+  // Subscribe app ke webhook Page — wajib supaya pesan masuk diteruskan ke gateway.
+  await subscribePageToApp(page.id, page.access_token);
 
   // Page Access Token dipakai kirim balasan (FB & IG messaging via page token).
   await db.insert(channels).values({
@@ -565,11 +625,11 @@ export async function connectWhatsAppEmbedded(input: {
 }): Promise<void> {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   if (!input.code || !input.wabaId || !input.phoneNumberId) {
-    throw new Error("Data Embedded Signup tidak lengkap");
+    throw userError("Data Embedded Signup tidak lengkap");
   }
-  await assertCanAddChannel(session);
+  await assertCanAddChannel(session, "wa_official");
 
   // 1. Tukar code → business token (non-expiring).
   const token = await exchangeWaCode(input.code);
@@ -603,13 +663,13 @@ export async function connectWhatsAppEmbedded(input: {
 export async function disconnectChannel(id: string): Promise<void> {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
   const [ch] = await db
     .select({ type: channels.type, credentials: channels.credentials })
     .from(channels)
     .where(and(eq(channels.id, id), eq(channels.tenantId, session.tenantId)));
-  if (!ch) throw new Error("Channel tidak ditemukan");
+  if (!ch) throw userError("Channel tidak ditemukan");
 
   // Meta (FB/IG): lepas subscription webhook Page supaya berhenti kirim event.
   // Best-effort — kegagalan Graph tak boleh menghalangi penghapusan channel.
@@ -644,14 +704,14 @@ export async function disconnectChannel(id: string): Promise<void> {
 export async function attachWaDevice(channelId: string, jid: string) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (!jid.trim()) throw new Error("JID device kosong");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  if (!jid.trim()) throw userError("JID device kosong");
 
   const [ch] = await db
     .select({ credentials: channels.credentials })
     .from(channels)
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
-  if (!ch) throw new Error("Channel tidak ditemukan");
+  if (!ch) throw userError("Channel tidak ditemukan");
 
   // Decrypt existing dulu (back-compat) → merge device_jid → encrypt ulang semua.
   const plain = decryptCreds(ch.credentials as Record<string, unknown>);
@@ -684,102 +744,21 @@ export async function previewAudience(tags: string[]): Promise<number> {
   }
 }
 
-// --- Broadcast: buat draft + jalankan (engine guard opt-in, throttle). ---
-export async function createAndRunBroadcast(input: {
-  name: string;
-  channelId: string;
-  body: string;
-  tags: string[];
-  templateId?: string; // nama template HSM (WA official, di luar window 24 jam)
-  templateLang?: string;
-  // Cara mengisi template: media header (URL publik) + nilai {{1}}, {{2}}, ...
-  headerMediaUrl?: string;
-  bodyParams?: { source: "static" | "contact_name" | "contact_phone"; value?: string; fallback?: string }[];
-}) {
-  const session = await requireSession();
-  requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  await assertBroadcastQuota(session); // lock: kuota broadcast bulanan per paket (admin bypass)
-
-  // Channel WAJIB milik tenant ini — cegah broadcast lewat channel tenant lain.
-  const channel = await db.query.channels.findFirst({
-    where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
-    columns: { id: true, type: true, status: true },
-  });
-  if (!channel) throw new Error("Channel tidak ditemukan");
-  if (channel.status !== "connected") throw new Error("Channel belum terhubung");
-  if (!["wa_official", "wa_unofficial"].includes(channel.type)) throw new Error("Broadcast hanya untuk WhatsApp");
-  if (!input.name.trim()) throw new Error("Nama broadcast wajib diisi");
-  if (channel.type === "wa_official" && !input.templateId?.trim()) throw new Error("Pilih template WhatsApp official");
-  if (channel.type === "wa_unofficial" && !input.body.trim()) throw new Error("Isi broadcast tidak boleh kosong");
-
-  // WA Official: cek template ke Meta (harus APPROVED di WABA channel ini) lalu snapshot
-  // cara pengisiannya. Engine membangun komponen per penerima dari snapshot ini.
-  let templateLang: string | null = null;
-  let templateParams: Record<string, unknown> = {};
-  if (channel.type === "wa_official") {
-    const { templates: approved } = await listWaTemplates(session.tenantId, {
-      status: "APPROVED",
-      channelId: channel.id,
-    });
-    const tpl = approved.find(
-      (t) => t.name === input.templateId?.trim() && (!input.templateLang || t.language === input.templateLang),
-    );
-    if (!tpl) throw new Error("Template belum disetujui Meta atau bukan milik channel ini");
-    const params = input.bodyParams ?? [];
-    if (params.length !== tpl.variableCount) throw new Error(`Template butuh ${tpl.variableCount} nilai variabel`);
-    for (const [i, p] of params.entries()) {
-      if (!["static", "contact_name", "contact_phone"].includes(p.source)) throw new Error("Sumber variabel tidak valid");
-      if (p.source === "static" && !p.value?.trim()) throw new Error(`Isi nilai variabel {{${i + 1}}}`);
-    }
-    const media = ["IMAGE", "VIDEO", "DOCUMENT"].includes(tpl.headerFormat);
-    if (media && !/^https:\/\//.test(input.headerMediaUrl ?? "")) {
-      throw new Error("Template ini butuh media header (URL https)");
-    }
-    templateLang = tpl.language;
-    templateParams = {
-      header: media ? { format: tpl.headerFormat, link: input.headerMediaUrl } : undefined,
-      body: params.map((p) => ({ source: p.source, value: p.value?.trim() ?? "", fallback: p.fallback?.trim() || "Kak" })),
-      // Hanya tombol quick reply yang butuh payload; link/telepon statis.
-      buttons: tpl.buttons.flatMap((b, index) => (b.type === "QUICK_REPLY" ? [{ index, type: "QUICK_REPLY", text: b.text }] : [])),
-    };
-  }
-
-  const [row] = await db
-    .insert(broadcasts)
-    .values({
-      tenantId: session.tenantId,
-      channelId: input.channelId,
-      name: input.name.trim(),
-      bodySnapshot: input.body,
-      templateId: input.templateId?.trim() || null,
-      templateLang,
-      templateParams,
-      status: "draft",
-      audienceFilter: input.tags.length ? { tags: input.tags } : {},
-    })
-    .returning({ id: broadcasts.id });
-
-  const res = await fetch(`${ENGINE}/broadcasts/${row.id}/run`, {
-    method: "POST",
-    headers: {
-      "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
-      "X-Actor-Role": session.role,
-      "X-Tenant-Id": session.tenantId,
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(`Gagal menjalankan broadcast${msg ? `: ${msg}` : ""}`);
-  }
-  revalidatePath("/broadcasts");
-  redirect("/broadcasts");
-}
-
-export async function sendReply(conversationId: string, body: string) {
+export async function sendReply(
+  conversationId: string,
+  body: string,
+  attachment?: { url: string; mime: string; filename: string } | null,
+) {
   const session = await requireSession();
   await assertConvOwned(session, conversationId);
+  // Only this tenant's chat uploads (never an arbitrary URL from the client).
+  if (attachment) {
+    if (!attachment.url.startsWith(`/uploads/${session.tenantId}/chat/`) || attachment.url.includes("..")) {
+      throw userError("Lampiran tidak valid");
+    }
+    if (!CHAT_MIME[attachment.mime]) throw userError("Format lampiran tidak didukung");
+  }
+  if (!body.trim() && !attachment) throw userError("Tulis pesan atau lampirkan file");
   const res = await fetch(`${ENGINE}/conversations/${conversationId}/reply`, {
     method: "POST",
     headers: {
@@ -788,12 +767,21 @@ export async function sendReply(conversationId: string, body: string) {
       "X-Actor-Role": session.role,
       "X-Tenant-Id": session.tenantId ?? "",
     },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({
+      body,
+      media: attachment ? { url: attachment.url, mime: attachment.mime, filename: attachment.filename.slice(0, 120) } : null,
+    }),
     cache: "no-store",
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(`Gagal mengirim pesan${msg ? `: ${msg}` : ""}`);
+    const raw = await res.text().catch(() => "");
+    let msg = raw;
+    try {
+      msg = (JSON.parse(raw) as { detail?: string }).detail ?? raw;
+    } catch {
+      /* plain text */
+    }
+    throw userError(msg || "Gagal mengirim pesan");
   }
   revalidatePath(`/inbox/${conversationId}`);
 }
@@ -811,15 +799,15 @@ export async function startConversation(input: {
 }): Promise<{ conversationId: string }> {
   const session = await requireSession();
   requireAbility(session, "conversation.takeover");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
   // Channel wajib milik tenant (cegah IDOR lintas-tenant).
   const ch = await db.query.channels.findFirst({
     where: and(eq(channels.id, input.channelId), eq(channels.tenantId, session.tenantId)),
     columns: { id: true, status: true },
   });
-  if (!ch) throw new Error("Channel tidak ditemukan");
-  if (ch.status !== "connected") throw new Error("Channel belum terhubung");
+  if (!ch) throw userError("Channel tidak ditemukan");
+  if (ch.status !== "connected") throw userError("Channel belum terhubung");
 
   const res = await fetch(`${ENGINE}/conversations/start`, {
     method: "POST",
@@ -842,30 +830,20 @@ export async function startConversation(input: {
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
-    throw new Error(`Gagal memulai percakapan${msg ? `: ${msg}` : ""}`);
+    throw userError(`Gagal memulai percakapan${msg ? `: ${msg}` : ""}`);
   }
   const json = (await res.json().catch(() => null)) as { data?: { conversation_id?: string } } | null;
   const convId = json?.data?.conversation_id;
-  if (!convId) throw new Error("Gagal memulai percakapan");
+  if (!convId) throw userError("Gagal memulai percakapan");
   revalidatePath("/inbox");
   return { conversationId: String(convId) };
 }
 
 // --- AI Agent (06) ---
-export async function savePersona(persona: string) {
-  const session = await requireSession();
-  requireAbility(session, "knowledge.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
-  const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), ai_persona: persona };
-  await db.update(tenants).set({ settings }).where(eq(tenants.id, session.tenantId));
-  revalidatePath("/ai-agent");
-}
-
 export async function addKnowledge(title: string, text: string) {
   const session = await requireSession();
   requireAbility(session, "knowledge.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await assertCanAddKb(session); // lock: batas dokumen knowledge base per paket (admin bypass)
   const res = await fetch(`${ENGINE}/knowledge`, {
     method: "POST",
@@ -879,15 +857,15 @@ export async function addKnowledge(title: string, text: string) {
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
-    throw new Error(`Gagal memproses dokumen${msg ? `: ${msg}` : ""}`);
+    throw userError(`Gagal memproses dokumen${msg ? `: ${msg}` : ""}`);
   }
-  revalidatePath("/ai-agent");
+  revalidatePath("/flows");
 }
 
 export async function deleteKnowledge(docId: string) {
   const session = await requireSession();
   requireAbility(session, "knowledge.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const res = await fetch(`${ENGINE}/knowledge/${docId}`, {
     method: "DELETE",
     headers: {
@@ -899,9 +877,9 @@ export async function deleteKnowledge(docId: string) {
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
-    throw new Error(`Gagal menghapus dokumen${msg ? `: ${msg}` : ""}`);
+    throw userError(`Gagal menghapus dokumen${msg ? `: ${msg}` : ""}`);
   }
-  revalidatePath("/ai-agent");
+  revalidatePath("/flows");
 }
 
 // Status AI (LLM terkonfigurasi di engine?) — untuk indikator aktif/nonaktif di UI.
@@ -921,34 +899,19 @@ export async function aiAgentStatus(): Promise<boolean> {
   }
 }
 
-export async function previewAi(
-  message: string,
-  persona: string,
-): Promise<{ enabled: boolean; answer: string | null; kb_used?: boolean }> {
-  const session = await requireSession();
-  requireAbility(session, "knowledge.manage");
-  if (!session.tenantId) return { enabled: false, answer: null };
-  const res = await fetch(`${ENGINE}/ai-agent/preview`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Service-Token": process.env.SERVICE_TOKEN ?? "",
-      "X-Actor-Role": session.role,
-    },
-    body: JSON.stringify({ tenant_id: session.tenantId, message, persona }),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error("Gagal menjalankan preview");
-  const j = await res.json();
-  return j.data;
+// --- Flows (06) ---
+// Flow builder is open to plans with Otomasi or Broadcast (broadcast lives in flows);
+// what each flow may do is checked again on save.
+async function requireAutomationOrBroadcast(session: Session): Promise<void> {
+  if (await hasFeature(session, "broadcast")) return;
+  await requireFeature(session, "automation", "Otomasi");
 }
 
-// --- Flows (06) ---
 export async function createFlow() {
   const session = await requireSession();
   requireAbility(session, "flow.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  requireFeature(session, "automation", "Otomasi"); // lock: fitur otomasi/flow per paket (admin bypass)
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  await requireAutomationOrBroadcast(session); // lock: fitur otomasi/flow per paket (admin bypass)
   const [row] = await db
     .insert(flows)
     .values({
@@ -966,67 +929,181 @@ export async function createFlow() {
   redirect(`/flows/${row.id}`);
 }
 
+// Start a flow from a template (Automation → Template). Saved as draft so the user
+// reviews/edits it on the canvas before activating.
+export async function createFlowFromTemplate(templateId: string) {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const tpl = findTemplate(templateId);
+  if (!tpl) throw userError("Template tidak ditemukan");
+  const graph = tpl.build();
+  const isBroadcast = graph.nodes.some((n) => n.type === "trigger" && (n.data as { kind?: string }).kind === "broadcast");
+  if (isBroadcast) await requireFeature(session, "broadcast", "Broadcast");
+  else await requireFeature(session, "automation", "Otomasi");
+  await assertFlowNodesAllowed(session, graph.nodes.map((n) => n.type));
+  const compiled = compileGraph(graph);
+  const [row] = await db
+    .insert(flows)
+    .values({
+      tenantId: session.tenantId,
+      name: tpl.title,
+      status: "draft",
+      trigger: compiled.trigger,
+      definition: { nodes: compiled.nodes, ui: graph },
+    })
+    .returning({ id: flows.id });
+  revalidatePath("/flows");
+  redirect(`/flows/${row.id}`);
+}
+
+export type FlowClash = { name: string; reason: string };
+
+// Other ACTIVE flows that would compete with this trigger (shown in the save dialog).
+export async function flowTriggerClashes(
+  id: string,
+  trigger: "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast",
+  keywords: string[],
+): Promise<FlowClash[]> {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  if (!session.tenantId) return [];
+  if (trigger === "broadcast") return []; // scheduled sends never compete for incoming messages
+  const rows = await db
+    .select({ id: flows.id, name: flows.name, trigger: flows.trigger, definition: flows.definition })
+    .from(flows)
+    .where(and(eq(flows.tenantId, session.tenantId), eq(flows.status, "active")));
+  const mine = new Set(keywords.map((k) => k.trim().toLowerCase()).filter(Boolean));
+  const out: FlowClash[] = [];
+  for (const f of rows) {
+    if (f.id === id || f.trigger !== trigger) continue;
+    if (trigger === "comment") {
+      // Comment flows compete only when both are catch-alls or share a keyword.
+      const nodes = ((f.definition as { nodes?: { type?: string; trigger?: { match?: unknown } }[] } | null)?.nodes ?? []);
+      const match = nodes.find((n) => n?.type === "trigger")?.trigger?.match;
+      const theirs = (Array.isArray(match) ? match : []).filter((k): k is string => typeof k === "string");
+      if (!mine.size && !theirs.length) out.push({ name: f.name, reason: "juga membalas semua komentar" });
+      const same = theirs.filter((k) => mine.has(k.trim().toLowerCase()));
+      if (same.length) out.push({ name: f.name, reason: `kata kunci komentar sama: ${same.join(", ")}` });
+      continue;
+    }
+    if (trigger === "welcome" || trigger === "fallback") {
+      out.push({ name: f.name, reason: trigger === "welcome" ? "juga memakai pemicu pesan pertama" : "juga memakai pemicu pesan tak dikenali" });
+      continue;
+    }
+    const nodes = ((f.definition as { nodes?: { type?: string; trigger?: { match?: unknown } }[] } | null)?.nodes ?? []);
+    const match = nodes.find((n) => n?.type === "trigger")?.trigger?.match;
+    const same = (Array.isArray(match) ? match : [])
+      .filter((k): k is string => typeof k === "string")
+      .filter((k) => mine.has(k.trim().toLowerCase()));
+    if (same.length) out.push({ name: f.name, reason: `${trigger === "button" ? "tombol" : "keyword"} sama: ${same.join(", ")}` });
+  }
+  return out.slice(0, 5);
+}
+
 export async function saveFlow(
   id: string,
   input: {
     name: string;
     status: "draft" | "active";
-    trigger: "keyword" | "button" | "welcome" | "fallback";
+    trigger: "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast";
     definition: unknown;
   },
-) {
+): Promise<FlowBroadcastResult> {
   const session = await requireSession();
   requireAbility(session, "flow.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (!input.name.trim()) throw new Error("Nama flow wajib diisi");
-  if (!["draft", "active"].includes(input.status)) throw new Error("Status flow tidak valid");
-  if (!["keyword", "button", "welcome", "fallback"].includes(input.trigger)) throw new Error("Jenis pemicu tidak valid");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  if (!input.name.trim()) throw userError("Nama flow wajib diisi");
+  if (!["draft", "active"].includes(input.status)) throw userError("Status flow tidak valid");
+  if (!["keyword", "button", "welcome", "fallback", "comment", "broadcast"].includes(input.trigger)) throw userError("Jenis pemicu tidak valid");
+  if (input.trigger !== "broadcast" && input.status === "active") await requireFeature(session, "automation", "Otomasi");
   const definition = input.definition as {
     nodes?: unknown;
     menu?: { prompt?: unknown; saveAs?: unknown; invalidText?: unknown; options?: unknown[] };
   };
   // Runtime nodes are what the engine executes — reject broken wiring server-side.
   const runtimeError = validateRuntimeNodes(definition?.nodes);
-  if (runtimeError) throw new Error(runtimeError);
+  if (runtimeError) throw userError(runtimeError);
+  // Only steps included in the tenant's plan (canvas nodes; fall back to runtime types).
+  const ui = (input.definition as { ui?: { nodes?: { type?: unknown }[] } })?.ui?.nodes;
+  const kinds = (Array.isArray(ui) ? ui : (definition?.nodes as { type?: unknown }[]) ?? []).map((n) => String(n?.type ?? ""));
+  await assertFlowNodesAllowed(session, kinds);
   if (definition?.menu) {
     const menu = definition.menu;
-    if (typeof menu.prompt !== "string" || !menu.prompt.trim()) throw new Error("Pesan menu wajib diisi");
+    if (typeof menu.prompt !== "string" || !menu.prompt.trim()) throw userError("Pesan menu wajib diisi");
     if (!Array.isArray(menu.options) || menu.options.length < 2 || menu.options.length > 10) {
-      throw new Error("Menu harus punya 2–10 pilihan");
+      throw userError("Menu harus punya 2–10 pilihan");
     }
     if (typeof menu.saveAs !== "string" || !/^[a-zA-Z0-9_]+$/.test(menu.saveAs.trim())) {
-      throw new Error("Nama variabel menu tidak valid");
+      throw userError("Nama variabel menu tidak valid");
     }
     const codes = new Set<string>();
     const labels = new Set<string>();
     for (const rawOption of menu.options) {
-      if (!rawOption || typeof rawOption !== "object") throw new Error("Format pilihan menu tidak valid");
+      if (!rawOption || typeof rawOption !== "object") throw userError("Format pilihan menu tidak valid");
       const option = rawOption as { code?: unknown; label?: unknown; response?: unknown };
       const code = typeof option.code === "string" ? option.code.trim() : "";
       const label = typeof option.label === "string" ? option.label.trim() : "";
       const response = typeof option.response === "string" ? option.response.trim() : "";
       if (!/^[a-zA-Z0-9_]+$/.test(code) || !label || !response) {
-        throw new Error("Setiap pilihan harus punya kode, label, dan balasan");
+        throw userError("Setiap pilihan harus punya kode, label, dan balasan");
       }
       if (codes.has(code.toLowerCase()) || labels.has(label.toLowerCase())) {
-        throw new Error("Kode dan label pilihan menu harus unik");
+        throw userError("Kode dan label pilihan menu harus unik");
       }
       codes.add(code.toLowerCase());
       labels.add(label.toLowerCase());
     }
   }
-  await db
-    .update(flows)
-    .set({
-      name: input.name,
-      status: input.status,
-      trigger: input.trigger,
-      definition: input.definition as object,
-      updatedAt: sql`now()`,
-    })
-    .where(and(eq(flows.id, id), eq(flows.tenantId, session.tenantId)));
+  // Broadcast trigger: validate + snapshot before anything is written.
+  const nodes = definition.nodes as RuntimeNode[];
+  const snapshot = input.status === "active" ? await prepareFlowBroadcast(session, nodes) : null;
+  const tenantId = session.tenantId;
+  const result = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(flows)
+      .set({
+        name: input.name,
+        status: input.status,
+        trigger: input.trigger,
+        definition: input.definition as object,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+      .returning({ id: flows.id });
+    if (!updated.length) throw userError("Flow tidak ditemukan");
+    return applyFlowBroadcast(tx, session, id, input.name, input.status, snapshot);
+  });
   revalidatePath(`/flows/${id}`);
   revalidatePath("/flows");
+  return result;
+}
+
+// Save dialog of a broadcast flow: who would receive it and whether it already went out.
+export async function flowBroadcastInfo(flowId: string, tags: string[]): Promise<FlowBroadcastInfo> {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  const empty: FlowBroadcastInfo = { recipients: 0, pending: null, sent: null };
+  if (!session.tenantId) return empty;
+  const conds = [eq(contacts.tenantId, session.tenantId), eq(contacts.optInStatus, "opted_in")];
+  if (tags.length) conds.push(sql`${contacts.tags} && ${tags}`);
+  const [count, rows] = await Promise.all([
+    db.select({ n: sql<number>`count(*)::int` }).from(contacts).where(and(...conds)),
+    db.query.broadcasts.findMany({
+      where: and(eq(broadcasts.tenantId, session.tenantId), eq(broadcasts.flowId, flowId)),
+      columns: { status: true, scheduledAt: true, stats: true, updatedAt: true },
+      orderBy: (b, { desc }) => [desc(b.createdAt)],
+      limit: 5,
+    }),
+  ]);
+  const pending = rows.find((b) => b.status === "scheduled" || b.status === "draft");
+  const sent = rows.find((b) => b.status === "running" || b.status === "done");
+  const stats = (sent?.stats ?? {}) as Record<string, number>;
+  return {
+    recipients: Number(count[0]?.n ?? 0),
+    pending: pending ? { scheduledAt: pending.scheduledAt } : null,
+    sent: sent ? { at: sent.updatedAt, sent: stats.sent ?? 0, total: stats.total ?? 0 } : null,
+  };
 }
 
 // --- Contacts CRUD (web tulis tabel contacts, 07). RBAC contact.manage. ---
@@ -1045,10 +1122,10 @@ function normTags(tags: string[]): string[] {
 export async function createContact(input: ContactInput) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
   const phone = normalizePhone(input.phone);
-  if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
+  if (!name && !phone) throw userError("Nama atau nomor telepon wajib diisi");
   const optedIn = input.optInStatus === "opted_in";
   try {
     await db.insert(contacts).values({
@@ -1061,7 +1138,7 @@ export async function createContact(input: ContactInput) {
       tags: normTags(input.tags),
     });
   } catch {
-    throw new Error("Nomor telepon sudah terdaftar untuk tenant ini");
+    throw userError("Nomor telepon sudah terdaftar untuk tenant ini");
   }
   revalidatePath("/contacts");
   redirect("/contacts");
@@ -1070,10 +1147,10 @@ export async function createContact(input: ContactInput) {
 export async function updateContact(id: string, input: ContactInput) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
   const phone = normalizePhone(input.phone);
-  if (!name && !phone) throw new Error("Nama atau nomor telepon wajib diisi");
+  if (!name && !phone) throw userError("Nama atau nomor telepon wajib diisi");
   try {
     await db
       .update(contacts)
@@ -1086,7 +1163,7 @@ export async function updateContact(id: string, input: ContactInput) {
       })
       .where(and(eq(contacts.id, id), eq(contacts.tenantId, session.tenantId)));
   } catch {
-    throw new Error("Nomor telepon sudah terdaftar untuk tenant ini");
+    throw userError("Nomor telepon sudah terdaftar untuk tenant ini");
   }
   revalidatePath("/contacts");
   redirect("/contacts");
@@ -1095,7 +1172,7 @@ export async function updateContact(id: string, input: ContactInput) {
 export async function deleteContact(id: string) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await db.delete(contacts).where(and(eq(contacts.id, id), eq(contacts.tenantId, session.tenantId)));
   revalidatePath("/contacts");
 }
@@ -1105,13 +1182,13 @@ export async function importContacts(
 ): Promise<{ inserted: number; skipped: number }> {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
 
   const clean = rows
     .map((r) => ({ name: (r.name ?? "").trim(), phone: normalizePhone(r.phone ?? "") }))
     .filter((r) => r.name || r.phone);
-  if (!clean.length) throw new Error("Tidak ada baris valid untuk diimport");
-  if (clean.length > 5000) throw new Error("Maksimal 5.000 baris per import");
+  if (!clean.length) throw userError("Tidak ada baris valid untuk diimport");
+  if (clean.length > 5000) throw userError("Maksimal 5.000 baris per import");
 
   // Import → opt-in TIDAK otomatis (consent wajib eksplisit). Status unknown, sumber import.
   const seen = new Set<string>();
@@ -1148,12 +1225,12 @@ export async function createUser(input: {
 }) {
   const session = await requireSession();
   requireAbility(session, "user.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
-  if (!name) throw new Error("Nama wajib diisi");
-  if (!EMAIL_RE.test(email)) throw new Error("Email tidak valid");
-  if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter");
+  if (!name) throw userError("Nama wajib diisi");
+  if (!EMAIL_RE.test(email)) throw userError("Email tidak valid");
+  if (!input.password || input.password.length < 6) throw userError("Password minimal 6 karakter");
   await assertCanAddAgent(session); // lock: batas anggota tim per paket (admin bypass)
   const passwordHash = await bcrypt.hash(input.password, 10);
   try {
@@ -1166,7 +1243,7 @@ export async function createUser(input: {
       status: "active",
     });
   } catch {
-    throw new Error("Email sudah terdaftar");
+    throw userError("Email sudah terdaftar");
   }
   revalidatePath("/settings/users");
   redirect("/settings/users");
@@ -1178,11 +1255,11 @@ export async function updateUser(
 ) {
   const session = await requireSession();
   requireAbility(session, "user.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
-  if (!name) throw new Error("Nama wajib diisi");
+  if (!name) throw userError("Nama wajib diisi");
   if (id === session.id && input.status !== "active") {
-    throw new Error("Tidak bisa menonaktifkan akun sendiri");
+    throw userError("Tidak bisa menonaktifkan akun sendiri");
   }
   const patch: Record<string, unknown> = {
     name,
@@ -1190,7 +1267,7 @@ export async function updateUser(
     updatedAt: new Date().toISOString(),
   };
   if (input.password) {
-    if (input.password.length < 6) throw new Error("Password minimal 6 karakter");
+    if (input.password.length < 6) throw userError("Password minimal 6 karakter");
     patch.passwordHash = await bcrypt.hash(input.password, 10);
   }
   await db.update(users).set(patch).where(and(eq(users.id, id), eq(users.tenantId, session.tenantId)));
@@ -1201,23 +1278,23 @@ export async function updateUser(
 export async function deleteUser(id: string) {
   const session = await requireSession();
   requireAbility(session, "user.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (id === session.id) throw new Error("Tidak bisa menghapus akun sendiri");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  if (id === session.id) throw userError("Tidak bisa menghapus akun sendiri");
   await db.delete(users).where(and(eq(users.id, id), eq(users.tenantId, session.tenantId)));
   revalidatePath("/settings/users");
 }
 
 export async function deletePlatformUser(id: string) {
   const session = await requireSession();
-  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
-  if (id === session.id) throw new Error("Tidak bisa menghapus akun sendiri");
+  if (!session.isPlatformAdmin) throw userError("Hanya admin platform");
+  if (id === session.id) throw userError("Tidak bisa menghapus akun sendiri");
 
   const target = await db.query.users.findFirst({
     where: eq(users.id, id),
     columns: { id: true, role: true },
   });
-  if (!target) throw new Error("Pengguna tidak ditemukan");
-  if (target.role === "admin") throw new Error("Akun admin platform tidak bisa dihapus dari sini");
+  if (!target) throw userError("Pengguna tidak ditemukan");
+  if (target.role === "admin") throw userError("Akun admin platform tidak bisa dihapus dari sini");
 
   await db.delete(users).where(eq(users.id, id));
   revalidatePath("/admin/users");
@@ -1247,7 +1324,7 @@ export async function setTenantStatus(id: string, status: "active" | "suspended"
 export async function saveBusinessHours(input: BusinessHours) {
   const session = await requireSession();
   requireAbility(session, "flow.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const business_hours = normalizeBusinessHours(input);
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
   const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), business_hours };
@@ -1260,7 +1337,7 @@ export async function saveBusinessHours(input: BusinessHours) {
 // percaya BFF; tenant scope WAJIB di-enforce di sini agar tak bocor lintas tenant).
 async function assertConvOwned(session: Session, conversationId: string): Promise<void> {
   const conv = await getConversation(session, conversationId);
-  if (!conv) throw new Error("Percakapan tidak ditemukan");
+  if (!conv) throw userError("Percakapan tidak ditemukan");
 }
 
 async function convAction(
@@ -1283,7 +1360,7 @@ async function convAction(
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
-    throw new Error(`Aksi gagal${msg ? `: ${msg}` : ""}`);
+    throw userError(`Aksi gagal${msg ? `: ${msg}` : ""}`);
   }
 }
 
@@ -1331,11 +1408,11 @@ export async function createOptIn(
 ): Promise<void> {
   const name = input.name.trim();
   const phone = input.phone.trim();
-  if (!phone) throw new Error("Nomor telepon wajib diisi");
-  if (!/^[0-9+\-\s]{6,32}$/.test(phone)) throw new Error("Nomor telepon tidak valid");
+  if (!phone) throw userError("Nomor telepon wajib diisi");
+  if (!/^[0-9+\-\s]{6,32}$/.test(phone)) throw userError("Nomor telepon tidak valid");
 
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
-  if (!tenant || tenant.status !== "active") throw new Error("Workspace tidak ditemukan");
+  if (!tenant || tenant.status !== "active") throw userError("Workspace tidak ditemukan");
 
   const existing = await db.query.contacts.findFirst({
     where: and(eq(contacts.tenantId, tenant.id), eq(contacts.phone, phone)),
@@ -1364,7 +1441,7 @@ export async function createOptIn(
 export async function saveWebSettings(input: WebSettings) {
   const session = await requireSession();
   requireAbility(session, "billing.tenant");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const web_settings = normalizeWebSettings(input);
   const t = await db.query.tenants.findFirst({ where: eq(tenants.id, session.tenantId) });
   const settings = { ...((t?.settings as Record<string, unknown>) ?? {}), web_settings };
@@ -1376,12 +1453,12 @@ export async function saveWebSettings(input: WebSettings) {
 // Target = tenant platform (env PLATFORM_TENANT_SLUG, fallback tenant tertua), bukan acting tenant.
 export async function savePlatformWebSettings(input: WebSettings) {
   const session = await requireSession();
-  if (!session.isPlatformAdmin) throw new Error("Hanya admin platform");
+  if (!session.isPlatformAdmin) throw userError("Hanya admin platform");
   const slug = process.env.PLATFORM_TENANT_SLUG;
   const t = slug
     ? await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
     : await db.query.tenants.findFirst({ orderBy: (tt, { asc }) => asc(tt.createdAt) });
-  if (!t) throw new Error("Tenant platform tidak ditemukan");
+  if (!t) throw userError("Tenant platform tidak ditemukan");
   const web_settings = normalizeWebSettings(input);
   const settings = { ...((t.settings as Record<string, unknown>) ?? {}), web_settings };
   await db.update(tenants).set({ settings, updatedAt: new Date().toISOString() }).where(eq(tenants.id, t.id));
@@ -1394,9 +1471,9 @@ export async function savePlatformWebSettings(input: WebSettings) {
 export async function createTag(input: { name: string; color: string }) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
-  if (!name) throw new Error("Nama tag wajib diisi");
+  if (!name) throw userError("Nama tag wajib diisi");
   await db.insert(tags).values({ tenantId: session.tenantId, name, color: input.color || null });
   revalidatePath("/tags");
   redirect("/tags");
@@ -1405,9 +1482,9 @@ export async function createTag(input: { name: string; color: string }) {
 export async function updateTag(id: string, input: { name: string; color: string }) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const name = input.name.trim();
-  if (!name) throw new Error("Nama tag wajib diisi");
+  if (!name) throw userError("Nama tag wajib diisi");
   await db
     .update(tags)
     .set({ name, color: input.color || null, updatedAt: new Date().toISOString() })
@@ -1419,7 +1496,7 @@ export async function updateTag(id: string, input: { name: string; color: string
 export async function deleteTag(id: string) {
   const session = await requireSession();
   requireAbility(session, "contact.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await db.delete(tags).where(and(eq(tags.id, id), eq(tags.tenantId, session.tenantId)));
   revalidatePath("/tags");
 }
@@ -1436,8 +1513,8 @@ type TemplateInput = {
 function normalizeTemplate(input: TemplateInput) {
   const name = input.name.trim();
   const body = input.body.trim();
-  if (!name) throw new Error("Nama template wajib diisi");
-  if (!body) throw new Error("Isi template wajib diisi");
+  if (!name) throw userError("Nama template wajib diisi");
+  if (!body) throw userError("Isi template wajib diisi");
   const isHsm = input.kind === "hsm";
   return {
     name,
@@ -1453,7 +1530,7 @@ function normalizeTemplate(input: TemplateInput) {
 export async function createTemplate(input: TemplateInput) {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const v = normalizeTemplate(input);
   await db.insert(templates).values({ tenantId: session.tenantId, ...v });
   revalidatePath("/templates");
@@ -1463,7 +1540,7 @@ export async function createTemplate(input: TemplateInput) {
 export async function updateTemplate(id: string, input: TemplateInput) {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const v = normalizeTemplate(input);
   await db
     .update(templates)
@@ -1478,21 +1555,21 @@ export async function updateTemplate(id: string, input: TemplateInput) {
 export async function createWaTemplate(input: CreateWaTemplateInput): Promise<{ status: string }> {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  if (!input.templateName.trim()) throw new Error("Nama template wajib diisi");
-  if (!input.body.trim()) throw new Error("Isi template wajib diisi");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  if (!input.templateName.trim()) throw userError("Nama template wajib diisi");
+  if (!input.body.trim()) throw userError("Isi template wajib diisi");
   // Channel diambil dari DB dengan filter tenant sesi (cegah pakai WABA tenant lain).
   const [ch] = await listWaChannelCreds(session.tenantId, input.channelId);
-  if (!ch) throw new Error("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
+  if (!ch) throw userError("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
   const buttons = input.buttons ?? [];
-  if (buttons.length > 10) throw new Error("Maksimal 10 tombol");
-  if (buttons.filter((b) => b.type === "URL").length > 2) throw new Error("Maksimal 2 tombol link");
-  if (buttons.filter((b) => b.type === "PHONE_NUMBER").length > 1) throw new Error("Maksimal 1 tombol telepon");
+  if (buttons.length > 10) throw userError("Maksimal 10 tombol");
+  if (buttons.filter((b) => b.type === "URL").length > 2) throw userError("Maksimal 2 tombol link");
+  if (buttons.filter((b) => b.type === "PHONE_NUMBER").length > 1) throw userError("Maksimal 1 tombol telepon");
   for (const b of buttons) {
-    if (!b.text.trim() || b.text.length > 25) throw new Error("Teks tombol wajib diisi, maksimal 25 karakter");
-    if (b.type === "URL" && !/^https:\/\//.test(b.url)) throw new Error("Link tombol harus diawali https://");
+    if (!b.text.trim() || b.text.length > 25) throw userError("Teks tombol wajib diisi, maksimal 25 karakter");
+    if (b.type === "URL" && !/^https:\/\//.test(b.url)) throw userError("Link tombol harus diawali https://");
     if (b.type === "PHONE_NUMBER" && !/^\+?\d{8,15}$/.test(b.phone.replace(/[\s-]/g, "")))
-      throw new Error("Nomor telepon tombol tidak valid");
+      throw userError("Nomor telepon tombol tidak valid");
   }
   const { channelId: _channelId, ...rest } = input;
   void _channelId;
@@ -1506,14 +1583,14 @@ export async function createWaTemplate(input: CreateWaTemplateInput): Promise<{ 
 export async function uploadWaTemplateSample(channelId: string, form: FormData): Promise<{ handle: string }> {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file terlebih dulu");
+  if (!(file instanceof File) || file.size === 0) throw userError("Pilih file terlebih dulu");
   const allowed = ["image/jpeg", "image/png", "video/mp4", "application/pdf"];
-  if (!allowed.includes(file.type)) throw new Error("Format harus JPG, PNG, MP4, atau PDF");
-  if (file.size > 16 * 1024 * 1024) throw new Error("Ukuran maksimal 16 MB");
+  if (!allowed.includes(file.type)) throw userError("Format harus JPG, PNG, MP4, atau PDF");
+  if (file.size > 16 * 1024 * 1024) throw userError("Ukuran maksimal 16 MB");
   const [ch] = await listWaChannelCreds(session.tenantId, channelId);
-  if (!ch) throw new Error("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
+  if (!ch) throw userError("Channel WhatsApp Official tidak ditemukan atau belum terhubung");
   return { handle: await uploadTemplateSample(ch.token, file) };
 }
 
@@ -1521,9 +1598,9 @@ export async function uploadWaTemplateSample(channelId: string, form: FormData):
 export async function uploadBroadcastMedia(form: FormData): Promise<{ url: string }> {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih gambar terlebih dulu");
+  if (!(file instanceof File) || file.size === 0) throw userError("Pilih gambar terlebih dulu");
   const rel = await saveImage(file, `broadcast/${session.tenantId}`);
   const base = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
   return { url: `${base}${rel}` };
@@ -1532,7 +1609,7 @@ export async function uploadBroadcastMedia(form: FormData): Promise<{ url: strin
 export async function deleteTemplate(id: string) {
   const session = await requireSession();
   requireAbility(session, "broadcast.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await db
     .delete(templates)
     .where(and(eq(templates.id, id), eq(templates.tenantId, session.tenantId)));
@@ -1553,7 +1630,7 @@ export type ProductInput = {
 
 function normalizeProduct(input: ProductInput) {
   const name = input.name.trim();
-  if (!name) throw new Error("Nama produk wajib");
+  if (!name) throw userError("Nama produk wajib");
   const priceIdr = Math.max(0, Math.round(Number(input.priceIdr) || 0));
   const stock = Math.max(0, Math.round(Number(input.stock) || 0));
   const photos = (input.photos ?? []).filter((p) => typeof p === "string" && p.trim()).slice(0, 10);
@@ -1572,8 +1649,8 @@ function normalizeProduct(input: ProductInput) {
 export async function createProduct(input: ProductInput) {
   const session = await requireSession();
   requireAbility(session, "product.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
-  requireFeature(session, "catalog", "Katalog Produk"); // lock: fitur katalog per paket (admin bypass)
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  await requireFeature(session, "catalog", "Katalog Produk"); // lock: fitur katalog per paket (admin bypass)
   await db.insert(products).values({ tenantId: session.tenantId, ...normalizeProduct(input) });
   revalidatePath("/products");
   redirect("/products");
@@ -1582,7 +1659,7 @@ export async function createProduct(input: ProductInput) {
 export async function updateProduct(id: string, input: ProductInput) {
   const session = await requireSession();
   requireAbility(session, "product.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const data = normalizeProduct(input);
 
   // Hapus file foto lama yang dibuang user (hemat storage; abaikan kalau gagal).
@@ -1606,7 +1683,7 @@ export async function updateProduct(id: string, input: ProductInput) {
 export async function deleteProduct(id: string) {
   const session = await requireSession();
   requireAbility(session, "product.manage");
-  if (!session.tenantId) throw new Error("Tenant tidak ditemukan");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   const [row] = await db
     .delete(products)
     .where(and(eq(products.id, id), eq(products.tenantId, session.tenantId)))

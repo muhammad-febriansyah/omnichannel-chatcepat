@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Mail } from "lucide-react";
@@ -23,7 +25,7 @@ export default function ForgotPasswordForm() {
         setMessage("Jika email terdaftar, link reset password dikirim ke email tersebut.");
         if (result.resetToken) setResetLink(`/reset-password?token=${encodeURIComponent(result.resetToken)}`);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Permintaan reset password gagal");
+        setError(errorMessage(cause) ?? "Permintaan reset password gagal");
       }
     });
   }
@@ -42,7 +44,7 @@ export default function ForgotPasswordForm() {
           <label className="block text-sm font-medium" htmlFor="reset-email">Email</label>
           <div className="relative -mt-3">
             <Mail className="pointer-events-none absolute left-3.5 top-3.5 size-4 text-slate-400" />
-            <input id="reset-email" type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nama@email.com" className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-[#2547F9] focus:ring-4 focus:ring-[#2547F9]/10" />
+            <Input id="reset-email" type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nama@email.com" className="h-11 w-full border-slate-200 bg-white pl-10 pr-3 text-sm" />
           </div>
           {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           {message && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}

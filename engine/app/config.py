@@ -41,6 +41,8 @@ SERVICE_WINDOW_HOURS = 24
 
 # Flow state hangus kalau idle (jam) — docs/prd/05,06
 FLOW_STATE_TTL_HOURS = 1
+# A flow broadcast waits this long for the contact's reply before the flow ends.
+BROADCAST_FLOW_TTL_HOURS = int(os.environ.get("BROADCAST_FLOW_TTL_HOURS", "72"))
 
 # AI agent (06) — TODO PRODUK provider LLM. Kosong = AI nonaktif → fallback.
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "")

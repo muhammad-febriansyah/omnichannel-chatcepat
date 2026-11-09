@@ -40,10 +40,25 @@
         "media": { "oneOf": [{ "$ref": "#/definitions/Media" }, { "type": "null" }] },
         "payload": { "type": ["string", "null"], "description": "Payload tombol yang diklik (quick reply template / id balasan interaktif)" },
         "reply_to": { "type": ["string", "null"], "description": "provider_message_id pesan yang dibalas / tombolnya diklik" },
+        "comment": {
+          "$ref": "#/definitions/SocialComment",
+          "description": "Diisi bila inbound adalah komentar postingan FB/IG (bukan DM)"
+        },
         "provider_message_id": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["event_id", "dedup_key", "channel_id", "channel_type", "from", "type", "provider_message_id", "timestamp"]
+    },
+
+    "SocialComment": {
+      "type": "object",
+      "description": "Komentar postingan Facebook Page / Instagram (webhook feed/comments).",
+      "properties": {
+        "comment_id": { "type": "string" },
+        "post_id": { "type": "string" },
+        "parent_id": { "type": ["string", "null"], "description": "Diisi bila balasan atas komentar lain" }
+      },
+      "required": ["comment_id", "post_id"]
     },
 
     "OutboundCommand": {
@@ -70,7 +85,13 @@
           "description": "type=interactive: <=3 jadi reply button, 4-10 jadi list",
           "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } }, "required": ["id", "title"] }
         },
-        "conversation_id": { "type": "string", "format": "uuid" }
+        "conversation_id": { "type": "string", "format": "uuid" },
+        "comment_id": { "type": "string", "description": "Balas komentar FB/IG ini (reply_mode wajib)" },
+        "reply_mode": {
+          "type": "string",
+          "enum": ["comment_reply", "private_reply"],
+          "description": "comment_reply = balas publik di komentar; private_reply = DM ke pemberi komentar"
+        }
       },
       "required": ["event_id", "idempotency_key", "channel_id", "to", "type", "conversation_id"]
     },

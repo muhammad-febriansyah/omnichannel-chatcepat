@@ -239,3 +239,194 @@ test("flow graph: button trigger, tag step and menu buttons compile for the engi
   const empty = { ...graph, nodes: graph.nodes.map((n) => (n.id === "g" ? { ...n, data: { tags: [] } } : n)) };
   assert.ok(fg.validateGraph(empty).some((i) => i.nodeId === "g"));
 });
+
+test("flow AI Agent node carries its own AI settings to the engine and back", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const ai = {
+    role: "promosi", tone: "promosi", emoji: "banyak", length: "pendek", greeting: "kak", language: "auto",
+    goal: "closing", instructions: "Selalu tawarkan bundling", examples: [{ q: "promo?", a: "Ada kak!" }, { q: "", a: "x" }],
+    handoffRules: "", fallbackMessage: "", knowledgeAll: false, documentIds: ["d1"], useCatalog: true, usePromos: true,
+  };
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "welcome", keywords: [] } },
+      { id: "a", type: "ai_agent", position: { x: 0, y: 0 }, data: { ai } },
+    ],
+    edges: [{ id: "1", source: "t", sourceHandle: "out", target: "a" }],
+  };
+  const node = fg.compileGraph(graph).nodes.find((n) => n.id === "a");
+  assert.equal(node.ai.tone, "promosi");
+  assert.equal(node.ai.knowledge_all, false);
+  assert.deepEqual(node.ai.document_ids, ["d1"]);
+  assert.equal(node.ai.examples.length, 1, "empty example pairs are dropped");
+  const back = fg.loadGraph({ nodes: fg.compileGraph(graph).nodes }).nodes.find((n) => n.id === "a");
+  assert.equal(back.data.ai.instructions, "Selalu tawarkan bundling");
+  assert.equal(back.data.ai.tone, "promosi");
+  // Older AI nodes without settings open with defaults.
+  const legacy = fg.loadGraph({ nodes: [{ id: "t", type: "trigger", trigger: { kind: "welcome" }, next: "a" }, { id: "a", type: "ai_agent" }] });
+  assert.equal(legacy.nodes.find((n) => n.id === "a").data.ai.tone, "ramah");
+});
+
+test("flow AI node 'Perlu CS' branch compiles, validates and reloads", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "welcome", keywords: [] } },
+      { id: "a", type: "ai_agent", position: { x: 0, y: 0 }, data: { ai: {} } },
+      { id: "h", type: "handoff", position: { x: 0, y: 0 }, data: {} },
+    ],
+    edges: [
+      { id: "1", source: "t", sourceHandle: "out", target: "a" },
+      { id: "2", source: "a", sourceHandle: "handoff", target: "h" },
+    ],
+  };
+  const handles = fg.outputHandles(graph.nodes[1]).map((h) => h.id);
+  assert.deepEqual(handles, ["out", "handoff"]);
+  const compiled = fg.compileGraph(graph).nodes;
+  const ai = compiled.find((n) => n.id === "a");
+  assert.equal(ai.handoff_next, "h");
+  assert.equal(ai.next, null);
+  assert.equal(fg.validateRuntimeNodes(compiled), null);
+  assert.match(fg.validateRuntimeNodes(compiled.map((n) => (n.id === "a" ? { ...n, handoff_next: "zzz" } : n))), /Perlu CS/);
+  const back = fg.loadGraph({ nodes: compiled });
+  assert.ok(back.edges.some((e) => e.source === "a" && e.sourceHandle === "handoff" && e.target === "h"));
+});
+
+test("every flow template builds a valid, compilable graph", () => {
+  const tpl = loadTS("lib/flow-templates.ts");
+  const fg = loadTS("lib/flow-graph.ts");
+  assert.ok(tpl.FLOW_TEMPLATES.length >= 8);
+  const ids = new Set();
+  for (const t of tpl.FLOW_TEMPLATES) {
+    assert.ok(!ids.has(t.id), `duplicate template id ${t.id}`);
+    ids.add(t.id);
+    const graph = t.build();
+    // Broadcast templates need the user's own account/template before they validate.
+    const pending = /akun WhatsApp pengirim|Isi pesan broadcast/;
+    const issues = fg.validateGraph(graph).filter((i) => !(t.category === "broadcast" && pending.test(i.message)));
+    assert.deepEqual(issues, [], `${t.id} has editor issues`);
+    const compiled = fg.compileGraph(graph);
+    assert.equal(fg.validateRuntimeNodes(compiled.nodes), null, `${t.id} runtime invalid`);
+    // Reload keeps every node (templates stay editable).
+    assert.equal(fg.loadGraph({ nodes: compiled.nodes, ui: graph }).nodes.length, graph.nodes.length);
+  }
+  const c2d = tpl.findTemplate("comment-to-dm").build();
+  const trig = fg.compileGraph(c2d).nodes.find((n) => n.type === "trigger");
+  assert.equal(trig.trigger.kind, "comment");
+  assert.ok(trig.trigger.match.includes("info"));
+});
+
+test("broadcast flow: trigger + first message compile with per-button branches", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const msgData = {
+    ...fg.defaultData("broadcast_message"),
+    template: "promo_nov",
+    language: "id",
+    headerFormat: "NONE",
+    params: [{ id: "p1", source: "contact_name", value: "", fallback: "Kak" }],
+    buttons: [
+      { id: "b1", index: 0, text: "Mau" },
+      { id: "b2", index: 2, text: "Nanti" },
+    ],
+  };
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "broadcast", keywords: [], channels: ["wa1"], tags: ["vip"], scheduleAt: "2026-12-01T02:00:00.000Z" } },
+      { id: "m", type: "broadcast_message", position: { x: 0, y: 0 }, data: msgData },
+      { id: "yes", type: "send_text", position: { x: 0, y: 0 }, data: { text: "Siap" } },
+      { id: "cs", type: "handoff", position: { x: 0, y: 0 }, data: {} },
+    ],
+    edges: [
+      { id: "1", source: "t", sourceHandle: "out", target: "m" },
+      { id: "2", source: "m", sourceHandle: "btn:b1", target: "yes" },
+      { id: "3", source: "m", sourceHandle: "out", target: "cs" },
+    ],
+  };
+  assert.deepEqual(fg.validateGraph(graph), []);
+  const { nodes, trigger } = fg.compileGraph(graph);
+  assert.equal(trigger, "broadcast");
+  const t = nodes.find((n) => n.type === "trigger");
+  assert.deepEqual(t.trigger.tags, ["vip"]);
+  assert.equal(t.trigger.schedule_at, "2026-12-01T02:00:00.000Z");
+  const m = nodes.find((n) => n.type === "broadcast_message");
+  assert.deepEqual(m.buttons.map((b) => [b.index, b.next]), [[0, "yes"], [2, null]]);
+  assert.equal(m.next, "cs");
+  assert.equal(m.template.name, "promo_nov");
+  assert.equal(fg.validateRuntimeNodes(nodes), null);
+  // Reload keeps the button branch wiring.
+  const back = fg.loadGraph({ nodes });
+  const bm = back.nodes.find((n) => n.type === "broadcast_message");
+  assert.equal(bm.data.buttons.length, 2);
+  assert.ok(back.edges.some((e) => e.source === "m" && e.sourceHandle.startsWith("btn:") && e.target === "yes"));
+
+  // First step must be the broadcast message, and only one account.
+  const bad = { ...graph, nodes: graph.nodes.map((n) => (n.id === "t" ? { ...n, data: { ...n.data, channels: [] } } : n)) };
+  assert.ok(fg.validateGraph(bad).some((i) => /akun WhatsApp/.test(i.message)));
+  const wrongFirst = { ...graph, edges: [{ id: "1", source: "t", sourceHandle: "out", target: "yes" }] };
+  assert.ok(fg.validateGraph(wrongFirst).some((i) => /Pesan Broadcast/.test(i.message)));
+});
+
+test("broadcast schedule input is WIB", () => {
+  const bf = loadTS("lib/broadcast-flow.ts");
+  assert.equal(bf.wibInputToIso("2026-11-08T09:00"), "2026-11-08T02:00:00.000Z");
+  assert.equal(bf.isoToWibInput("2026-11-08T02:00:00.000Z"), "2026-11-08T09:00");
+  assert.equal(bf.wibInputToIso("bad"), null);
+  assert.equal(
+    bf.previewTemplateBody("Hai {{1}}, promo {{2}}", [
+      { source: "contact_name", value: "", fallback: "" },
+      { source: "static", value: "20%", fallback: "" },
+    ]),
+    "Hai [Nama kontak], promo 20%",
+  );
+});
+
+test("comment reply nodes only make sense under a comment trigger", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const graph = {
+    nodes: [
+      { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { kind: "keyword", keywords: ["x"], channels: ["ch1"] } },
+      { id: "r", type: "reply_comment", position: { x: 0, y: 0 }, data: { texts: ["hai"] } },
+    ],
+    edges: [{ id: "1", source: "t", sourceHandle: "out", target: "r" }],
+  };
+  assert.ok(fg.validateGraph(graph).some((i) => i.nodeId === "r" && /Komentar/.test(i.message)));
+  const trig = fg.compileGraph(graph).nodes.find((n) => n.type === "trigger");
+  assert.deepEqual(trig.trigger.channels, ["ch1"], "account filter is compiled for the engine");
+  assert.equal(trig.trigger.posts, undefined, "post filter only for comment triggers");
+});
+
+test("server action errors stay readable in production (digest round trip)", () => {
+  const { userError, errorMessage } = loadTS("lib/action-error.ts");
+  const err = userError("Email sudah terdaftar");
+  // Simulate what the browser receives in production: masked message, digest kept.
+  const masked = new Error("The specific message is omitted in production builds to avoid leaking sensitive details.");
+  masked.digest = err.digest;
+  assert.equal(errorMessage(masked), "Email sudah terdaftar");
+  const unknown = new Error("The specific message is omitted in production builds to avoid leaking sensitive details.");
+  unknown.digest = "123456";
+  assert.match(errorMessage(unknown), /Terjadi kesalahan di server/);
+  assert.equal(errorMessage("x"), undefined);
+});
+
+test("self-signup creates a 14-day Pro trial that payment clears", () => {
+  const src = readFileSync(path.resolve(root, "lib/actions.ts"), "utf8");
+  const reg = src.slice(src.indexOf("export async function register("), src.indexOf("export async function logout("));
+  assert.match(reg, /plan: "pro"/);
+  assert.match(reg, /TRIAL_DAYS \* 86_400_000/);
+  assert.match(reg, /settings: \{ trial: true \}/);
+  assert.match(src, /const TRIAL_DAYS = 14;/);
+  const cb = readFileSync(path.resolve(root, "app/api/duitku/callback/route.ts"), "utf8");
+  assert.match(cb, /trial: false/, "paying ends the trial");
+});
+
+test("chat attachments: only safe file types, WhatsApp-sized limits", () => {
+  const a = loadTS("lib/chat-attachments.ts");
+  const mimes = Object.keys(a.CHAT_MIME);
+  for (const bad of ["text/html", "image/svg+xml", "application/javascript", "application/x-msdownload"]) {
+    assert.ok(!mimes.includes(bad), `${bad} must not be uploadable`);
+  }
+  assert.equal(a.attachmentKind("image/png"), "image");
+  assert.equal(a.attachmentKind("application/pdf"), "document");
+  assert.equal(a.CHAT_MAX_BYTES.image, 5 * 1024 * 1024);
+  assert.equal(a.formatBytes(1536), "2 KB");
+});

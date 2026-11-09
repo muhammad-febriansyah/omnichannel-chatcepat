@@ -1,5 +1,6 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, ExternalLink, Link2, MessageCircle, Check } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
@@ -42,7 +43,7 @@ export function AcquireTools({ slug }: { slug: string }) {
   }, [wa, msg]);
 
   const inputCls =
-    "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+    "h-11 w-full text-sm";
 
   return (
     <div className="space-y-5">
@@ -59,7 +60,7 @@ export function AcquireTools({ slug }: { slug: string }) {
         }
       >
         <div className="flex gap-2">
-          <input readOnly value={optInUrl} className={`${inputCls} font-mono text-xs`} onFocus={(e) => e.target.select()} />
+          <Input readOnly value={optInUrl} className={`${inputCls} font-mono text-xs`} onFocus={(e) => e.target.select()} />
           <CopyBtn value={optInUrl} />
           <a
             href={optInUrl}
@@ -84,16 +85,16 @@ export function AcquireTools({ slug }: { slug: string }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="wa" className="mb-1.5 block text-sm font-medium text-foreground">Nomor WhatsApp bisnis</label>
-            <input id="wa" value={wa} onChange={(e) => setWa(e.target.value)} inputMode="tel" placeholder="6281234567890" className={inputCls} />
+            <Input id="wa" value={wa} onChange={(e) => setWa(e.target.value)} inputMode="tel" placeholder="6281234567890" className={inputCls} />
           </div>
           <div>
             <label htmlFor="msg" className="mb-1.5 block text-sm font-medium text-foreground">Pesan pembuka</label>
-            <input id="msg" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Halo, saya mau tanya…" className={inputCls} />
+            <Input id="msg" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Halo, saya mau tanya…" className={inputCls} />
           </div>
         </div>
         {waLink ? (
           <div className="flex gap-2">
-            <input readOnly value={waLink} className={`${inputCls} font-mono text-xs`} onFocus={(e) => e.target.select()} />
+            <Input readOnly value={waLink} className={`${inputCls} font-mono text-xs`} onFocus={(e) => e.target.select()} />
             <CopyBtn value={waLink} />
           </div>
         ) : (

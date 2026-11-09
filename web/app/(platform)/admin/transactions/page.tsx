@@ -11,7 +11,7 @@ export default async function TransactionsPage() {
 
   const cards = [
     { label: "Total Pendapatan", value: rupiah(stats.totalPaidIdr), icon: Wallet, tone: "#10b981" },
-    { label: "Pendapatan Bulan Ini", value: rupiah(stats.monthPaidIdr), icon: CalendarClock, tone: "#3b82f6" },
+    { label: "Pendapatan Bulan Ini", value: rupiah(stats.monthPaidIdr), icon: CalendarClock, tone: "#2547f9" },
     { label: "Menunggu Bayar", value: String(stats.pendingCount), icon: Clock, tone: "#f59e0b" },
     { label: "Total Transaksi", value: String(stats.totalCount), icon: Receipt, tone: "#8b5cf6" },
   ];
@@ -27,7 +27,7 @@ export default async function TransactionsPage() {
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.label} className="rounded-xl border border-border bg-card p-4">
+            <div key={c.label} className="rounded-[20px] bg-card p-4">
               <span
                 className="flex size-9 items-center justify-center rounded-lg"
                 style={{ background: `${c.tone}1a`, color: c.tone }}

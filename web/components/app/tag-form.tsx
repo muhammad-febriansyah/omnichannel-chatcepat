@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Save, Tag as TagIcon, Check } from "lucide-react";
@@ -11,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { createTag, updateTag } from "@/lib/actions";
 
 export const TAG_COLORS = [
-  "#3b82f6",
+  "#2547f9",
   "#10b981",
   "#f59e0b",
   "#ef4444",
@@ -45,7 +47,7 @@ export function TagForm({
         if (isEdit && tagId) await updateTag(tagId, { name, color });
         else await createTag({ name, color });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan tag";
+        const msg = errorMessage(err) ?? "Gagal menyimpan tag";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -69,12 +71,12 @@ export function TagForm({
               <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">Nama Tag</label>
               <div className="relative">
                 <TagIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input
+                <Input
                   id="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="VIP, Reseller, Jakarta…"
-                  className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+                  className="h-11 w-full pl-10 pr-3 text-sm"
                 />
               </div>
             </div>

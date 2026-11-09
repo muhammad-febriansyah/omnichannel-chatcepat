@@ -1,4 +1,5 @@
 import "server-only";
+import { userError } from "@/lib/action-error";
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -28,8 +29,8 @@ export const IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 // Simpan file gambar ke UPLOAD_DIR/<segment>/, balikkan URL /uploads/<segment>/<name>.
 export async function saveImage(file: File, segment: string): Promise<string> {
   const ext = IMAGE_EXT[file.type];
-  if (!ext) throw new Error("Format harus PNG, JPG, WebP, atau GIF");
-  if (file.size > IMAGE_MAX_BYTES) throw new Error("Ukuran maksimal 2 MB");
+  if (!ext) throw userError("Format harus PNG, JPG, WebP, atau GIF");
+  if (file.size > IMAGE_MAX_BYTES) throw userError("Ukuran maksimal 2 MB");
   const dir = path.join(UPLOAD_DIR, segment);
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;

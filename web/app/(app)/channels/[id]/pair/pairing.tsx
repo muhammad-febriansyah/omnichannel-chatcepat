@@ -36,8 +36,17 @@ export function Pairing({ channelId }: { channelId: string }) {
 
   useEffect(() => {
     const es = new EventSource(`/api/channels/${channelId}/pair`);
+    let gotQr = false;
+    // No QR within 30s → stop spinning and tell the user (WhatsApp/gateway unreachable).
+    const timeout = setTimeout(() => {
+      if (gotQr) return;
+      es.close();
+      setErr("Sesi WhatsApp tidak siap dalam 30 detik. Coba lagi beberapa saat lagi.");
+      setState("error");
+    }, 30_000);
 
     es.addEventListener("qr", (e) => {
+      gotQr = true;
       setQr((e as MessageEvent).data);
       setState("qr");
     });
@@ -65,7 +74,10 @@ export function Pairing({ channelId }: { channelId: string }) {
       setState("error");
     });
 
-    return () => es.close();
+    return () => {
+      clearTimeout(timeout);
+      es.close();
+    };
   }, [channelId, router]);
 
   return (
@@ -93,7 +105,7 @@ export function Pairing({ channelId }: { channelId: string }) {
       {/* Konten: tutorial (kiri) + QR (kanan) */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Tutorial bernomor */}
-        <div className="rounded-2xl border border-border bg-card p-6 sm:p-7">
+        <div className="rounded-[20px] bg-card p-6 sm:p-7">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Cara menyambungkan</h2>
           <ol className="mt-5 space-y-5">
             {STEPS.map((s, i) => {

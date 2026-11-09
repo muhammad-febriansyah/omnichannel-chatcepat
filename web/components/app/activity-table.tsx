@@ -9,7 +9,7 @@ import type { AuditRow } from "@/lib/platform-stats";
 const ACTION_META: Record<string, { label: string; tone: string }> = {
   "tenant.suspend": { label: "Suspend tenant", tone: "#ef4444" },
   "tenant.activate": { label: "Aktifkan tenant", tone: "#10b981" },
-  "impersonate.start": { label: "Masuk sebagai tenant", tone: "#3b82f6" },
+  "impersonate.start": { label: "Masuk sebagai tenant", tone: "#2547f9" },
   "plan.create": { label: "Buat paket", tone: "#8b5cf6" },
   "plan.update": { label: "Ubah paket", tone: "#f59e0b" },
   "plan.delete": { label: "Hapus paket", tone: "#ef4444" },

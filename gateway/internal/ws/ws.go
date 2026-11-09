@@ -4,8 +4,14 @@ package ws
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/chatcepat/gateway/internal/bus"
 	"github.com/gorilla/websocket"
@@ -30,7 +36,7 @@ func NewHandler(b *bus.Bus, jwtSecret string) *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tenant := r.URL.Query().Get("tenant")
 	token := r.URL.Query().Get("token")
-	if tenant == "" || !h.validToken(token) {
+	if tenant == "" || !h.validToken(tenant, token, time.Now()) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -73,12 +79,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// validToken — TODO: verifikasi JWT short-lived (WS_JWT_SECRET). Sementara cek non-kosong.
-func (h *Handler) validToken(token string) bool {
-	if token == "" {
+// validToken checks the web-issued token "<tenant>.<exp>.<hex hmac-sha256>" (see
+// web/lib/realtime-token.ts): signed with JWTSecret, bound to this tenant, not expired.
+func (h *Handler) validToken(tenant, token string, now time.Time) bool {
+	if h.JWTSecret == "" {
+		log.Printf("ws: WS_JWT_SECRET kosong — koneksi ditolak")
 		return false
 	}
-	_ = h.JWTSecret
-	log.Printf("ws: token diterima (TODO verifikasi JWT)")
-	return true
+	i := strings.LastIndex(token, ".")
+	if i <= 0 {
+		return false
+	}
+	payload, sig := token[:i], token[i+1:]
+	j := strings.LastIndex(payload, ".")
+	if j <= 0 || payload[:j] != tenant {
+		return false
+	}
+	exp, err := strconv.ParseInt(payload[j+1:], 10, 64)
+	if err != nil || now.Unix() > exp {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(h.JWTSecret))
+	mac.Write([]byte(payload))
+	want := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(sig), []byte(want))
 }

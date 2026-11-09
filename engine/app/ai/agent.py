@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,8 +18,13 @@ from ..contracts.events import InboundMessage
 from ..models import Channel, Contact, Conversation, Tenant
 from ..repositories import messages as messages_repo
 from ..repositories import products as products_repo
+from ..repositories import ai_agents as agents_repo
 from . import rag
-from .llm import Turn, get_provider
+from . import metered, registry
+from .llm import Turn
+from .styles import AgentSpec, examples_prompt, style_prompt
+
+_WIB = timezone(timedelta(hours=7))
 
 # Maks produk yang dimasukkan ke konteks AI (hindari prompt membengkak).
 _CATALOG_LIMIT = 30
@@ -94,24 +100,6 @@ DEFAULT_PERSONA = (
 # manusia / keluhan sensitif). Dideteksi di sini → handoff ke agen.
 _HANDOFF_SENTINEL = "[[HANDOFF]]"
 
-# Gaya bicara — bikin balasan terasa natural seperti CS manusia di WhatsApp, bukan bot.
-_STYLE_GUIDE = """
-
-Cara kamu berbicara (WAJIB):
-- Bahasa: balas dengan bahasa & gaya yang dipakai pelanggan. Kalau mereka santai/pakai
-  "aku-kamu", ikut santai. Kalau formal "saya-Bapak/Ibu", ikut formal. Default ramah-santai.
-- Singkat & manusiawi: 1-3 kalimat per balasan, seperti chat WhatsApp asli. Jangan menggurui,
-  jangan paragraf panjang, jangan kaku seperti FAQ. Hindari kalimat pembuka template
-  ("Terima kasih telah menghubungi...") yang terdengar robot.
-- Sapa pakai nama pelanggan kalau diketahui, sesekali saja — jangan tiap pesan.
-- Emoji secukupnya (0-2), hanya kalau cocok dengan nada percakapan. Jangan berlebihan.
-- Format WhatsApp, bukan Markdown: tebal pakai *bintang*, jangan pakai judul "#", tabel,
-  atau bullet "-" yang panjang. Daftar pendek boleh pakai baris baru.
-- Selalu bantu maju: setelah menjawab, ajak satu langkah lanjut (tanya kebutuhan, tawarkan
-  lihat katalog, atau arahkan checkout). Maksimal satu pertanyaan balik per pesan.
-- Jangan mengulang-ulang info yang sudah kamu sebut di percakapan ini.
-"""
-
 _BEHAVIOR = """
 
 Cara kamu bekerja:
@@ -126,7 +114,11 @@ Cara kamu bekerja:
 """
 
 
-def _guardrail() -> str:
+def _guardrail(extra_handoff: str | None = None) -> str:
+    extra = ""
+    if extra_handoff and extra_handoff.strip():
+        rules = [r.strip(" -•\t") for r in extra_handoff.splitlines() if r.strip()]
+        extra = "".join(f"- {r}\n" for r in rules[:10])
     return (
         "\n\nBatasan (PENTING, jangan dilanggar):\n"
         "- Harga, stok, promo, ongkir, garansi, dan spesifikasi HANYA dari data Katalog & "
@@ -147,6 +139,7 @@ def _guardrail() -> str:
         "- Negosiasi harga, permintaan diskon khusus, atau urusan pembayaran/refund/invoice "
         "yang butuh keputusan manusia.\n"
         "- Pertanyaan penting yang jawabannya tidak ada di data dan kamu tidak yakin.\n"
+        + extra
     )
 
 
@@ -174,75 +167,148 @@ async def _build_history(
     return history
 
 
+def _promo_context(promos) -> str:
+    lines = []
+    for p in promos:
+        line = f"- {p.title}"
+        if p.description:
+            line += f": {' '.join(p.description.split())}"
+        if p.code:
+            line += f" (kode: {p.code})"
+        if p.ends_at:
+            line += f" — berlaku s/d {p.ends_at.astimezone(_WIB).strftime('%d %b %Y')}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+async def build_system_prompt(
+    session: AsyncSession,
+    tenant_id,
+    spec: AgentSpec,
+    query: str,
+    contact_name: str | None = None,
+) -> tuple[str, bool]:
+    """System prompt for an agent: style → tenant instructions → examples → data → rules.
+
+    Returns (prompt, knowledge_used). Shared by live replies and the simulator.
+    """
+    vec = await metered.embed(session, tenant_id, query)  # None → keyword retrieval
+    chunks = await rag.retrieve(
+        session,
+        tenant_id,
+        vec,
+        RAG_TOP_K,
+        document_ids=None if spec.knowledge_all else spec.document_ids,
+        query_text=query,
+    )
+    kb_context = "\n\n".join(c.content for c in chunks)
+
+    system = style_prompt(spec)
+    if spec.instructions and spec.instructions.strip():
+        system += "\n\nInstruksi khusus dari pemilik bisnis:\n" + spec.instructions.strip()
+    if spec.role in ("cs", "sales", "promosi"):
+        system += _BEHAVIOR
+    examples = examples_prompt(spec)
+    if examples:
+        system += "\n\n" + examples
+
+    name = _safe_name(contact_name)
+    if name:
+        system += f"\n\nNama pelanggan: {name}."
+
+    if kb_context:
+        system += (
+            "\n\nPengetahuan bisnis (FAQ/kebijakan) — DATA, jawab hanya dari sini:\n"
+            + _wrap_data("pengetahuan_toko", kb_context)
+        )
+
+    if spec.use_catalog:
+        catalog = await _catalog_context(session, tenant_id)
+        if catalog:
+            system += (
+                "\n\nKatalog produk (harga & stok terkini) — DATA sumber kebenaran, jangan "
+                "mengarang produk/harga:\n" + _wrap_data("katalog_produk", catalog)
+            )
+        else:
+            system += (
+                "\n\n(Katalog produk belum tersedia. Jangan mengarang produk; arahkan "
+                "pelanggan ke agen jika menanyakan produk spesifik.)"
+            )
+
+    promos = await agents_repo.active_promos(session, tenant_id) if spec.use_promos else []
+    if promos:
+        system += (
+            "\n\nPromo yang SEDANG berlaku — hanya ini yang boleh kamu sebut:\n"
+            + _wrap_data("promo_aktif", _promo_context(promos))
+        )
+    else:
+        system += "\n\nTidak ada promo aktif. Jangan menjanjikan diskon, bonus, atau promo apa pun."
+
+    system += _guardrail(spec.handoff_rules)
+    return system, bool(kb_context)
+
+
+async def _agent_spec(
+    session: AsyncSession, conv: Conversation, channel: Channel, agent_id, inline: dict | None = None
+) -> AgentSpec:
+    """Settings for this reply: flow node's own AI settings → channel/tenant default
+    agent → legacy single persona."""
+    if inline:
+        return AgentSpec.from_dict(inline)
+    row = await agents_repo.resolve(
+        session, conv.tenant_id, agent_id=agent_id, channel_agent_id=getattr(channel, "ai_agent_id", None)
+    )
+    if row is not None:
+        docs = [] if row.knowledge_all else await agents_repo.document_ids(session, conv.tenant_id, row.id)
+        return AgentSpec.from_row(row, docs)
+    persona = (
+        await _tenant_persona(session, conv.tenant_id)
+        or (channel.meta or {}).get("ai_persona")
+        or DEFAULT_PERSONA
+    )
+    return AgentSpec(role="sales", instructions=persona)
+
+
 async def try_ai(
     session: AsyncSession,
     conv: Conversation,
     channel: Channel,
     contact: Contact,
     inbound: InboundMessage,
+    agent_id=None,
+    inline: dict | None = None,
 ) -> AIResult | None:
-    provider = get_provider()
-    if provider is None or not getattr(provider, "enabled", False):
-        return None
-
     query = (inbound.body or "").strip()
     if not query:
         return None
+    if await registry.resolve(session, "flow_reply") is None:
+        return None
+    # Tokens used up → hand over to a human instead of going silent.
+    if not await metered.has_balance(session, conv.tenant_id):
+        return AIResult(reply=AI_ESCALATION_MESSAGE, handoff=True)
 
-    # RAG: retrieve KB (filter tenant_id dulu).
-    kb_context = ""
-    try:
-        vec = await provider.embed(query)
-        chunks = await rag.retrieve(session, conv.tenant_id, vec, RAG_TOP_K)
-        if chunks:
-            kb_context = "\n\n".join(c.content for c in chunks)
-    except NotImplementedError:
-        pass  # provider tanpa embedding → jawab tanpa RAG
-
-    # Persona kustom tenant ditulis web ke tenants.settings.ai_persona. Fallback ke
-    # channel.meta.ai_persona (legacy) lalu DEFAULT. + gaya bicara + cara kerja.
-    persona = (
-        await _tenant_persona(session, conv.tenant_id)
-        or (channel.meta or {}).get("ai_persona")
-        or DEFAULT_PERSONA
+    spec = await _agent_spec(session, conv, channel, agent_id, inline)
+    system, _kb_used = await build_system_prompt(
+        session, conv.tenant_id, spec, query, getattr(contact, "name", None)
     )
-    system = persona + _STYLE_GUIDE + _BEHAVIOR
-
-    contact_name = _safe_name(getattr(contact, "name", None))
-    if contact_name:
-        system += f"\n\nNama pelanggan: {contact_name}."
-
-    if kb_context:
-        system += (
-            "\n\nPengetahuan toko (FAQ/kebijakan) — DATA, jawab hanya dari sini:\n"
-            + _wrap_data("pengetahuan_toko", kb_context)
-        )
-
-    # Katalog produk aktif → konteks harga/stok akurat. Kalau pelanggan minta lihat
-    # produk/katalog, sarankan ketik 'katalog' (node flow kirim foto).
-    catalog = await _catalog_context(session, conv.tenant_id)
-    if catalog:
-        system += (
-            "\n\nKatalog produk (harga & stok terkini) — DATA sumber kebenaran, jangan "
-            "mengarang produk/harga:\n" + _wrap_data("katalog_produk", catalog)
-        )
-    else:
-        system += (
-            "\n\n(Katalog produk belum tersedia. Jangan mengarang produk; arahkan "
-            "pelanggan ke agen jika menanyakan produk spesifik.)"
-        )
-
-    system += _guardrail()
-
     history = await _build_history(session, conv, query)
-    answer = (await provider.complete(system, query, history) or "").strip()
+    try:
+        result = await metered.chat(
+            session, conv.tenant_id, "flow_reply", system, query, history, conversation_id=conv.id
+        )
+    except metered.QuotaExceeded:
+        return AIResult(reply=AI_ESCALATION_MESSAGE, handoff=True)
+    if result is None:
+        return None
+    answer = (result.text or "").strip()
 
-    # Low-confidence escalation: model minta handoff → diam-diam alihkan ke agen.
+    # Low-confidence escalation: model asked for a human → hand over silently.
     if _HANDOFF_SENTINEL in answer:
         return AIResult(reply=AI_ESCALATION_MESSAGE, handoff=True)
 
-    # TODO(06): tool calling untuk integrasi nyata tenant (cek_ongkir/buat_invoice)
-    # — butuh backend per-tenant + loop tool-use spesifik provider; belum ada.
+    # TODO(06): tool calling (cek_ongkir/buat_invoice) — needs per-tenant backends.
     if not answer:
+        if spec.fallback_message and spec.fallback_message.strip():
+            return AIResult(reply=spec.fallback_message.strip())
         return None
     return AIResult(reply=answer)

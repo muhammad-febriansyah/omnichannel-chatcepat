@@ -7,6 +7,7 @@ import { plans } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { PlanForm } from "@/components/app/plan-form";
+import { resolveEntitlements } from "@/lib/plan-config";
 
 export default async function EditPlanPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireSession();
@@ -39,6 +40,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
           isActive: plan.isActive,
           highlight: plan.highlight,
           sortOrder: plan.sortOrder,
+          entitlements: resolveEntitlements(plan.tier as "basic" | "pro" | "business" | "enterprise", plan),
         }}
       />
     </div>

@@ -1,7 +1,11 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
-import { Plus, Trash2, X, AlertCircle, Copy } from "lucide-react";
+import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WaMessageEditor } from "@/components/app/wa-message-editor";
@@ -15,9 +19,14 @@ import {
   type TriggerKind,
 } from "@/lib/flow-graph";
 import { NODE_META } from "./meta";
+import { BroadcastMessageFields, BroadcastTriggerFields } from "./broadcast-config";
+import type { BroadcastTemplateOpt } from "@/lib/broadcast-flow";
+import { AiConfigEditor, AiSimulator, type DocOption } from "@/components/app/ai-config/ai-config-editor";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { normalizeAiConfig, type PromoItem } from "@/lib/ai-agent-options";
 
 const inputCls =
-  "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10";
+  "h-10 w-full text-sm";
 const labelCls = "mb-1.5 block text-xs font-semibold text-foreground";
 const hintCls = "mt-1.5 text-[11px] leading-snug text-muted-foreground";
 
@@ -35,7 +44,7 @@ function VarInput({ value, onChange, placeholder }: { value: string; onChange: (
   return (
     <div className="relative">
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">{"{{"}</span>
-      <input
+      <Input
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/[^a-zA-Z0-9_]/g, "_"))}
         placeholder={placeholder}
@@ -97,6 +106,41 @@ function KeywordInput({
   );
 }
 
+export type ChannelOption = { id: string; name: string; type: string; autoReply?: boolean };
+
+const CHANNEL_LABEL: Record<string, string> = {
+  wa_official: "WA Official",
+  wa_unofficial: "WA",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  telegram: "Telegram",
+};
+
+// Pick which connected accounts the trigger listens to. None picked = all.
+function ChannelPicker({ value, onChange, options }: { value: string[]; onChange: (v: string[]) => void; options: ChannelOption[] }) {
+  if (options.length === 0) {
+    return <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">Belum ada akun yang cocok. Hubungkan dulu di menu Channel.</p>;
+  }
+  return (
+    <div className="space-y-1">
+      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px] hover:bg-muted/50">
+        <Checkbox checked={value.length === 0} onCheckedChange={() => onChange([])} />
+        <span className="font-medium">Semua akun</span>
+      </label>
+      {options.map((c) => {
+        const checked = value.includes(c.id);
+        return (
+          <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px] hover:bg-muted/50">
+            <Checkbox checked={checked} onCheckedChange={() => onChange(checked ? value.filter((x) => x !== c.id) : [...value, c.id])} />
+            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">{CHANNEL_LABEL[c.type] ?? c.type}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ConfigPanel({
   node,
   issues,
@@ -105,7 +149,20 @@ export function ConfigPanel({
   onDelete,
   onDuplicate,
   onClose,
+  docs = [],
+  promos = [],
+  channels = [],
+  tags = [],
+  templates = [],
+  broadcastChannelId = null,
 }: {
+  docs?: DocOption[];
+  promos?: PromoItem[];
+  channels?: ChannelOption[];
+  tags?: string[];
+  templates?: BroadcastTemplateOpt[];
+  // Sending account picked on the broadcast trigger (drives the Pesan Broadcast form).
+  broadcastChannelId?: string | null;
   node: GraphNode;
   issues: string[];
   variables: string[];
@@ -129,6 +186,8 @@ export function ConfigPanel({
             <div className="grid grid-cols-2 gap-1.5">
               {([
                 ["keyword", "Keyword"],
+                ["comment", "Komentar FB/IG"],
+                ["broadcast", "Broadcast terjadwal"],
                 ["button", "Klik tombol"],
                 ["welcome", "Pesan pertama"],
                 ["fallback", "Cadangan"],
@@ -136,7 +195,7 @@ export function ConfigPanel({
                 <button
                   key={k}
                   type="button"
-                  onClick={() => set<"trigger">({ kind: k })}
+                  onClick={() => set<"trigger">(k === "broadcast" || d.kind === "broadcast" ? { kind: k, channels: [] } : { kind: k })}
                   className={cn(
                     "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
                     d.kind === k ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-border text-muted-foreground hover:bg-muted/60",
@@ -151,8 +210,35 @@ export function ConfigPanel({
               {d.kind === "button" && "Flow mulai saat pelanggan mengklik tombol dengan label ini — dari template broadcast atau pesan interaktif."}
               {d.kind === "welcome" && "Flow mulai saat pelanggan mengirim pesan pertama kali."}
               {d.kind === "fallback" && "Flow mulai saat pesan tidak cocok dengan flow lain."}
+              {d.kind === "comment" &&
+                "Flow mulai saat ada komentar baru di postingan Facebook Page / Instagram. Balas publik dengan Balas Komentar, kirim pesan pribadi dengan Kirim DM."}
+              {d.kind === "broadcast" &&
+                "Kirim pesan massal WhatsApp ke kontak opt-in pada waktu yang Anda pilih. Sambungkan ke Pesan Broadcast, lalu atur langkah saat kontak membalas atau klik tombol."}
             </p>
           </Field>
+          {d.kind === "broadcast" && <BroadcastTriggerFields d={d} set={(patch) => set<"trigger">(patch)} channels={channels} tags={tags} />}
+          {d.kind === "comment" && (
+            <>
+              <Field label="Kata kunci komentar (opsional)" hint="Kosongkan untuk membalas SEMUA komentar. Flow dengan kata kunci didahulukan.">
+                <KeywordInput value={d.keywords} onChange={(keywords) => set<"trigger">({ keywords })} placeholder="mis. harga, info, mau" />
+              </Field>
+              <Field label="Hanya postingan tertentu (opsional)" hint="Tempel ID postingan/Reels. Kosong = semua postingan. ID ada di URL postingan.">
+                <KeywordInput value={d.posts ?? []} onChange={(posts) => set<"trigger">({ posts })} placeholder="mis. 1789012345" lowercase={false} />
+              </Field>
+            </>
+          )}
+          {d.kind !== "broadcast" && (
+          <Field
+            label={d.kind === "comment" ? "Akun Facebook/Instagram" : "Berlaku untuk akun"}
+            hint={d.kind === "comment" ? "Pilih Page/akun IG yang komentarnya dibalas." : "Batasi flow ke akun tertentu, mis. hanya Instagram toko A."}
+          >
+            <ChannelPicker
+              value={d.channels ?? []}
+              onChange={(ids) => set<"trigger">({ channels: ids })}
+              options={d.kind === "comment" ? channels.filter((c) => c.type === "facebook" || c.type === "instagram") : channels}
+            />
+          </Field>
+          )}
           {d.kind === "keyword" && (
             <Field label="Keyword" hint="Tekan Enter atau koma untuk menambah. Tidak membedakan huruf besar/kecil.">
               <KeywordInput value={d.keywords} onChange={(keywords) => set<"trigger">({ keywords })} />
@@ -172,6 +258,76 @@ export function ConfigPanel({
       );
       break;
     }
+    case "reply_comment": {
+      const d = node.data as NodeDataMap["reply_comment"];
+      const update = (texts: string[]) => set<"reply_comment">({ texts });
+      body = (
+        <>
+          <p className="rounded-lg bg-pink-50 p-3 text-xs leading-relaxed text-pink-900 dark:bg-pink-500/10 dark:text-pink-200">
+            Balasan ini tampil <b>publik</b> di bawah komentar. Jangan tulis harga khusus atau data pribadi — arahkan ke DM.
+          </p>
+          <Field label={`Variasi balasan (${d.texts.length}/5)`} hint="Satu dipilih acak tiap komentar supaya tidak terlihat seperti spam.">
+            <div className="space-y-2">
+              {d.texts.map((t, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <Textarea
+                    value={t}
+                    rows={2}
+                    maxLength={500}
+                    onChange={(e) => update(d.texts.map((x, j) => (j === i ? e.target.value : x)))}
+                    placeholder="Terima kasih kak {{nama}}! Cek DM ya 🙏"
+                    className="w-full p-2.5 text-sm"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Hapus variasi"
+                    disabled={d.texts.length <= 1}
+                    onClick={() => update(d.texts.filter((_, j) => j !== i))}
+                    className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-red-500 disabled:opacity-30"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {d.texts.length < 5 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => update([...d.texts, ""])}>
+                  <Plus className="size-3.5" /> Tambah variasi
+                </Button>
+              )}
+            </div>
+          </Field>
+          <p className={hintCls}>Variabel: {"{{nama}}"}, {"{{komentar}}"}.</p>
+        </>
+      );
+      break;
+    }
+    case "private_reply": {
+      const d = node.data as NodeDataMap["private_reply"];
+      body = (
+        <>
+          <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900 dark:bg-blue-500/10 dark:text-blue-200">
+            Meta hanya mengizinkan <b>1 DM per komentar</b> (maks. 7 hari). Pesan teks lain di flow ini digabung ke DM yang sama. Setelah pelanggan membalas DM, flow lanjut seperti chat biasa (mis. Tunggu Balasan / Menu).
+          </p>
+          <Field label="Isi DM" hint="Klik variabel untuk menyisipkan.">
+            <WaMessageEditor value={d.text} onChange={(text) => set<"private_reply">({ text })} variables={waVars} rows={6} placeholder="Halo {{nama}}, ini info yang kakak tanyakan…" />
+          </Field>
+        </>
+      );
+      break;
+    }
+    case "broadcast_message": {
+      const d = node.data as NodeDataMap["broadcast_message"];
+      body = (
+        <BroadcastMessageFields
+          d={d}
+          set={(patch) => set<"broadcast_message">(patch)}
+          channel={channels.find((c) => c.id === broadcastChannelId) ?? null}
+          templates={templates}
+          waVars={waVars}
+        />
+      );
+      break;
+    }
     case "send_text": {
       const d = node.data as NodeDataMap["send_text"];
       body = (
@@ -186,7 +342,7 @@ export function ConfigPanel({
       body = (
         <>
           <Field label="URL media" hint="Link publik gambar/dokumen (https://…).">
-            <input value={d.url} onChange={(e) => set<"send_media">({ url: e.target.value })} placeholder="https://…/brosur.jpg" className={inputCls} />
+            <Input value={d.url} onChange={(e) => set<"send_media">({ url: e.target.value })} placeholder="https://…/brosur.jpg" className={inputCls} />
           </Field>
           <Field label="Caption (opsional)">
             <WaMessageEditor value={d.caption} onChange={(caption) => set<"send_media">({ caption })} variables={waVars} rows={3} />
@@ -200,7 +356,7 @@ export function ConfigPanel({
       body = (
         <>
           <Field label="Kategori (opsional)" hint="Kosongkan untuk mengirim semua produk aktif.">
-            <input value={d.category} onChange={(e) => set<"send_catalog">({ category: e.target.value })} placeholder="mis. Minuman" className={inputCls} />
+            <Input value={d.category} onChange={(e) => set<"send_catalog">({ category: e.target.value })} placeholder="mis. Minuman" className={inputCls} />
           </Field>
           <Field label="Pesan pembuka (opsional)">
             <WaMessageEditor value={d.intro} onChange={(intro) => set<"send_catalog">({ intro })} variables={waVars} rows={3} />
@@ -226,13 +382,13 @@ export function ConfigPanel({
           <div className="space-y-2">
             {d.pairs.map((p, i) => (
               <div key={p.id} className="flex items-center gap-2">
-                <input
+                <Input
                   value={p.key}
                   onChange={(e) => update(d.pairs.map((x, j) => (j === i ? { ...x, key: e.target.value.replace(/[^a-zA-Z0-9_]/g, "_") } : x)))}
                   placeholder="nama_var"
                   className={cn(inputCls, "w-2/5 font-mono")}
                 />
-                <input
+                <Input
                   value={p.value}
                   onChange={(e) => update(d.pairs.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
                   placeholder="nilai"
@@ -257,11 +413,11 @@ export function ConfigPanel({
       body = (
         <>
           <Field label="Variabel yang dicek" hint="{{pesan}} = isi pesan terakhir pelanggan.">
-            <select value={d.variable} onChange={(e) => set<"condition">({ variable: e.target.value })} className={inputCls}>
+            <NativeSelect value={d.variable} onChange={(e) => set<"condition">({ variable: e.target.value })} className={inputCls}>
               {[...new Set([d.variable, ...variables])].filter(Boolean).map((v) => (
-                <option key={v} value={v}>{`{{${v}}}`}</option>
+                <NativeSelectOption key={v} value={v}>{`{{${v}}}`}</NativeSelectOption>
               ))}
-            </select>
+            </NativeSelect>
           </Field>
           <Field label="Aturan" hint="Dicek berurutan dari atas. Yang pertama cocok dipakai; tidak ada yang cocok → cabang Lainnya.">
             <div className="space-y-2">
@@ -270,17 +426,17 @@ export function ConfigPanel({
                 return (
                   <div key={r.id} className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2">
                     <span className="grid size-6 shrink-0 place-items-center rounded-md bg-background text-[11px] font-semibold text-muted-foreground">{i + 1}</span>
-                    <select
+                    <NativeSelect
                       value={r.op}
                       onChange={(e) => update(d.rules.map((x, j) => (j === i ? { ...x, op: e.target.value as ConditionOp } : x)))}
                       className={cn(inputCls, "h-9 w-[44%] px-2 text-xs")}
                     >
                       {CONDITION_OPS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
+                        <NativeSelectOption key={o.value} value={o.value}>{o.label}</NativeSelectOption>
                       ))}
-                    </select>
+                    </NativeSelect>
                     {needsValue ? (
-                      <input
+                      <Input
                         value={r.value}
                         onChange={(e) => update(d.rules.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
                         placeholder="nilai"
@@ -316,14 +472,14 @@ export function ConfigPanel({
             <div className="space-y-2">
               {d.options.map((o, i) => (
                 <div key={o.id} className="flex items-center gap-2">
-                  <input
+                  <Input
                     value={o.code}
                     maxLength={4}
                     onChange={(e) => update(d.options.map((x, j) => (j === i ? { ...x, code: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") } : x)))}
                     placeholder="A"
                     className={cn(inputCls, "w-14 text-center font-semibold uppercase")}
                   />
-                  <input
+                  <Input
                     value={o.label}
                     maxLength={24}
                     onChange={(e) => update(d.options.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
@@ -366,13 +522,44 @@ export function ConfigPanel({
       );
       break;
     }
-    case "ai_agent":
+    case "ai_agent": {
+      const ai = normalizeAiConfig((node.data as NodeDataMap["ai_agent"])?.ai);
       body = (
-        <p className="rounded-lg bg-violet-50 p-3 text-xs leading-relaxed text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
-          AI menjawab pesan pelanggan memakai persona, knowledge base, dan katalog dari menu <b>AI Agent</b>. Bila AI tidak yakin, percakapan otomatis dialihkan ke CS.
-        </p>
+        <Tabs defaultValue="atur" className="gap-4">
+          <TabsList className="w-full">
+            <TabsTrigger value="atur" className="flex-1">
+              <SlidersHorizontal className="size-3.5" /> Atur
+            </TabsTrigger>
+            <TabsTrigger value="uji" className="flex-1">
+              <FlaskConical className="size-3.5" /> Uji AI
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="atur" className="space-y-3">
+            <AiConfigEditor value={ai} onChange={(next) => set<"ai_agent">({ ai: next })} docs={docs} promos={promos} />
+            <div className="rounded-xl border border-dashed border-border p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+              <div className="mb-1.5 font-semibold text-foreground">Dua jalur keluar</div>
+              <div className="flex items-start gap-2">
+                <span className="mt-1 size-2 shrink-0 rounded-full" style={{ background: meta.color }} />
+                <span>
+                  <b className="text-foreground">Terjawab</b> — lanjut ke langkah berikutnya (opsional).
+                </span>
+              </div>
+              <div className="mt-1 flex items-start gap-2">
+                <span className="mt-1 size-2 shrink-0 rounded-full bg-muted-foreground" />
+                <span>
+                  <b className="text-foreground">Perlu CS</b> — sambungkan untuk minta data dulu / beri tag. Kosong = langsung dialihkan ke CS.
+                </span>
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="uji">
+            <p className="mb-2 text-[11.5px] text-muted-foreground">Coba pengaturan saat ini (belum perlu disimpan) dengan AI sungguhan.</p>
+            <AiSimulator value={ai} />
+          </TabsContent>
+        </Tabs>
       );
       break;
+    }
     case "handoff":
       body = (
         <p className="rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200">

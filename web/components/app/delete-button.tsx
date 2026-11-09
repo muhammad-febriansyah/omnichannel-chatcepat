@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
@@ -39,7 +40,7 @@ export function DeleteButton({
         gooeyToast.success(successMessage);
         setOpen(false);
       } catch (err) {
-        gooeyToast.error(err instanceof Error ? err.message : "Gagal menghapus");
+        gooeyToast.error(errorMessage(err) ?? "Gagal menghapus");
       }
     });
   }

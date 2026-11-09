@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/action-error";
 // GET /api/channels/facebook/oauth/callback — Meta redirect balik dgn ?code & ?state.
 // Verifikasi state → tukar code jadi user token long-lived → simpan token di cookie
 // httpOnly singkat → redirect ke halaman pilih Page. Token Page TIDAK pernah lewat URL.
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
   try {
     userToken = await exchangeCodeForUserToken(code);
   } catch (e) {
-    return fail(e instanceof Error ? e.message : "Gagal tukar token");
+    return fail(errorMessage(e) ?? "Gagal tukar token");
   }
 
   const sealed = await signOAuthSession({

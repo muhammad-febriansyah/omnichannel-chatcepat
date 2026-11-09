@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, Settings, ChevronDown, PanelLeft, User, LogOut, Building2, Check } from "lucide-react";
+import { Bell, Settings, ChevronDown, PanelLeft, User, LogOut, Building2, Check } from "lucide-react";
 import { logout, setActingTenant } from "@/lib/actions";
 import { initials, roleLabel } from "@/lib/format";
 import {
@@ -13,15 +13,19 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import type { Session } from "@/lib/session";
+import type { ResolvedNavSection } from "@/lib/nav";
+import { MenuSearch } from "@/components/app/menu-search";
 
 export function Topbar({
   session,
   onToggleSidebar,
   tenants = [],
+  navSections = [],
 }: {
   session: Session;
   onToggleSidebar?: () => void;
   tenants?: { id: string; name: string; slug: string }[];
+  navSections?: ResolvedNavSection[];
 }) {
   const router = useRouter();
   const [pendingLogout, startLogout] = useTransition();
@@ -40,11 +44,11 @@ export function Topbar({
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-card px-6">
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur sm:gap-4 sm:px-6">
       {/* left: toggle + search/switcher */}
       <button
         onClick={onToggleSidebar}
-        className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+        className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         aria-label="Tampilkan / sembunyikan menu samping"
         title="Tampilkan / sembunyikan menu"
       >
@@ -79,30 +83,14 @@ export function Topbar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-      ) : session.isPlatformAdmin ? (
-        // Konsol platform (bukan impersonasi): label statik, tanpa pilih tenant.
-        <div className="flex h-10 items-center gap-2 rounded-[10px] border border-border bg-background px-3 text-sm">
-          <Building2 className="size-4 shrink-0 text-brand-blue" />
-          <span className="font-medium text-foreground">Konsol Platform</span>
-        </div>
       ) : (
-        <div className="flex h-10 w-full max-w-[420px] items-center gap-2 rounded-[10px] border border-transparent bg-background px-3 text-muted-foreground transition focus-within:border-brand-blue focus-within:bg-card focus-within:shadow-[0_0_0_4px_rgba(59,130,246,0.12)]">
-          <Search className="size-4 shrink-0" />
-          <input
-            className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-            placeholder="Cari kontak, percakapan, atau pesan…"
-            aria-label="Pencarian global"
-          />
-          <span className="hidden rounded-md border border-border bg-card px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground sm:inline">
-            ⌘K
-          </span>
-        </div>
+        <MenuSearch sections={navSections} />
       )}
 
       {/* right */}
       <div className="ml-auto flex items-center gap-2">
         <button
-          className="relative grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+          className="relative grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           aria-label="Notifikasi"
         >
           <Bell className="size-[18px]" />

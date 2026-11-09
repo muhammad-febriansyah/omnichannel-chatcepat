@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/action-error";
 // Halaman pilih Page setelah OAuth. Baca user token dari cookie httpOnly → list Page Meta.
 // User pilih Page → server action subscribe webhook + simpan channel.
 import Link from "next/link";
@@ -30,7 +31,7 @@ export default async function SelectPagePage({
       pages = (await listPages(oauth.userToken)).map((p) => ({ id: p.id, name: p.name, picture: p.picture }));
       if (pages.length === 0) error = "Tidak ada Page yang kamu kelola. Buat/admin-kan Page dulu di Facebook.";
     } catch (e) {
-      error = e instanceof Error ? e.message : "Gagal memuat daftar Page.";
+      error = errorMessage(e) ?? "Gagal memuat daftar Page.";
     }
   }
 
@@ -43,7 +44,7 @@ export default async function SelectPagePage({
         <ArrowLeft className="size-4" /> Kembali
       </Link>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="overflow-hidden rounded-[20px] bg-card">
         <div className="flex items-center gap-3 border-b border-border bg-[#1877f2]/10 px-5 py-4">
           <span className="flex size-10 items-center justify-center rounded-xl bg-[#1877f2] text-white shadow-sm ring-1 ring-black/5">
             <ChannelIcon type={platform} className="size-5" />
@@ -61,12 +62,13 @@ export default async function SelectPagePage({
                 <AlertCircle className="mt-0.5 size-4 shrink-0" />
                 <span>{error}</span>
               </div>
-              <Link
+              {/* Plain <a>: an API route that redirects to Facebook must not be prefetched. */}
+              <a
                 href={`/api/channels/facebook/oauth/start?platform=${platform}`}
                 className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#1877f2] px-4 text-sm font-semibold text-white transition hover:bg-[#1568d8]"
               >
                 <ChannelIcon type={platform} className="size-4" /> Ulangi Login dengan {label}
-              </Link>
+              </a>
             </div>
           ) : (
             <PagePicker pages={pages} platform={platform} />

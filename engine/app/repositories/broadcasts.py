@@ -98,6 +98,24 @@ async def running_broadcasts(session: AsyncSession, limit: int = 20) -> list[Bro
     return list(res)
 
 
+async def due_scheduled(session: AsyncSession, now, limit: int = 20) -> list[Broadcast]:
+    """Scheduled broadcasts whose send time has come (all tenants; worker only)."""
+    res = await session.scalars(
+        select(Broadcast)
+        .where(Broadcast.status == "scheduled", Broadcast.scheduled_at <= now)
+        .order_by(Broadcast.scheduled_at)
+        .limit(limit)
+    )
+    return list(res)
+
+
+async def mark_failed(session: AsyncSession, broadcast_id: uuid.UUID, error: str) -> None:
+    b = await get(session, broadcast_id, lock=True)
+    if b is not None and b.status == "scheduled":
+        b.status = "failed"
+        b.stats = {**(b.stats or {}), "error": error[:300]}
+
+
 def parse_click_payload(payload: str | None) -> tuple[uuid.UUID, int] | None:
     """Payload tombol broadcast = "bc:<broadcast_id>:<button_index>"."""
     if not payload or not payload.startswith("bc:"):

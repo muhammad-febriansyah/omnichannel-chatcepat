@@ -12,7 +12,12 @@ import {
   Check,
   CheckCheck,
   CircleAlert,
+  PanelRight,
 } from "lucide-react";
+import { Message, MessageContent, MessageGroup } from "@/components/ui/message";
+import { ChatScroll } from "@/components/app/chat-scroll";
+import { MessageMedia } from "@/components/app/message-media";
+import { ChannelBadge } from "@/components/app/channel-icon";
 import { Composer } from "@/components/app/composer";
 import { ConversationActions } from "@/components/app/conversation-actions";
 import { getConversation, getThread } from "@/lib/queries";
@@ -41,14 +46,21 @@ function MessageStatus({ status }: { status: string }) {
         <CircleAlert className="size-3" /> Gagal
       </span>
     );
-  if (status === "read") return <CheckCheck className="size-3.5 text-sky-300" />;
-  if (status === "delivered") return <CheckCheck className="size-3.5 text-white/70" />;
-  if (status === "sent") return <Check className="size-3.5 text-white/70" />;
-  return <Clock className="size-3 text-white/60" />; // queued
+  if (status === "read") return <CheckCheck className="size-3.5 text-[#53bdeb]" />;
+  if (status === "delivered") return <CheckCheck className="size-3.5 text-[#667781]" />;
+  if (status === "sent") return <Check className="size-3.5 text-[#667781]" />;
+  return <Clock className="size-3 text-[#667781]" />; // queued
 }
 
-export default async function ThreadPage({ params }: { params: Promise<{ conversationId: string }> }) {
+export default async function ThreadPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ conversationId: string }>;
+  searchParams: Promise<{ profil?: string }>;
+}) {
   const { conversationId } = await params;
+  const showProfile = (await searchParams).profil === "1";
   const session = await requireSession();
   const conv = await getConversation(session, conversationId);
   if (!conv) notFound();
@@ -88,7 +100,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* header: identitas kontak */}
-        <div className="flex h-16 items-center gap-3 border-b border-border bg-card px-5">
+        <div className="flex h-16 items-center gap-3 border-b border-border bg-card px-4 sm:px-5">
           <Link
             href="/inbox"
             aria-label="Kembali ke daftar"
@@ -96,11 +108,14 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
           >
             <ArrowLeft className="size-5" />
           </Link>
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-            style={{ background: meta?.color ?? "#94a3b8" }}
-          >
-            {initials(name)}
+          <div className="relative shrink-0">
+            <div
+              className="flex size-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+              style={{ background: meta?.color ?? "#94a3b8" }}
+            >
+              {initials(name)}
+            </div>
+            <ChannelBadge type={channelType} size="sm" className="absolute -bottom-0.5 -right-0.5 ring-2 ring-card" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -119,75 +134,88 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
               )}
             </div>
             <div className="truncate text-xs text-muted-foreground">
+              {conv.channel?.name ? `${conv.channel.name} · ` : ""}
               {meta?.label} · {statusLabel(conv.status)}
               {conv.handler === "agent" && " · ditangani agen"}
             </div>
           </div>
+          <div className="hidden items-center gap-2 md:flex">
+            <ConversationActions
+              conversationId={conversationId}
+              status={conv.status}
+              handler={conv.handler}
+              canAssign={canAssign}
+              agents={agents}
+            />
+          </div>
+          <Link
+            href={showProfile ? `/inbox/${conversationId}` : `/inbox/${conversationId}?profil=1`}
+            scroll={false}
+            aria-pressed={showProfile}
+            title={showProfile ? "Sembunyikan profil kontak" : "Lihat profil kontak"}
+            className={cn(
+              "hidden size-9 place-items-center rounded-lg transition-colors lg:grid",
+              showProfile ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <PanelRight className="size-[18px]" />
+          </Link>
         </div>
 
-        {/* toolbar aksi — baris sendiri; sembunyikan di layar kecil (mobile) biar tak overflow */}
-        <div className="hidden items-center justify-end gap-2 overflow-x-auto border-b border-border bg-card/60 px-5 py-2 md:flex">
-          <ConversationActions
-            conversationId={conversationId}
-            status={conv.status}
-            handler={conv.handler}
-            canAssign={canAssign}
-            agents={agents}
-          />
-        </div>
-
-        {/* messages */}
-        <div className="flex-1 space-y-5 overflow-y-auto bg-background px-4 py-5 sm:px-6">
+        {/* messages — WhatsApp-style wallpaper + shadcn Message components */}
+        <ChatScroll count={thread.length} className="wa-wallpaper px-4 py-4 sm:px-[6%]">
           {thread.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-              <MessageSquare className="size-8 text-muted-foreground/30" />
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-[#667781]">
+              <MessageSquare className="size-8 opacity-40" />
               Belum ada pesan
             </div>
           ) : (
             groups.map((g) => (
-              <div key={g.day} className="space-y-1.5">
-                <div className="sticky top-0 z-10 flex justify-center pb-1">
-                  <span className="rounded-full bg-card/85 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm ring-1 ring-border backdrop-blur">
+              <MessageGroup key={g.day} className="gap-1">
+                <div className="pointer-events-none sticky top-0 z-10 flex justify-center py-2">
+                  <span className="rounded-lg bg-white px-3 py-1 text-[11.5px] font-medium text-[#54656f] shadow-sm dark:bg-[#182229] dark:text-[#8696a0]">
                     {g.label}
                   </span>
                 </div>
-                {g.items.map((m) => {
+                {g.items.map((m, i) => {
                   const out = m.direction === "outbound";
+                  const prev = g.items[i - 1];
+                  const firstOfRun = !prev || prev.direction !== m.direction;
                   return (
-                    <div key={m.id} className={cn("flex", out ? "justify-end" : "justify-start")}>
-                      <div className={cn("flex max-w-[80%] flex-col gap-0.5 sm:max-w-[70%] md:max-w-[60%]", out ? "items-end" : "items-start")}>
+                    <Message key={m.id} align={out ? "end" : "start"} className={cn(firstOfRun && i > 0 && "mt-2")}>
+                      <MessageContent className="max-w-[85%] sm:max-w-[70%] lg:max-w-[62%]">
                         <div
                           className={cn(
-                            "px-3.5 py-2 text-sm shadow-sm",
-                            out
-                              ? "rounded-2xl rounded-br-md bg-gradient-to-br from-brand-blue to-brand-light text-white"
-                              : "rounded-2xl rounded-bl-md border border-border bg-card text-foreground",
+                            "relative w-fit rounded-lg px-2.5 pb-1.5 pt-1.5 text-[14.2px] leading-[19px] text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] dark:text-[#e9edef]",
+                            out ? "bg-[#d9fdd3] dark:bg-[#005c4b]" : "bg-white dark:bg-[#202c33]",
+                            firstOfRun && (out ? "rounded-tr-none" : "rounded-tl-none"),
                           )}
                         >
                           {m.sender === "bot" && (
-                            <div className={cn("mb-0.5 flex items-center gap-1 text-[10px] font-semibold", out ? "text-white/80" : "text-brand-blue")}>
-                              <Bot className="size-3" /> AI Agent
+                            <div className="mb-0.5 flex items-center gap-1 text-[11.5px] font-semibold text-[#027eb5] dark:text-[#53bdeb]">
+                              <Bot className="size-3.5" /> AI Agent
                             </div>
                           )}
-                          <div className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</div>
-                          {out && (
-                            <div className="mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums text-white/70">
-                              <span>{clock(m.createdAt)}</span>
-                              <MessageStatus status={m.status} />
-                            </div>
+                          {m.sender === "agent" && out && (
+                            <div className="mb-0.5 text-[11.5px] font-semibold text-[#06cf9c]">Agen</div>
                           )}
+                          <MessageMedia media={m.media as Record<string, unknown> | null} outbound={out} />
+                          {m.body && <span className="whitespace-pre-wrap break-words">{m.body}</span>}
+                          {/* spacer keeps the last line clear of the time stamp */}
+                          <span className="inline-block w-[64px]" aria-hidden />
+                          <span className="absolute bottom-1 right-2 flex items-center gap-1 text-[11px] tabular-nums text-[#667781] dark:text-[#8696a0]">
+                            {clock(m.createdAt)}
+                            {out && <MessageStatus status={m.status} />}
+                          </span>
                         </div>
-                        {!out && (
-                          <span className="px-1 text-[10px] tabular-nums text-muted-foreground">{clock(m.createdAt)}</span>
-                        )}
-                      </div>
-                    </div>
+                      </MessageContent>
+                    </Message>
                   );
                 })}
-              </div>
+              </MessageGroup>
             ))
           )}
-        </div>
+        </ChatScroll>
 
         <Composer
           conversationId={conversationId}
@@ -200,6 +228,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
       </div>
 
       {/* contact panel */}
+      {showProfile && (
       <aside className="hidden w-72 shrink-0 flex-col border-l border-border bg-card p-5 lg:flex">
         <div className="flex flex-col items-center text-center">
           <div
@@ -232,6 +261,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ convers
           )}
         </div>
       </aside>
+      )}
     </div>
   );
 }

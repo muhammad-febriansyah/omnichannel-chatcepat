@@ -5,27 +5,10 @@ import { db } from "@/lib/db";
 import { plans } from "@/lib/db/schema";
 import { requireSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { rupiah } from "@/lib/format";
-import { deletePlan } from "@/lib/billing-actions";
 import { PageHeader } from "@/components/app/page-header";
 import { ActionLink } from "@/components/app/action-link";
-import { EditButton } from "@/components/app/action-button";
-import { StatusPill, type PillTone } from "@/components/app/status-pill";
-import { DeleteButton } from "@/components/app/delete-button";
 import { Card, CardContent } from "@/components/ui/card";
-
-const TIER_LABEL: Record<string, string> = {
-  basic: "Basic",
-  pro: "Pro",
-  business: "Business",
-  enterprise: "Enterprise",
-};
-const TIER_TONE: Record<string, PillTone> = {
-  basic: "slate",
-  pro: "blue",
-  business: "amber",
-  enterprise: "emerald",
-};
+import { PlansTable } from "@/components/app/plans-table";
 
 export default async function PlansPage() {
   const session = await requireSession();
@@ -61,63 +44,19 @@ export default async function PlansPage() {
               </ActionLink>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <th className="px-4 py-3">Nama</th>
-                    <th className="px-4 py-3">Tier</th>
-                    <th className="px-4 py-3">Harga</th>
-                    <th className="px-4 py-3">Periode</th>
-                    <th className="px-4 py-3">Kuota</th>
-                    <th className="px-4 py-3">Aktif?</th>
-                    <th className="px-4 py-3">Highlight?</th>
-                    <th className="px-4 py-3 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((p) => (
-                    <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/40">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">{p.slug}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusPill tone={TIER_TONE[p.tier] ?? "slate"}>{TIER_LABEL[p.tier] ?? p.tier}</StatusPill>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        {p.priceIdr > 0 ? rupiah(p.priceIdr) : <span className="text-muted-foreground">Hubungi kami</span>}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{p.period === "year" ? "Tahunan" : "Bulanan"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {p.quota == null ? "Unlimited" : p.quota.toLocaleString("id-ID")}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusPill tone={p.isActive ? "emerald" : "slate"}>{p.isActive ? "Aktif" : "Nonaktif"}</StatusPill>
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.highlight ? <StatusPill tone="amber">Populer</StatusPill> : <span className="text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <EditButton href={`/admin/plans/${p.id}/edit`} />
-                          <DeleteButton
-                            onConfirm={deletePlan.bind(null, p.id)}
-                            title="Hapus paket?"
-                            description={
-                              <>
-                                Paket <b>{p.name}</b> akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.
-                              </>
-                            }
-                            successMessage="Paket dihapus"
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PlansTable
+              rows={rows.map((p) => ({
+                id: p.id,
+                name: p.name,
+                slug: p.slug,
+                tier: p.tier,
+                priceIdr: Number(p.priceIdr),
+                period: p.period,
+                quota: p.quota,
+                isActive: p.isActive,
+                highlight: p.highlight,
+              }))}
+            />
           )}
         </CardContent>
       </Card>

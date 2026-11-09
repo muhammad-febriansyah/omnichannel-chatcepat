@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Search, Inbox as InboxIcon, ChevronDown, PenLine } from "lucide-react";
+import { Search, Inbox as InboxIcon, PenLine } from "lucide-react";
+import { SimpleSelect } from "@/components/app/simple-select";
+import { ChannelBadge, ChannelIcon } from "@/components/app/channel-icon";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, ChannelType, initials, timeAgo } from "@/lib/format";
@@ -12,6 +14,8 @@ export type ConvItem = {
   id: string;
   name: string;
   channelType: string;
+  channelId: string | null;
+  channelName: string | null;
   preview: string | null;
   lastAt: string | null;
   unread: number;
@@ -35,34 +39,42 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "done", label: "Selesai" },
 ];
 
-// Filter channel: kelompokkan wa_official + wa_unofficial jadi satu "whatsapp".
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "telegram";
-const CHANNEL_GROUP: Record<string, ChannelFilter> = {
+// Filter akun: semua, per jenis channel (type:…), atau satu akun tertaut (acc:<id>).
+const CHANNEL_GROUP: Record<string, string> = {
   wa_official: "whatsapp",
   wa_unofficial: "whatsapp",
   instagram: "instagram",
   facebook: "facebook",
   telegram: "telegram",
 };
-const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
-  { key: "all", label: "Semua Channel" },
-  { key: "whatsapp", label: "WhatsApp" },
-  { key: "instagram", label: "Instagram" },
-  { key: "facebook", label: "Messenger" },
-  { key: "telegram", label: "Telegram" },
+const TYPE_FILTERS: { key: string; label: string }[] = [
+  { key: "type:whatsapp", label: "Semua WhatsApp" },
+  { key: "type:instagram", label: "Semua Instagram" },
+  { key: "type:facebook", label: "Semua Messenger" },
+  { key: "type:telegram", label: "Semua Telegram" },
 ];
 
-export function ConversationList({ items }: { items: ConvItem[] }) {
+export type AccountOption = { id: string; name: string; type: string };
+
+const GROUP_ICON: Record<string, ChannelType> = {
+  whatsapp: "wa_official",
+  instagram: "instagram",
+  facebook: "facebook",
+  telegram: "telegram",
+};
+
+export function ConversationList({ items, accounts = [] }: { items: ConvItem[]; accounts?: AccountOption[] }) {
   const params = useParams<{ conversationId?: string }>();
   const active = params?.conversationId;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [channel, setChannel] = useState<ChannelFilter>("all");
+  const [channel, setChannel] = useState("all");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((c) => {
-      if (channel !== "all" && CHANNEL_GROUP[c.channelType] !== channel) return false;
+      if (channel.startsWith("type:") && CHANNEL_GROUP[c.channelType] !== channel.slice(5)) return false;
+      if (channel.startsWith("acc:") && c.channelId !== channel.slice(4)) return false;
       if (filter === "unread" && c.unread <= 0) return false;
       if (filter === "read" && c.unread > 0) return false;
       if (filter === "active" && !(c.status === "open" || c.status === "pending")) return false;
@@ -92,23 +104,26 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
         </Link>
       </div>
 
-      {/* Filter channel */}
+      {/* Filter akun tertaut (multi akun WA/IG/FB/Telegram) */}
       <div className="px-3 pb-2">
-        <div className="relative">
-          <select
-            value={channel}
-            onChange={(e) => setChannel(e.target.value as ChannelFilter)}
-            aria-label="Filter channel"
-            className="h-9 w-full appearance-none rounded-lg border border-border bg-background pl-2.5 pr-8 text-sm font-medium text-foreground outline-none transition focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10"
-          >
-            {CHANNEL_FILTERS.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        </div>
+        <SimpleSelect
+          value={channel}
+          onChange={(v) => setChannel(v || "all")}
+          className="h-9"
+          options={[
+            { value: "all", label: `Semua akun (${accounts.length})` },
+            ...TYPE_FILTERS.filter((t) => accounts.some((a) => CHANNEL_GROUP[a.type] === t.key.slice(5))).map((t) => ({
+              value: t.key,
+              label: t.label,
+              icon: <ChannelBadge type={GROUP_ICON[t.key.slice(5)]} size="sm" />,
+            })),
+            ...accounts.map((a) => ({
+              value: `acc:${a.id}`,
+              label: `${a.name} · ${CHANNEL_META[a.type as ChannelType]?.label ?? a.type}`,
+              icon: <ChannelBadge type={a.type as ChannelType} size="sm" />,
+            })),
+          ]}
+        />
       </div>
 
       {/* Search */}
@@ -165,16 +180,16 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
                     : "hover:bg-muted/50",
                 )}
               >
-                <div className="relative">
+                <div className="relative h-fit shrink-0 self-start">
                   <Avatar className="size-10">
                     <AvatarFallback className="bg-gradient-to-br from-brand-navy to-brand-blue text-xs font-semibold text-white">
                       {initials(c.name)}
                     </AvatarFallback>
                   </Avatar>
-                  <span
-                    className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-card"
-                    style={{ background: meta?.color ?? "#94a3b8" }}
-                    title={meta?.label}
+                  <ChannelBadge
+                    type={(c.channelType as ChannelType) ?? "wa_official"}
+                    size="md"
+                    className="absolute -bottom-1 -right-1 ring-2 ring-card"
                   />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -183,6 +198,10 @@ export function ConversationList({ items }: { items: ConvItem[] }) {
                       {c.name}
                     </span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(c.lastAt)}</span>
+                  </div>
+                  <div className="flex items-center gap-1 truncate text-[10.5px] font-medium" style={{ color: meta?.color ?? undefined }}>
+                    <ChannelIcon type={(c.channelType as ChannelType) ?? "wa_official"} className="size-3 shrink-0" />
+                    <span className="truncate">{c.channelName ?? meta?.label}</span>
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <span className={cn("truncate text-xs", c.unread > 0 ? "text-foreground" : "text-muted-foreground")}>

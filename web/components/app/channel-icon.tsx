@@ -22,3 +22,30 @@ export function ChannelIcon({ type, className }: { type: ChannelType; className?
     </svg>
   );
 }
+
+// Brand-colored round badge with the platform logo (Instagram gets its gradient).
+export function ChannelBadge({ type, size = "md", className }: { type: ChannelType; size?: "sm" | "md" | "lg"; className?: string }) {
+  const box = size === "sm" ? "size-4" : size === "lg" ? "size-6" : "size-5";
+  const icon = size === "sm" ? "size-2.5" : size === "lg" ? "size-3.5" : "size-3";
+  const bg =
+    type === "instagram"
+      ? "bg-[radial-gradient(circle_at_30%_110%,#fdf497_0%,#fd5949_45%,#d6249f_60%,#285aeb_90%)]"
+      : type === "facebook"
+        ? "bg-[#1877f2]"
+        : type === "telegram"
+          ? "bg-[#229ed9]"
+          : "bg-[#25d366]";
+  return (
+    <span className={cn("inline-grid shrink-0 place-items-center rounded-full text-white", box, bg, className)} title={LABEL[type]}>
+      <ChannelIcon type={type} className={icon} />
+    </span>
+  );
+}
+
+const LABEL: Record<ChannelType, string> = {
+  wa_official: "WhatsApp Official",
+  wa_unofficial: "WhatsApp",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  telegram: "Telegram",
+};

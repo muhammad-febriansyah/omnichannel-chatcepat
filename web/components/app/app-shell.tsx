@@ -6,6 +6,7 @@ import { Eye, LogOut } from "lucide-react";
 import { Sidebar, type SupportContact } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
 import { Breadcrumbs } from "@/components/app/breadcrumbs";
+import { navFor } from "@/lib/nav";
 import { stopImpersonation } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/lib/session";
@@ -20,6 +21,7 @@ export function AppShell({
   siteName,
   tenants,
   children,
+  banner,
 }: {
   session: Session;
   workspaceName?: string;
@@ -29,6 +31,7 @@ export function AppShell({
   siteName?: string;
   tenants?: { id: string; name: string; slug: string }[];
   children: React.ReactNode;
+  banner?: React.ReactNode; // full-width notice above the breadcrumb (e.g. trial / expiry)
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,7 +52,7 @@ export function AppShell({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* Backdrop (mobile) */}
       {mobileOpen && (
         <div
@@ -86,9 +89,17 @@ export function AppShell({
             </form>
           </div>
         )}
-        <Topbar session={session} onToggleSidebar={toggle} tenants={tenants} />
-        <Breadcrumbs />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <Topbar
+          session={session}
+          onToggleSidebar={toggle}
+          tenants={tenants}
+          navSections={navFor({ role: session.role, plan: stats.plan, impersonating: !!session.impersonating })}
+        />
+        <main className="flex-1 overflow-y-auto">
+          {banner}
+          <Breadcrumbs rootLabel={siteName || "ChatCepat"} />
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -77,6 +77,8 @@ export class PermissionError extends Error {
   ) {
     super(`role '${role}' tidak punya ability '${ability}'`);
     this.name = "PermissionError";
+    // Readable in production too (see lib/action-error.ts).
+    (this as unknown as { digest: string }).digest = "CCERR:" + encodeURIComponent("Anda tidak punya akses untuk aksi ini");
   }
 }
 

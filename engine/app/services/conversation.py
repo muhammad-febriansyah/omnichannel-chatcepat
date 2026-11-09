@@ -8,7 +8,10 @@ import uuid
 from datetime import datetime, timezone
 
 from ..bus import publish_outbound, publish_realtime
-from ..contracts.events import OutboundCommand, Party, Template
+from urllib.parse import urljoin
+
+from ..config import APP_BASE_URL
+from ..contracts.events import Media, OutboundCommand, Party, Template
 from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal
 from ..repositories import contacts, conversations, messages
@@ -29,8 +32,11 @@ async def send_agent_reply(
     body: str,
     agent_id: uuid.UUID | None = None,
     tenant_id: uuid.UUID | None = None,
+    media: dict | None = None,
 ) -> dict:
-    """Agen balas → takeover (handler=agent), persist message, publish outbound + realtime."""
+    """Agen balas → takeover (handler=agent), persist message, publish outbound + realtime.
+
+    media = {url, mime, filename}: a file the agent uploaded (caption = body)."""
     async with AsyncSessionLocal() as session:
         async with session.begin():
             conv = await conversations.get_with_state(session, conversation_id)
@@ -56,6 +62,11 @@ async def send_agent_reply(
                         f"Window pesan {label} 24 jam sudah tutup. Kontak harus "
                         "mengirim pesan lagi sebelum kamu bisa membalas."
                     )
+            # Attachments must be this tenant's own chat uploads (never an arbitrary URL).
+            if media is not None:
+                url = str(media.get("url") or "")
+                if not url.startswith(f"/uploads/{conv.tenant_id}/chat/") or ".." in url:
+                    raise ValueError("lampiran tidak valid")
             # Warm-up cap (unofficial): blok bila volume rolling-24h sudah lewat batas.
             await warmup.enforce_unofficial(session, channel)
             idem = f"agent:{conversation_id}:{uuid.uuid4().hex}"
@@ -66,22 +77,33 @@ async def send_agent_reply(
                 channel_id=channel.id,
                 sender="agent",
                 agent_id=agent_id,
-                body=body,
+                body=body or None,
                 idempotency_key=idem,
+                msg_type=_media_type(media) if media else "text",
+                media=media,
             )
             conv.handler = "agent"
             if agent_id is not None:
                 conv.assigned_agent_id = agent_id
             conv.last_message_at = datetime.now(timezone.utc)
-            conv.last_message_preview = body[:120]
+            conv.last_message_preview = (body or _media_preview(media))[:120]
             tenant_str = str(conv.tenant_id)
             cmd = OutboundCommand(
                 event_id=uuid.uuid4().hex,
                 idempotency_key=idem,
                 channel_id=channel.id,
                 to=Party(external_id=contact.external_id or contact.phone or "", phone=contact.phone),
-                type=OutboundType.text,
-                body=body,
+                type=OutboundType.media if media else OutboundType.text,
+                body=body or None,
+                media=(
+                    Media(
+                        url=urljoin(APP_BASE_URL + "/", media["url"]),
+                        mime=media["mime"],
+                        filename=media.get("filename"),
+                    )
+                    if media
+                    else None
+                ),
                 conversation_id=conv.id,
             )
             msg_id = str(msg.id)
@@ -109,6 +131,23 @@ async def send_agent_reply(
             ),
         )
     return {"message_id": msg_id, "handler": "agent"}
+
+
+def _media_type(media: dict) -> str:
+    return "image" if str(media.get("mime", "")).startswith("image/") else "file"
+
+
+def _media_preview(media: dict | None) -> str:
+    if not media:
+        return ""
+    mime = str(media.get("mime", ""))
+    if mime.startswith("image/"):
+        return "📷 Foto"
+    if mime.startswith("video/"):
+        return "🎥 Video"
+    if mime.startswith("audio/"):
+        return "🎵 Audio"
+    return f"📎 {media.get('filename') or 'Dokumen'}"
 
 
 def _normalize_phone(raw: str) -> str:

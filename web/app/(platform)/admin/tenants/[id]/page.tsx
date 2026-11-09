@@ -29,7 +29,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
 
   const cards = [
     { label: "Channel", value: t.counts.channels, icon: Plug, tone: "#8b5cf6" },
-    { label: "User", value: t.counts.users, icon: Users2, tone: "#3b82f6" },
+    { label: "User", value: t.counts.users, icon: Users2, tone: "#2547f9" },
     { label: "Kontak", value: t.counts.contacts, icon: Contact, tone: "#10b981" },
     { label: "Pesan Bulan Ini", value: t.counts.messagesThisMonth, icon: MessageSquare, tone: "#f59e0b" },
   ];
@@ -95,7 +95,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.label} className="rounded-xl border border-border bg-card p-4">
+            <div key={c.label} className="rounded-[20px] bg-card p-4">
               <span className="flex size-9 items-center justify-center rounded-lg" style={{ background: `${c.tone}1a`, color: c.tone }}>
                 <Icon className="size-[18px]" />
               </span>
@@ -108,7 +108,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Users */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-[20px] bg-card p-5">
           <h2 className="mb-3 text-base font-semibold">Anggota ({t.users.length})</h2>
           {t.users.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada user.</p>
@@ -130,7 +130,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         </div>
 
         {/* Channels */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-[20px] bg-card p-5">
           <h2 className="mb-3 text-base font-semibold">Channel ({t.channels.length})</h2>
           {t.channels.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada channel.</p>

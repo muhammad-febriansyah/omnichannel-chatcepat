@@ -1,98 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { usePathname } from "next/navigation";
+import { LifeBuoy, MessageCircle, LogOut, Lock, ChevronDown, Building2, ShieldCheck } from "lucide-react";
 import { logout } from "@/lib/actions";
-import {
-  Inbox,
-  Users,
-  Workflow,
-  Sparkles,
-  Package,
-  FileText,
-  LayoutDashboard,
-  BarChart3,
-  Plug,
-  UserCog,
-  Tag,
-  CreditCard,
-  Settings,
-  LifeBuoy,
-  MessageCircle,
-  LogOut,
-  Lock,
-  ShieldCheck,
-  Receipt,
-  Users2,
-  TrendingUp,
-  Activity,
-  Bot,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { can, type Ability, type Role } from "@/lib/rbac";
-import { planAllows, PLAN_LABEL, type SidebarStats, type TenantPlan } from "@/lib/plan";
+import { type Role } from "@/lib/rbac";
+import { PLAN_LABEL, type SidebarStats } from "@/lib/plan";
+import { navFor, activeHref as findActive } from "@/lib/nav";
 import { BrandLogo } from "@/components/app/brand-logo";
-
-type Item = {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  badge?: number;
-  dot?: boolean;
-  ability?: Ability; // undefined = selalu tampil
-  minPlan?: TenantPlan; // paket minimal; di bawahnya item dikunci (bukan disembunyikan)
-  tenantOnly?: boolean; // hanya client; admin platform disembunyikan (mis. langganan/billing)
-  hideForClient?: boolean; // sembunyikan dari client; admin (impersonasi) tetap lihat utk support
-};
-
-const SECTIONS: { title: string; items: Item[] }[] = [
-  {
-    title: "Menu Utama",
-    items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, ability: "report.view" },
-      { href: "/inbox", label: "Inbox", icon: Inbox, ability: "conversation.view_assigned" },
-      { href: "/contacts", label: "Kontak", icon: Users, ability: "contact.view" },
-      { href: "/products", label: "Produk", icon: Package, ability: "product.manage" },
-      { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage" },
-      { href: "/flows", label: "Otomasi", icon: Workflow, ability: "flow.manage" },
-      { href: "/automation", label: "Automation", icon: Bot, ability: "flow.manage" },
-      { href: "/ai-agent", label: "AI Agent", icon: Sparkles, ability: "knowledge.manage" },
-    ],
-  },
-  {
-    title: "Analitik",
-    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view", hideForClient: true }],
-  },
-  {
-    title: "Pengaturan",
-    items: [
-      { href: "/channels", label: "Channel", icon: Plug, dot: true, ability: "channel.view" },
-      { href: "/tags", label: "Tag & Label", icon: Tag, ability: "contact.manage", hideForClient: true },
-      { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage", hideForClient: true },
-      { href: "/billing", label: "Tagihan & Paket", icon: CreditCard, ability: "billing.tenant", tenantOnly: true },
-      { href: "/settings", label: "Pengaturan", icon: Settings, hideForClient: true },
-    ],
-  },
-];
-
-// Section khusus admin platform (god-mode) — konsol platform, ditaruh paling atas.
-const PLATFORM_SECTION: { title: string; items: Item[] } = {
-  title: "Platform",
-  items: [
-    { href: "/admin", label: "Ringkasan & Tenant", icon: ShieldCheck },
-    { href: "/admin/analytics", label: "Analitik", icon: TrendingUp },
-    { href: "/admin/transactions", label: "Transaksi", icon: Receipt },
-    { href: "/admin/users", label: "Pengguna", icon: Users2 },
-    { href: "/admin/activity", label: "Aktivitas", icon: Activity },
-    { href: "/admin/plans", label: "Paket", icon: Tag },
-    { href: "/admin/settings", label: "Pengaturan", icon: Settings },
-  ],
-};
 
 export type SupportContact = { whatsapp?: string; phone?: string; email?: string };
 
+const COLLAPSED_KEY = "cc.sidebar.closedSections";
+
+function readClosed(): string[] {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function Sidebar({
+  workspaceName,
   collapsed = false,
   role,
   stats,
@@ -112,36 +45,32 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const isPlatformAdmin = role === "admin";
-  // admin platform: default HANYA konsol platform (tracking tenant, paket). Menu
-  // operasional omnichannel disembunyikan — itu ranah tenant. Tampil hanya saat
-  // admin "masuk sebagai tenant" (impersonasi) untuk support.
-  const baseSections = isPlatformAdmin
-    ? impersonating
-      ? SECTIONS
-      : [PLATFORM_SECTION]
-    : SECTIONS;
-  // Filter per-role (hide), lalu tandai `locked` per-paket (tampil tapi terkunci).
-  const sections = baseSections
-    .map((sec) => ({
-      ...sec,
-      items: sec.items
-        .filter((it) => !it.ability || can({ role }, it.ability))
-        .filter((it) => !(isPlatformAdmin && it.tenantOnly)) // admin: sembunyikan menu langganan
-        .filter((it) => !(it.hideForClient && !isPlatformAdmin)) // client: sembunyikan; admin impersonasi tetap lihat
-        .map((it) => ({ ...it, locked: !isPlatformAdmin && it.minPlan ? !planAllows(stats.plan, it.minPlan) : false })),
-    }))
-    .filter((sec) => sec.items.length > 0);
+  const sections = navFor({ role, plan: stats.plan, impersonating });
+  const active = findActive(sections, pathname);
+  const showPlatformCard = isPlatformAdmin && !impersonating;
 
-  // Aktif = href dengan prefix-match terpanjang (hindari /settings ikut aktif di /settings/users).
-  const activeHref = sections
-    .flatMap((s) => s.items.map((it) => it.href))
-    .filter((href) => pathname === href || pathname.startsWith(href + "/"))
-    .reduce((best, href) => (href.length > best.length ? href : best), "");
+  // Section collapse state is a per-viewer convenience; storage may be unavailable.
+  const [closed, setClosed] = useState<string[]>([]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setClosed(readClosed());
+  }, []);
+  function toggleSection(id: string) {
+    setClosed((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* storage blocked — keep in memory only */
+      }
+      return next;
+    });
+  }
 
   const channelConnected = stats.channelsConnected > 0;
   const [pendingLogout, startLogout] = useTransition();
 
-  // Kontak admin dari web_settings tenant (DB) — WA → telepon → email.
+  // Admin contact from tenant web_settings — WA → phone → email.
   const supportWa = support?.whatsapp?.replace(/[^0-9]/g, "");
   const supportPhone = support?.phone?.replace(/[^0-9+]/g, "");
   const supportHref = supportWa
@@ -155,92 +84,133 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col gap-3.5 overflow-y-auto border-r border-border bg-card transition-[width] duration-200",
-        collapsed ? "w-[72px] p-2.5" : "w-60 p-4",
+        "flex h-screen shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200",
+        collapsed ? "w-[72px]" : "w-[248px]",
       )}
     >
-      {/* Brand — logo dari web_settings tenant; fallback CCLogo. Collapsed pakai ikon (logo landscape tak muat). */}
-      <div className={cn("pt-1", collapsed ? "flex justify-center" : "px-2")}>
-        {/* Sama dgn login: logo upload tenant (web_settings) → img; fallback CCLogo "ChatCepat". */}
-        <BrandLogo logoUrl={logoUrl} siteName={siteName} variant="dark" size={30} withWordmark={!collapsed} />
+      {/* Brand */}
+      <div className={cn("flex h-16 shrink-0 items-center", collapsed ? "justify-center" : "px-5")}>
+        <BrandLogo logoUrl={logoUrl} siteName={siteName} variant="dark" size={28} withWordmark={!collapsed} />
+      </div>
+
+      {/* Workspace card */}
+      <div className={cn("shrink-0", collapsed ? "px-2.5 pb-2" : "px-3 pb-3")}>
+        {collapsed ? (
+          <div
+            title={showPlatformCard ? "Konsol Platform" : workspaceName}
+            className="mx-auto grid size-10 place-items-center rounded-xl bg-blue-50 text-brand-blue dark:bg-blue-500/10"
+          >
+            {showPlatformCard ? <ShieldCheck className="size-[18px]" /> : <Building2 className="size-[18px]" />}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-gradient-to-br from-blue-50/80 to-card px-3 py-2.5 dark:from-blue-500/10">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-blue text-white shadow-sm">
+              {showPlatformCard ? <ShieldCheck className="size-[18px]" /> : <Building2 className="size-[18px]" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-foreground">
+                {showPlatformCard ? "Konsol Platform" : workspaceName || "Workspace"}
+              </div>
+              {showPlatformCard ? (
+                <div className="truncate text-[11px] text-muted-foreground">Super admin</div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className={cn("size-1.5 rounded-full", channelConnected ? "bg-success" : "bg-muted-foreground/40")} />
+                  <span className="truncate">
+                    {stats.channelsConnected} channel aktif · {PLAN_LABEL[stats.plan]}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-2">
-        {sections.map((sec) => (
-          <div key={sec.title} className="flex flex-col gap-1">
-            {!collapsed && (
-              <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
-                {sec.title}
-              </div>
-            )}
-            {sec.items.map((it) => {
-              const active = it.href === activeHref && !it.locked;
-              const Icon = it.icon;
-
-              // Terkunci: paket tenant di bawah minPlan. Tampil abu-abu, klik → /billing (upgrade).
-              if (it.locked) {
-                const upsell = `Fitur paket ${PLAN_LABEL[it.minPlan!]} — klik untuk upgrade`;
-                return (
-                  <Link
-                    key={it.href}
-                    href="/billing"
-                    title={upsell}
-                    aria-label={`${it.label} (terkunci, butuh paket ${PLAN_LABEL[it.minPlan!]})`}
-                    className={cn(
-                      "relative flex items-center rounded-lg text-[13.5px] font-medium text-muted-foreground/50 transition-colors hover:bg-slate-100 hover:text-muted-foreground",
-                      collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-                    )}
-                  >
-                    <Icon className="size-5 shrink-0" strokeWidth={1.75} />
-                    {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
-                    <Lock className={cn("size-3.5 shrink-0", collapsed && "absolute right-1.5 top-1.5")} />
-                  </Link>
-                );
-              }
-
-              return (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  title={collapsed ? it.label : undefined}
-                  className={cn(
-                    "relative flex items-center rounded-lg text-[13.5px] font-medium transition-colors",
-                    collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-                    active
-                      ? "bg-blue-100 font-semibold text-brand-navy before:absolute before:inset-y-2 before:-left-1 before:w-[3px] before:rounded-r before:bg-brand-blue"
-                      : "text-muted-foreground hover:bg-slate-100 hover:text-foreground",
-                  )}
+      <nav className={cn("flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3", collapsed ? "px-2.5" : "px-3")}>
+        {sections.map((sec) => {
+          const isClosed = !collapsed && closed.includes(sec.id) && !sec.items.some((it) => it.href === active);
+          return (
+            <div key={sec.id} className="flex flex-col">
+              {collapsed ? (
+                <div className="mx-auto my-2 h-px w-6 bg-border first:hidden" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => toggleSection(sec.id)}
+                  aria-expanded={!isClosed}
+                  className="flex items-center justify-between px-2.5 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:text-foreground"
                 >
-                  <Icon className="size-5 shrink-0" strokeWidth={1.75} />
-                  {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
-                  {!collapsed && it.badge ? (
-                    <span className="min-w-5 rounded-full bg-brand-blue px-1.5 text-center text-[11px] font-bold text-white">
-                      {it.badge}
-                    </span>
-                  ) : null}
-                  {it.dot ? (
-                    <span
-                      title={channelConnected ? `${stats.channelsConnected} channel aktif` : "Belum ada channel aktif"}
-                      className={cn(
-                        "size-2 rounded-full",
-                        channelConnected
-                          ? "bg-success shadow-[0_0_0_3px_rgba(16,185,129,0.18)]"
-                          : "bg-muted-foreground/40",
-                        collapsed && "absolute right-1.5 top-1.5",
-                      )}
-                    />
-                  ) : null}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+                  {sec.title}
+                  <ChevronDown className={cn("size-3.5 transition-transform", isClosed && "-rotate-90")} />
+                </button>
+              )}
+              {!isClosed && (
+                <div className="flex flex-col gap-0.5">
+                  {sec.items.map((it) => {
+                    const Icon = it.icon;
+                    if (it.locked) {
+                      const plan = PLAN_LABEL[it.minPlan!];
+                      return (
+                        <Link
+                          key={it.href}
+                          href="/billing"
+                          title={`Fitur paket ${plan} — klik untuk upgrade`}
+                          aria-label={`${it.label} (terkunci, butuh paket ${plan})`}
+                          className={cn(
+                            "relative flex items-center rounded-xl text-[13.5px] font-medium text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground",
+                            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+                          )}
+                        >
+                          <Icon className="size-[18px] shrink-0" strokeWidth={1.8} />
+                          {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
+                          <Lock className={cn("size-3.5 shrink-0", collapsed && "absolute right-1.5 top-1.5")} />
+                        </Link>
+                      );
+                    }
+                    const isActive = it.href === active;
+                    return (
+                      <Link
+                        key={it.href}
+                        href={it.href}
+                        title={collapsed ? it.label : undefined}
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                          "relative flex items-center rounded-xl text-[13.5px] font-medium transition-colors",
+                          collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+                          isActive
+                            ? "bg-brand-blue font-semibold text-white shadow-[0_6px_16px_-6px_rgba(59,130,246,0.6)]"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <Icon className="size-[18px] shrink-0" strokeWidth={isActive ? 2 : 1.8} />
+                        {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
+                        {it.dot ? (
+                          <span
+                            title={channelConnected ? `${stats.channelsConnected} channel aktif` : "Belum ada channel aktif"}
+                            className={cn(
+                              "size-2 rounded-full",
+                              channelConnected
+                                ? isActive
+                                  ? "bg-white"
+                                  : "bg-success shadow-[0_0_0_3px_rgba(16,185,129,0.18)]"
+                                : "bg-muted-foreground/40",
+                              collapsed && "absolute right-1.5 top-1.5",
+                            )}
+                          />
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       {/* Footer */}
-      <div className="mt-auto flex flex-col gap-2">
-        {/* Hubungi Admin */}
+      <div className={cn("flex shrink-0 flex-col gap-2 border-t border-border", collapsed ? "p-2.5" : "p-3")}>
         {collapsed ? (
           <a
             href={supportHref}
@@ -248,38 +218,32 @@ export function Sidebar({
             rel="noreferrer"
             title="Hubungi Admin"
             aria-label="Hubungi Admin"
-            className="mx-auto grid size-9 place-items-center rounded-lg bg-blue-50 text-brand-blue transition-colors hover:bg-blue-100"
+            className="mx-auto grid size-9 place-items-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300"
           >
             <LifeBuoy className="size-[18px]" />
           </a>
         ) : (
-          <div className="rounded-xl border border-border bg-gradient-to-br from-blue-50 to-card p-3">
-            <div className="flex items-center gap-2.5">
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-blue/10 text-brand-blue">
-                <LifeBuoy className="size-[18px]" />
-              </span>
-              <div className="min-w-0">
-                <div className="text-[12.5px] font-semibold text-foreground">Butuh bantuan?</div>
-                <div className="truncate text-[11px] text-muted-foreground">Tim admin siap membantu</div>
-              </div>
-            </div>
-            <a
-              href={supportHref}
-              target={supportHref.startsWith("http") ? "_blank" : undefined}
-              rel="noreferrer"
-              className="mt-2.5 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand-blue text-[12px] font-semibold text-white transition hover:opacity-90"
-            >
-              <MessageCircle className="size-3.5" /> Hubungi Admin
-            </a>
-          </div>
+          <a
+            href={supportHref}
+            target={supportHref.startsWith("http") ? "_blank" : undefined}
+            rel="noreferrer"
+            className="group flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 transition-colors hover:bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+              <MessageCircle className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-semibold text-foreground">Butuh bantuan?</span>
+              <span className="block truncate text-[11px] text-muted-foreground">Chat dengan tim admin</span>
+            </span>
+          </a>
         )}
 
-        {/* Keluar */}
         <button
           onClick={() => startLogout(() => logout())}
           disabled={pendingLogout}
           className={cn(
-            "flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger disabled:opacity-50",
+            "flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-danger disabled:opacity-50 dark:hover:bg-red-500/10",
             collapsed ? "mx-auto size-9 justify-center" : "h-9 gap-2 px-3 text-[13px] font-medium",
           )}
           title="Keluar"

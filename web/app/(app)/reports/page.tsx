@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { SectionCard } from "@/components/app/section-card";
 
 const CONV_STATUS: Record<string, { label: string; color: string }> = {
-  open: { label: "Terbuka", color: "#3b82f6" },
+  open: { label: "Terbuka", color: "#2547f9" },
   pending: { label: "Pending", color: "#f59e0b" },
   resolved: { label: "Selesai", color: "#10b981" },
   snoozed: { label: "Ditunda", color: "#8b5cf6" },
@@ -56,7 +56,7 @@ export default async function ReportsPage() {
   const maxDay = Math.max(1, ...s.msgPerDay.map((d) => d.n));
 
   const cards = [
-    { label: "Total Percakapan", value: s.conversations, icon: MessageSquare, tone: "#3b82f6" },
+    { label: "Total Percakapan", value: s.conversations, icon: MessageSquare, tone: "#2547f9" },
     { label: "Tingkat Resolusi", value: `${resRate}%`, icon: CheckCircle2, tone: "#10b981" },
     { label: "Total Kontak", value: cleanIDR(s.contacts), icon: Users, tone: "#8b5cf6" },
     { label: "Kontak Opted-in", value: cleanIDR(s.optedIn), icon: ShieldCheck, tone: "#0ea5e9" },
@@ -71,7 +71,7 @@ export default async function ReportsPage() {
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.label} className="rounded-2xl border border-border bg-card p-4">
+            <div key={c.label} className="rounded-[20px] bg-card p-4">
               <span className="flex size-9 items-center justify-center rounded-lg" style={{ background: `${c.tone}1a`, color: c.tone }}>
                 <Icon className="size-[18px]" />
               </span>

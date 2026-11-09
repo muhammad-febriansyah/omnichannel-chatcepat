@@ -1,3 +1,4 @@
+import { userError } from "@/lib/action-error";
 import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "./rbac";
 
@@ -25,7 +26,7 @@ function secret(): Uint8Array {
   // Prod WAJIB set secret kuat — fallback hardcoded = JWT bisa dipalsu. Fail-hard.
   if (!s || s === DEV_SECRET) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("NEXTAUTH_SECRET wajib di-set (string acak ≥32 char) di production");
+      throw userError("NEXTAUTH_SECRET wajib di-set (string acak ≥32 char) di production");
     }
     return new TextEncoder().encode(DEV_SECRET);
   }

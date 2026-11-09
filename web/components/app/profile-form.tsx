@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/action-error";
 import { useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,7 +34,7 @@ export interface ProfileInitial {
 }
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-11 w-full pl-10 pr-3 text-sm disabled:cursor-not-allowed disabled:opacity-60";
 
 export function ProfileForm({ initial }: { initial: ProfileInitial }) {
   const [pending, start] = useTransition();
@@ -66,7 +68,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
       setAvatar(data.url as string);
       gooeyToast.success("Foto terunggah — klik Simpan untuk menerapkan");
     } catch (err) {
-      gooeyToast.error(err instanceof Error ? err.message : "Gagal mengunggah");
+      gooeyToast.error(errorMessage(err) ?? "Gagal mengunggah");
     } finally {
       setBusy(false);
     }
@@ -78,7 +80,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
         await updateProfile({ name: v.name, avatarUrl: avatar, password: v.password || undefined });
         gooeyToast.success("Profil tersimpan");
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan profil";
+        const msg = errorMessage(err) ?? "Gagal menyimpan profil";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -159,7 +161,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
               <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">Nama</label>
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input id="name" {...register("name")} placeholder="Nama kamu" className={inputCls} />
+                <Input id="name" {...register("name")} placeholder="Nama kamu" className={inputCls} />
               </div>
               {errors.name && <p className="mt-1.5 text-xs font-medium text-danger">{errors.name.message}</p>}
             </div>
@@ -167,7 +169,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
               <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">Email</label>
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input id="email" value={initial.email} disabled type="email" className={inputCls} />
+                <Input id="email" value={initial.email} disabled type="email" className={inputCls} />
               </div>
               <p className="mt-1.5 text-xs text-muted-foreground">Email tidak bisa diubah.</p>
             </div>
@@ -179,7 +181,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
               <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-foreground">Password baru</label>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input id="password" {...register("password")} type="password" placeholder="••••••••" className={inputCls} />
+                <Input id="password" {...register("password")} type="password" placeholder="••••••••" className={inputCls} />
               </div>
               {errors.password && <p className="mt-1.5 text-xs font-medium text-danger">{errors.password.message}</p>}
               <p className="mt-1.5 text-xs text-muted-foreground">Kosongkan jika tidak ingin mengganti password.</p>

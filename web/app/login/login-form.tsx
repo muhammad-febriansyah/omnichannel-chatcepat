@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, Check, AlertCircle, Inbox, Users, Zap } from "lucide-react";
@@ -95,7 +96,7 @@ export default function LoginForm({ logoUrl, siteName }: { logoUrl?: string | nu
           setTimeout(() => setShake(false), 450);
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal masuk";
+        const msg = errorMessage(err) ?? "Gagal masuk";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });

@@ -1,5 +1,10 @@
 "use client";
 
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { ActionLink } from "@/components/app/action-link";
 import { createPlan, updatePlan, type PlanInput } from "@/lib/billing-actions";
 import { cn } from "@/lib/utils";
+import { PlanEntitlementsEditor } from "@/components/app/plan-entitlements-editor";
+import { TIER_DEFAULTS, type PlanEntitlements } from "@/lib/plan-config";
 
 // Format angka ke ribuan id-ID ("12.500"); "" kalau kosong/0 opsional.
 function groupID(n: number): string {
@@ -55,10 +62,11 @@ export interface PlanInitial {
   isActive: boolean;
   highlight: boolean;
   sortOrder: number;
+  entitlements?: PlanEntitlements;
 }
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10";
+  "h-11 w-full text-sm";
 
 export function PlanForm({
   mode,
@@ -70,6 +78,7 @@ export function PlanForm({
   initial?: PlanInitial;
 }) {
   const [pending, start] = useTransition();
+  const [ent, setEnt] = useState<PlanEntitlements>(initial?.entitlements ?? TIER_DEFAULTS[initial?.tier ?? "pro"]);
   const {
     register,
     handleSubmit,
@@ -110,13 +119,17 @@ export function PlanForm({
       isActive: !!v.isActive,
       highlight: !!v.highlight,
       sortOrder: Number(v.sortOrder) || 0,
+      aiTokensMonthly: ent.aiTokensMonthly,
+      limits: ent.limits,
+      featureFlags: ent.features,
+      flowNodes: ent.flowNodes,
     };
     start(async () => {
       try {
         if (mode === "edit" && planId) await updatePlan(planId, payload);
         else await createPlan(payload);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Gagal menyimpan paket";
+        const msg = errorMessage(err) ?? "Gagal menyimpan paket";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
       }
     });
@@ -142,14 +155,14 @@ export function PlanForm({
                 <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
                   Nama Paket
                 </label>
-                <input id="name" {...register("name")} placeholder="Business" className={inputCls} />
+                <Input id="name" {...register("name")} placeholder="Business" className={inputCls} />
                 {errors.name && <p className="mt-1.5 text-xs font-medium text-danger">{errors.name.message}</p>}
               </div>
               <div>
                 <label htmlFor="slug" className="mb-1.5 block text-sm font-medium text-foreground">
                   Slug
                 </label>
-                <input id="slug" {...register("slug")} placeholder="business" className={inputCls} />
+                <Input id="slug" {...register("slug")} placeholder="business" className={inputCls} />
                 {errors.slug && <p className="mt-1.5 text-xs font-medium text-danger">{errors.slug.message}</p>}
                 <p className="mt-1.5 text-xs text-muted-foreground">Dipakai di URL & pemilihan paket.</p>
               </div>
@@ -157,18 +170,18 @@ export function PlanForm({
                 <label htmlFor="tier" className="mb-1.5 block text-sm font-medium text-foreground">
                   Tier
                 </label>
-                <select id="tier" {...register("tier")} className={inputCls}>
-                  <option value="basic">Basic</option>
-                  <option value="pro">Pro</option>
-                  <option value="business">Business</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
+                <NativeSelect id="tier" {...register("tier")} className={inputCls}>
+                  <NativeSelectOption value="basic">Basic</NativeSelectOption>
+                  <NativeSelectOption value="pro">Pro</NativeSelectOption>
+                  <NativeSelectOption value="business">Business</NativeSelectOption>
+                  <NativeSelectOption value="enterprise">Enterprise</NativeSelectOption>
+                </NativeSelect>
               </div>
               <div>
                 <label htmlFor="sortOrder" className="mb-1.5 block text-sm font-medium text-foreground">
                   Urutan Tampil
                 </label>
-                <input id="sortOrder" type="number" {...register("sortOrder")} className={inputCls} />
+                <Input id="sortOrder" type="number" {...register("sortOrder")} className={inputCls} />
                 {errors.sortOrder && (
                   <p className="mt-1.5 text-xs font-medium text-danger">{errors.sortOrder.message}</p>
                 )}
@@ -194,7 +207,7 @@ export function PlanForm({
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">
                           Rp
                         </span>
-                        <input
+                        <Input
                           id="priceIdr"
                           inputMode="numeric"
                           autoComplete="off"
@@ -219,10 +232,10 @@ export function PlanForm({
                 <label htmlFor="period" className="mb-1.5 block text-sm font-medium text-foreground">
                   Periode
                 </label>
-                <select id="period" {...register("period")} className={inputCls}>
-                  <option value="month">Bulanan</option>
-                  <option value="year">Tahunan</option>
-                </select>
+                <NativeSelect id="period" {...register("period")} className={inputCls}>
+                  <NativeSelectOption value="month">Bulanan</NativeSelectOption>
+                  <NativeSelectOption value="year">Tahunan</NativeSelectOption>
+                </NativeSelect>
               </div>
               <div>
                 <label htmlFor="quota" className="mb-1.5 block text-sm font-medium text-foreground">
@@ -235,7 +248,7 @@ export function PlanForm({
                     const raw = field.value;
                     const num = raw === "" || raw == null ? null : Number(raw);
                     return (
-                      <input
+                      <Input
                         id="quota"
                         inputMode="numeric"
                         autoComplete="off"
@@ -256,6 +269,8 @@ export function PlanForm({
             </div>
           </div>
 
+          <PlanEntitlementsEditor value={ent} onChange={setEnt} />
+
           {/* Detail */}
           <div className="border-t border-border pt-6">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Detail</h3>
@@ -264,19 +279,19 @@ export function PlanForm({
                 <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-foreground">
                   Deskripsi
                 </label>
-                <textarea
+                <Textarea
                   id="description"
                   {...register("description")}
                   rows={2}
                   placeholder="Cocok untuk bisnis yang sedang bertumbuh."
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition-shadow focus:border-brand-blue focus:bg-card focus:ring-4 focus:ring-brand-blue/10"
+                  className="w-full py-2.5 text-sm"
                 />
                 {errors.description && (
                   <p className="mt-1.5 text-xs font-medium text-danger">{errors.description.message}</p>
                 )}
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">Fitur</label>
+                <label className="mb-1.5 block text-sm font-medium text-foreground">Poin jualan (tampil di halaman harga)</label>
                 <Controller
                   control={control}
                   name="features"
@@ -302,24 +317,26 @@ export function PlanForm({
           <div className="border-t border-border pt-6">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Opsi</h3>
             <div className="flex flex-wrap gap-6">
-              <label htmlFor="isActive" className="flex items-center gap-2.5 text-sm font-medium text-foreground">
-                <input
-                  id="isActive"
-                  type="checkbox"
-                  {...register("isActive")}
-                  className="size-4 rounded border-border text-brand-blue focus:ring-brand-blue/30"
-                />
-                Aktif (tampil di halaman harga)
-              </label>
-              <label htmlFor="highlight" className="flex items-center gap-2.5 text-sm font-medium text-foreground">
-                <input
-                  id="highlight"
-                  type="checkbox"
-                  {...register("highlight")}
-                  className="size-4 rounded border-border text-brand-blue focus:ring-brand-blue/30"
-                />
-                Sorot sebagai paket populer
-              </label>
+              <Controller
+                control={control}
+                name="isActive"
+                render={({ field }) => (
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground">
+                    <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                    Aktif (tampil di halaman harga)
+                  </label>
+                )}
+              />
+              <Controller
+                control={control}
+                name="highlight"
+                render={({ field }) => (
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground">
+                    <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                    Sorot sebagai paket populer
+                  </label>
+                )}
+              />
             </div>
           </div>
         </CardContent>
