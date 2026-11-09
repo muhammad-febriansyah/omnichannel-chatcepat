@@ -66,7 +66,8 @@ export const TENANT_SECTIONS: NavSection[] = [
       { href: "/flows", label: "Automation", icon: Workflow, ability: "flow.manage", keywords: "flow bot alur chatbot menu knowledge promo broadcast blast kampanye" },
       { href: "/ai-agent", label: "Asisten AI", icon: Sparkles, ability: "knowledge.manage", keywords: "ai agent bot prompt persona customer service cs sales gaya bahasa" },
       { href: "/templates", label: "Template Pesan", icon: FileText, ability: "broadcast.manage", keywords: "hsm balasan cepat" },
-      { href: "/automation", label: "Otomasi Sosial", icon: Bot, ability: "flow.manage", keywords: "instagram facebook komentar dm" },
+      // Browser-based social automation: internal tool, hidden from clients (FB/IG replies run through flows).
+      { href: "/automation", label: "Otomasi Sosial", icon: Bot, ability: "flow.manage", hideForClient: true, keywords: "instagram facebook komentar dm" },
     ],
   },
   {
