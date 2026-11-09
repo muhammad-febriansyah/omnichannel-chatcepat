@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock, LayoutTemplate, GraduationCap, Megaphone, ShieldCheck, Settings2 } from "lucide-react";
-import { loadBroadcastHistory } from "@/lib/automation-data";
+import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock, LayoutTemplate, GraduationCap, Megaphone, ShieldCheck, Settings2, BookOpen } from "lucide-react";
+import { loadBroadcastHistory, loadKnowledgeOverview } from "@/lib/automation-data";
+import { KnowledgeTab } from "@/components/app/knowledge/knowledge-tab";
 import { ReplySettings } from "@/components/app/reply-settings";
 import type { FallbackAction } from "@/lib/actions";
 import { BroadcastsTable } from "@/components/app/broadcasts-table";
@@ -55,12 +56,13 @@ async function replySettings(tenantId: string) {
   );
 }
 
-type Tab = "flow" | "broadcast" | "template" | "pengaturan" | "panduan";
+type Tab = "flow" | "broadcast" | "template" | "pengetahuan" | "pengaturan" | "panduan";
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: "flow", label: "Flow", icon: Workflow },
   { value: "broadcast", label: "Riwayat Broadcast", icon: Megaphone },
   { value: "template", label: "Template", icon: LayoutTemplate },
+  { value: "pengetahuan", label: "Pengetahuan", icon: BookOpen },
   { value: "pengaturan", label: "Pengaturan Balasan", icon: Settings2 },
   { value: "panduan", label: "Panduan", icon: GraduationCap },
 ];
@@ -141,6 +143,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
       {tab === "template" && <FlowTemplatesGallery key={category ?? "all"} category={category} allowedNodes={await allowedFlowNodes(session)} />}
       {tab === "panduan" && <FlowGuide />}
       {tab === "pengaturan" && session.tenantId && (await replySettings(session.tenantId))}
+      {tab === "pengetahuan" && session.tenantId && <KnowledgeTab {...await loadKnowledgeOverview(session.tenantId)} />}
       {tab === "broadcast" && (
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-[20px] bg-card p-4 text-sm">

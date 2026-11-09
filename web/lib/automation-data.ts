@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { aiAgentKnowledge, aiAgents, broadcastRecipients, broadcasts, knowledgeDocuments, promos } from "./db/schema";
+import { aiAgentKnowledge, aiAgents, aiUnanswered, broadcastRecipients, broadcasts, knowledgeDocuments, knowledgeFaqs, products, promos } from "./db/schema";
 import type { BroadcastRow } from "@/components/app/broadcasts-table";
 import {
   businessFromEngine,
@@ -161,4 +161,36 @@ export async function loadBroadcastHistory(tenantId: string): Promise<BroadcastR
       error: typeof stats.error === "string" ? stats.error : null,
     };
   });
+}
+
+export type FaqRow = { id: string; question: string; answer: string; isActive: boolean; updatedAt: string };
+export type UnansweredRow = { id: string; question: string; askCount: number; lastAskedAt: string; conversationId: string | null };
+
+// Automation → Pengetahuan: everything the AI knows, plus what it could not answer.
+export async function loadKnowledgeOverview(tenantId: string) {
+  const [faqs, unanswered, docs, productCount] = await Promise.all([
+    db.query.knowledgeFaqs.findMany({
+      where: eq(knowledgeFaqs.tenantId, tenantId),
+      orderBy: [desc(knowledgeFaqs.updatedAt)],
+      columns: { id: true, question: true, answer: true, isActive: true, updatedAt: true },
+      limit: 500,
+    }),
+    db.query.aiUnanswered.findMany({
+      where: and(eq(aiUnanswered.tenantId, tenantId), eq(aiUnanswered.status, "open")),
+      orderBy: [desc(aiUnanswered.askCount), desc(aiUnanswered.lastAskedAt)],
+      columns: { id: true, question: true, askCount: true, lastAskedAt: true, conversationId: true },
+      limit: 50,
+    }),
+    loadDocs(tenantId),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(products)
+      .where(and(eq(products.tenantId, tenantId), eq(products.active, true))),
+  ]);
+  return {
+    faqs: faqs as FaqRow[],
+    unanswered: unanswered as UnansweredRow[],
+    docs,
+    productCount: Number(productCount[0]?.n ?? 0),
+  };
 }

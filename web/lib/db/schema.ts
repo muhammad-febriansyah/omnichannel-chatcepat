@@ -573,6 +573,38 @@ export const aiAgentKnowledge = pgTable("ai_agent_knowledge", {
 	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "ai_agent_knowledge_tenant_id_fkey" }).onDelete("cascade"),
 ]);
 
+export const knowledgeFaqs = pgTable("knowledge_faqs", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	question: text().notNull(),
+	answer: text().notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_faq_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "knowledge_faqs_tenant_id_fkey" }).onDelete("cascade"),
+]);
+
+export const aiUnanswered = pgTable("ai_unanswered", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	question: text().notNull(),
+	questionNorm: text("question_norm").notNull(),
+	conversationId: uuid("conversation_id"),
+	askCount: integer("ask_count").default(1).notNull(),
+	status: text().default('open').notNull(),
+	faqId: uuid("faq_id"),
+	lastAskedAt: timestamp("last_asked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_ai_unanswered_q").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.questionNorm.asc().nullsLast().op("text_ops")),
+	index("idx_ai_unanswered_open").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops"), table.lastAskedAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "ai_unanswered_tenant_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.conversationId], foreignColumns: [conversations.id], name: "ai_unanswered_conversation_id_fkey" }).onDelete("set null"),
+	foreignKey({ columns: [table.faqId], foreignColumns: [knowledgeFaqs.id], name: "ai_unanswered_faq_id_fkey" }).onDelete("set null"),
+]);
+
 export const promos = pgTable("promos", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),

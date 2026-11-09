@@ -390,7 +390,9 @@ async def ai_preview(
                 input_mult=model.input_mult,
                 output_mult=model.output_mult,
             )
-    replies = [r.text for r in results]
+    from ..ai.agent import strip_unknown_marker
+
+    replies = [strip_unknown_marker(r.text or "")[0] for r in results]
     kb_used = any(used for _, used in prompts)
     answers = [{"tone": t, "answer": (r or "").strip()} for t, r in zip(tones, replies)]
     return {

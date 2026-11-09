@@ -14,7 +14,7 @@ from .conversation import Conversation
 from .message import Message
 from .conversation_state import ConversationState
 from .flow import Flow
-from .knowledge import KnowledgeDocument, KnowledgeChunk
+from .knowledge import AiUnanswered, KnowledgeChunk, KnowledgeDocument, KnowledgeFaq
 from .broadcast import Broadcast, BroadcastRecipient
 from .tag import Tag
 from .template import Template
@@ -38,6 +38,8 @@ __all__ = [
     "Flow",
     "KnowledgeDocument",
     "KnowledgeChunk",
+    "KnowledgeFaq",
+    "AiUnanswered",
     "Broadcast",
     "BroadcastRecipient",
     "Tag",
