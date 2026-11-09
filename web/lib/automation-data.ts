@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { aiAgentKnowledge, aiAgents, broadcastRecipients, broadcasts, channels, knowledgeDocuments, promos } from "./db/schema";
+import { aiAgentKnowledge, aiAgents, broadcastRecipients, broadcasts, knowledgeDocuments, promos } from "./db/schema";
 import type { BroadcastRow } from "@/components/app/broadcasts-table";
 import {
   businessFromEngine,
@@ -20,25 +20,16 @@ export type AgentSummary = {
   businessName: string;
   isDefault: boolean;
   isActive: boolean;
-  channels: number;
   updatedAt: string;
 };
 
-// Menu Asisten AI list + pickers (channel card, flow AI node). Channel counts in one query.
+// Menu Asisten AI list + pickers (Pengaturan Balasan, flow AI node).
 export async function loadAgents(tenantId: string): Promise<AgentSummary[]> {
-  const [rows, usage] = await Promise.all([
-    db.query.aiAgents.findMany({
-      where: eq(aiAgents.tenantId, tenantId),
-      orderBy: [desc(aiAgents.isDefault), aiAgents.createdAt],
-      columns: { id: true, name: true, role: true, tone: true, businessInfo: true, isDefault: true, isActive: true, updatedAt: true },
-    }),
-    db
-      .select({ id: channels.aiAgentId, n: sql<number>`count(*)::int` })
-      .from(channels)
-      .where(and(eq(channels.tenantId, tenantId), isNotNull(channels.aiAgentId)))
-      .groupBy(channels.aiAgentId),
-  ]);
-  const used = new Map(usage.map((u) => [u.id, Number(u.n)]));
+  const rows = await db.query.aiAgents.findMany({
+    where: eq(aiAgents.tenantId, tenantId),
+    orderBy: [desc(aiAgents.isDefault), aiAgents.createdAt],
+    columns: { id: true, name: true, role: true, tone: true, businessInfo: true, isDefault: true, isActive: true, updatedAt: true },
+  });
   return rows.map((a) => {
     const info = businessFromEngine(a.businessInfo);
     return {
@@ -50,7 +41,6 @@ export async function loadAgents(tenantId: string): Promise<AgentSummary[]> {
       businessName: info.businessName,
       isDefault: a.isDefault,
       isActive: a.isActive,
-      channels: used.get(a.id) ?? 0,
       updatedAt: a.updatedAt,
     };
   });

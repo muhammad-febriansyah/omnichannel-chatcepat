@@ -1,7 +1,9 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock, LayoutTemplate, GraduationCap, Megaphone, ShieldCheck } from "lucide-react";
-import { loadBroadcastHistory } from "@/lib/automation-data";
+import { Plus, Workflow, Zap, ArrowRight, ListChecks, Clock, LayoutTemplate, GraduationCap, Megaphone, ShieldCheck, Settings2 } from "lucide-react";
+import { loadAgents, loadBroadcastHistory } from "@/lib/automation-data";
+import { ReplySettings } from "@/components/app/reply-settings";
+import type { FallbackAction } from "@/lib/actions";
 import { BroadcastsTable } from "@/components/app/broadcasts-table";
 import { can } from "@/lib/rbac";
 import { FlowTemplatesGallery } from "@/components/app/flow-templates-gallery";
@@ -11,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { ActionLink } from "@/components/app/action-link";
 import { timeAgo } from "@/lib/format";
 import { db } from "@/lib/db";
-import { flows } from "@/lib/db/schema";
+import { channels, flows } from "@/lib/db/schema";
 import { requirePageAbility } from "@/lib/session";
 import { allowedFlowNodes, hasFeature } from "@/lib/entitlements";
 import { createFlow } from "@/lib/actions";
@@ -34,12 +36,35 @@ async function load(tenantId: string | null) {
   }
 }
 
-type Tab = "flow" | "broadcast" | "template" | "panduan";
+// Automation → Pengaturan Balasan: per-account auto-reply + what happens when no flow matches.
+async function replySettings(tenantId: string) {
+  const [accounts, agents] = await Promise.all([
+    db.query.channels.findMany({
+      where: eq(channels.tenantId, tenantId),
+      orderBy: [desc(channels.createdAt)],
+      columns: { id: true, name: true, type: true, status: true, autoReplyEnabled: true, fallbackAction: true, fallbackMessage: true },
+    }),
+    loadAgents(tenantId),
+  ]);
+  const first = accounts[0];
+  const def = agents.find((a) => a.isDefault && a.isActive);
+  return (
+    <ReplySettings
+      accounts={accounts.map((c) => ({ id: c.id, name: c.name, type: c.type, status: c.status, autoReply: c.autoReplyEnabled }))}
+      fallbackAction={(first?.fallbackAction ?? "message") as FallbackAction}
+      fallbackMessage={first?.fallbackMessage ?? ""}
+      defaultAgent={def ? { id: def.id, name: def.name } : null}
+    />
+  );
+}
+
+type Tab = "flow" | "broadcast" | "template" | "pengaturan" | "panduan";
 
 const TABS: { value: Tab; label: string; icon: React.ElementType }[] = [
   { value: "flow", label: "Flow", icon: Workflow },
   { value: "broadcast", label: "Riwayat Broadcast", icon: Megaphone },
   { value: "template", label: "Template", icon: LayoutTemplate },
+  { value: "pengaturan", label: "Pengaturan Balasan", icon: Settings2 },
   { value: "panduan", label: "Panduan", icon: GraduationCap },
 ];
 
@@ -118,6 +143,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
 
       {tab === "template" && <FlowTemplatesGallery key={category ?? "all"} category={category} allowedNodes={await allowedFlowNodes(session)} />}
       {tab === "panduan" && <FlowGuide />}
+      {tab === "pengaturan" && session.tenantId && (await replySettings(session.tenantId))}
       {tab === "broadcast" && (
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-[20px] bg-card p-4 text-sm">

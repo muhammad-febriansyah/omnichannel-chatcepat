@@ -1,4 +1,4 @@
-import { Bot, Plus, Star, Plug } from "lucide-react";
+import { Bot, Plus, Star } from "lucide-react";
 import { requirePageAbility } from "@/lib/session";
 import { loadAgents } from "@/lib/automation-data";
 import { deleteAgent } from "@/lib/ai-agent-actions";
@@ -19,7 +19,7 @@ export default async function AgentsPage() {
     <div className="p-4 sm:p-6">
       <PageHeader
         title="Asisten AI"
-        description="Atur siapa yang membalas: nama, prompt, gaya bahasa, dan info bisnis. Pilih asistennya per channel atau di node AI flow."
+        description="Atur siapa yang membalas: nama, prompt, gaya bahasa, dan info bisnis. Asisten default menjawab otomatis; node AI di flow juga bisa memilih asisten lain."
         actions={
           <ActionLink href="/ai-agent/new">
             <Plus className="size-4" /> Asisten Baru
@@ -62,9 +62,6 @@ export default async function AgentsPage() {
                   <StatusPill tone="slate">{roleLabel(a.role)}</StatusPill>
                   <StatusPill tone="slate">{tone.label}</StatusPill>
                   {!a.isActive && <StatusPill tone="amber">Nonaktif</StatusPill>}
-                  <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <Plug className="size-3" /> {a.channels} channel
-                  </span>
                 </div>
                 <div className="mt-auto flex flex-wrap items-center justify-end gap-1.5 pt-4">
                   {!a.isDefault && <MakeDefaultButton id={a.id} />}
@@ -87,7 +84,7 @@ export default async function AgentsPage() {
         </div>
       )}
       <p className="mt-6 text-xs text-muted-foreground">
-        Asisten <b>default</b> dipakai di channel yang belum memilih asisten dan di node AI yang memilih &quot;Ikuti asisten channel&quot;.
+        Asisten <b>default</b> menjawab pesan yang tidak cocok flow (bila Pengaturan Balasan = Dijawab AI) dan di node AI yang memakai &quot;Asisten default&quot;.
       </p>
     </div>
   );

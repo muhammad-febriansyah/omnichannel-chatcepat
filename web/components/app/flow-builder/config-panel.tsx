@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical, Plug, Bot, Settings2, ExternalLink } from "lucide-react";
+import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical, Star, Bot, Settings2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WaMessageEditor } from "@/components/app/wa-message-editor";
@@ -113,7 +113,7 @@ export type ChannelOption = { id: string; name: string; type: string; autoReply?
 export type AgentOption = { id: string; name: string; isActive: boolean; isDefault: boolean };
 
 const AI_MODES: { value: AiNodeMode; label: string; desc: string; icon: React.ElementType }[] = [
-  { value: "channel", label: "Ikuti asisten channel", desc: "Pakai asisten yang dipilih di kartu Channel (atau default).", icon: Plug },
+  { value: "channel", label: "Asisten default", desc: "Pakai asisten default dari menu Asisten AI.", icon: Star },
   { value: "agent", label: "Pilih asisten", desc: "Pakai satu asisten dari menu Asisten AI.", icon: Bot },
   { value: "custom", label: "Atur khusus", desc: "Prompt & gaya khusus untuk langkah ini saja.", icon: Settings2 },
 ];
@@ -714,7 +714,7 @@ export function ConfigPanel({
           {agentPicker}
           {mode === "channel" && (
             <p className="rounded-lg bg-violet-50 p-3 text-[11.5px] leading-relaxed text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
-              Satu flow bisa dipakai di banyak akun — tiap akun menjawab dengan asisten yang dipilih di kartu Channel. Belum dipilih = asisten default.
+              Menjawab dengan asisten yang diberi bintang default di menu Asisten AI. Ganti default kapan saja tanpa mengubah flow.
             </p>
           )}
           {linkOut}

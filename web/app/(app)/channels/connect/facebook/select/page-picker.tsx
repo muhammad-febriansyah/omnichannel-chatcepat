@@ -23,7 +23,7 @@ export interface PickerPage {
 const STATUS: Record<Exclude<PickerPage["status"], "available">, { label: string; hint: string; cls: string }> = {
   here: {
     label: "Sudah terhubung",
-    hint: "Akun ini sudah ada di Channel workspace Anda.",
+    hint: "Pilih untuk menghubungkan ulang (memperbarui izin & token).",
     cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
   elsewhere: {
@@ -52,7 +52,9 @@ function Avatar({ src, fallback, className }: { src?: string | null; fallback: R
 }
 
 export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform: "facebook" | "instagram" }) {
-  const available = pages.filter((p) => p.status === "available");
+  // "here" = already in this workspace: selectable to reconnect (refresh token).
+  const selectable = (p: PickerPage) => p.status === "available" || p.status === "here";
+  const available = pages.filter(selectable);
   // Only one account to choose → preselect it, one click to finish.
   const [selected, setSelected] = useState<string | null>(available.length === 1 ? available[0].id : null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
       <ul className="space-y-2.5" role="radiogroup" aria-label={isIg ? "Akun Instagram" : "Facebook Page"}>
         {pages.map((p) => {
           const active = selected === p.id;
-          const disabled = p.status !== "available" || pending;
+          const disabled = !selectable(p) || pending;
           const meta = p.status === "available" ? null : STATUS[p.status];
           const title = isIg ? (p.ig?.username ? `@${p.ig.username}` : p.ig?.name ?? p.name) : p.name;
           return (
@@ -107,8 +109,8 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
                   active
                     ? "border-brand-blue bg-blue-50/70 ring-2 ring-brand-blue/15 dark:bg-blue-500/10"
                     : "border-border bg-card",
-                  p.status === "available" && !active && "hover:border-brand-blue/40 hover:bg-muted/40",
-                  p.status !== "available" && "cursor-not-allowed opacity-75",
+                  selectable(p) && !active && "hover:border-brand-blue/40 hover:bg-muted/40",
+                  !selectable(p) && "cursor-not-allowed opacity-75",
                 )}
               >
                 <span className="relative">
@@ -137,7 +139,7 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
                     </span>
                   )}
                 </span>
-                {p.status === "available" && (
+                {selectable(p) && (
                   <span
                     className={cn(
                       "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all",
@@ -167,7 +169,13 @@ export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform:
       ) : (
         <Button onClick={connect} disabled={pending || !selected} size="lg" className="h-11 w-full">
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
-          {pending ? "Menghubungkan…" : isIg ? "Hubungkan Instagram" : "Hubungkan Page"}
+          {pending
+            ? "Menghubungkan…"
+            : pages.find((p) => p.id === selected)?.status === "here"
+              ? "Hubungkan ulang"
+              : isIg
+                ? "Hubungkan Instagram"
+                : "Hubungkan Page"}
         </Button>
       )}
     </div>

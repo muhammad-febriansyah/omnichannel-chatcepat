@@ -57,7 +57,7 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
     {
       const d = payload as NodeDataMap["ai_agent"];
       const mode = aiNodeMode(d);
-      if (mode === "channel") return "Asisten sesuai channel";
+      if (mode === "channel") return "Asisten default";
       if (mode === "agent") return d.agentId ? `Asisten: ${d.agentName || "terpilih"}` : "Belum pilih asisten";
       const ai = normalizeAiConfig(d?.ai);
       const t = toneMeta(ai.tone);

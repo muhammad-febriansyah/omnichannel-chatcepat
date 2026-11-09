@@ -8,7 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { aiAgents, broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
 import { requireAbility, type Role } from "./rbac";
 import {
   assertCanAddAgent,
@@ -519,65 +519,53 @@ async function prepareWaOfficial(input: {
 // pipeline inbound (OFF → skip decide). Web pemilik tabel channels. ---
 export async function setChannelAutoReply(channelId: string, enabled: boolean) {
   const session = await requireSession();
-  requireAbility(session, "channel.connect");
+  requireAbility(session, "flow.manage");
   if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   await db
     .update(channels)
     .set({ autoReplyEnabled: enabled, updatedAt: sql`now()` })
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
   revalidatePath("/channels");
+  revalidatePath("/flows");
 }
 
 export type FallbackAction = "ai" | "message" | "silent";
 
-export async function setChannelAutomation(
-  channelId: string,
-  input: {
-    enabled: boolean;
-    flowId: string | null;
-    agentId?: string | null;
-    fallbackAction?: FallbackAction;
-    fallbackMessage?: string | null;
-  },
-) {
+// Automation → Pengaturan balasan: what happens when no flow matches, for every account
+// in the workspace. The assistant is the workspace default (menu Asisten AI), so any
+// per-channel pick is cleared.
+export async function setReplyFallback(input: { action: FallbackAction; message: string | null }) {
   const session = await requireSession();
-  requireAbility(session, "channel.connect");
+  requireAbility(session, "flow.manage");
   if (!session.tenantId) throw userError("Tenant tidak ditemukan");
-
-  // Optional "flow utama": checked first for this channel (e.g. its main menu).
-  if (input.flowId) {
-    const flow = await db.query.flows.findFirst({
-      where: and(eq(flows.id, input.flowId), eq(flows.tenantId, session.tenantId)),
-      columns: { id: true, status: true },
-    });
-    if (!flow) throw userError("Flow tidak ditemukan");
-    if (flow.status !== "active") throw userError("Aktifkan flow itu dulu sebelum dijadikan flow utama");
-  }
-
-  // Assistant answering on this channel (null = workspace default) — must be ours.
-  if (input.agentId) {
-    const agent = await db.query.aiAgents.findFirst({
-      where: and(eq(aiAgents.id, input.agentId), eq(aiAgents.tenantId, session.tenantId)),
-      columns: { id: true },
-    });
-    if (!agent) throw userError("Asisten tidak ditemukan");
-  }
-  const fallbackAction = input.fallbackAction ?? "message";
-  if (!["ai", "message", "silent"].includes(fallbackAction)) throw userError("Pilihan balasan tidak valid");
-  const fallbackMessage = (input.fallbackMessage ?? "").trim().slice(0, 500) || null;
-
+  if (!["ai", "message", "silent"].includes(input.action)) throw userError("Pilihan balasan tidak valid");
   await db
     .update(channels)
     .set({
-      autoReplyEnabled: input.enabled,
-      // Mode is legacy: everything is flow-first now (AI = AI Agent node in a flow).
-      autoReplyMode: "hybrid",
-      defaultFlowId: input.flowId,
-      ...(input.agentId !== undefined ? { aiAgentId: input.agentId } : {}),
-      ...(input.fallbackAction !== undefined ? { fallbackAction, fallbackMessage } : {}),
+      fallbackAction: input.action,
+      fallbackMessage: (input.message ?? "").trim().slice(0, 500) || null,
+      aiAgentId: null,
+      defaultFlowId: null,
       updatedAt: sql`now()`,
     })
-    .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
+    .where(eq(channels.tenantId, session.tenantId));
+  revalidatePath("/flows");
+}
+
+// --- Ubah nama channel (halaman /channels/[id]/edit). ---
+export async function renameChannel(id: string, name: string): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "channel.connect");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const clean = name.trim();
+  if (!clean) throw userError("Nama channel wajib diisi");
+  if (clean.length > 80) throw userError("Nama channel maksimal 80 karakter");
+  const hit = await db
+    .update(channels)
+    .set({ name: clean, updatedAt: sql`now()` })
+    .where(and(eq(channels.id, id), eq(channels.tenantId, session.tenantId)))
+    .returning({ id: channels.id });
+  if (!hit.length) throw userError("Channel tidak ditemukan");
   revalidatePath("/channels");
 }
 
@@ -600,7 +588,6 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   const pages = await listPages(oauth.userToken);
   const page = pages.find((p) => p.id === pageId);
   if (!page) throw userError("Page tidak ditemukan atau akses dicabut");
-  await assertCanAddChannel(session, oauth.platform); // lock: maks akun FB/IG per paket
 
 
   // Resolver gateway match inbound pakai entry.id webhook:
@@ -617,20 +604,37 @@ export async function connectMetaPage(pageId: string): Promise<void> {
     }
     externalId = igId;
   }
-  await assertChannelNotLinked(oauth.platform, externalId);
+  // Already a channel in this workspace → "Hubungkan ulang": refresh token + status,
+  // keep the channel (name, history, settings). Otherwise a new channel.
+  const own = await db.query.channels.findFirst({
+    where: and(eq(channels.tenantId, session.tenantId), eq(channels.type, oauth.platform), eq(channels.externalId, externalId)),
+    columns: { id: true },
+  });
+  if (!own) {
+    await assertCanAddChannel(session, oauth.platform); // lock: maks akun FB/IG per paket
+    await assertChannelNotLinked(oauth.platform, externalId);
+  }
 
   // Subscribe app ke webhook Page — wajib supaya pesan masuk diteruskan ke gateway.
   await subscribePageToApp(page.id, page.access_token);
 
   // Page Access Token dipakai kirim balasan (FB & IG messaging via page token).
-  await db.insert(channels).values({
-    tenantId: session.tenantId,
-    type: oauth.platform,
-    name: page.name,
-    status: "connected",
-    credentials: encryptCreds({ access_token: page.access_token, page_id: page.id }),
-    externalId,
-  });
+  const credentials = encryptCreds({ access_token: page.access_token, page_id: page.id });
+  if (own) {
+    await db
+      .update(channels)
+      .set({ status: "connected", credentials, updatedAt: sql`now()` })
+      .where(and(eq(channels.id, own.id), eq(channels.tenantId, session.tenantId)));
+  } else {
+    await db.insert(channels).values({
+      tenantId: session.tenantId,
+      type: oauth.platform,
+      name: page.name,
+      status: "connected",
+      credentials,
+      externalId,
+    });
+  }
 
   store.delete(authCookieDelete(FB_OAUTH_COOKIE));
   revalidatePath("/channels");

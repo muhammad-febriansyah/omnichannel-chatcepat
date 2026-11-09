@@ -291,8 +291,8 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Buat asisten di menu Asisten AI (nama, prompt, info bisnis)", "Pilih asisten itu di kartu Channel", "Unggah dokumen pengetahuan (FAQ, harga, kebijakan)"],
-    steps: ["Pesan tak dikenali", "Asisten AI channel", "Perlu CS → Alihkan"],
+    setup: ["Buat asisten di menu Asisten AI (nama, prompt, info bisnis)", "Jadikan asisten itu default", "Unggah dokumen pengetahuan (FAQ, harga, kebijakan)"],
+    steps: ["Pesan tak dikenali", "Asisten AI default", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
       const t = g.add("trigger", { kind: "fallback", keywords: [] });
@@ -432,7 +432,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "chat",
     platforms: ALL_CHAT,
     level: "Mudah",
-    setup: ["Ubah variasi sapaan di Kirim Teks", "Pilih asisten AI di kartu Channel (menu Asisten AI)"],
+    setup: ["Ubah variasi sapaan di Kirim Teks", "Atur asisten default di menu Asisten AI"],
     steps: ["Awal percakapan", "Sapaan (4 variasi)", "Tunggu pertanyaan", "AI menjawab", "Perlu CS → Alihkan"],
     build() {
       const g = new G();
@@ -460,7 +460,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     category: "ai",
     platforms: ALL_CHAT,
     level: "Menengah",
-    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Pilih asisten AI di kartu Channel (menu Asisten AI)"],
+    setup: ["Pastikan produk aktif untuk katalog", "Isi promo di langkah Promo", "Atur asisten default di menu Asisten AI"],
     steps: ["Awal percakapan", "Menu 4 pilihan", "Katalog / promo / AI / CS"],
     build() {
       const g = new G();
