@@ -38,6 +38,9 @@ export async function middleware(req: NextRequest) {
   const isPublic =
     path === "/" ||
     path.startsWith("/opt-in/") ||
+    path === "/privacy" ||
+    path === "/terms" ||
+    path === "/data-deletion" ||
     path.startsWith("/uploads/") ||
     path.startsWith("/api/duitku/") ||
     path.startsWith("/api/meta/") ||

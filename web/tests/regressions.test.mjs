@@ -466,3 +466,26 @@ test("tenant dashboard: URL filters are whitelisted", () => {
   assert.deepEqual(mod.parseFilters({ range: "1; drop table", ch: "x' or 1=1" }), { range: "7d", days: 7, channel: null });
   assert.deepEqual(mod.parseFilters({}), { range: "7d", days: 7, channel: null });
 });
+
+test("meta signed_request: valid signature parses, tampering is rejected", async () => {
+  const { createHmac } = await import("node:crypto");
+  const mod = loadTS("lib/meta-signed-request.ts");
+  const secret = "app-secret";
+  const b64u = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const sign = (obj, key = secret) => {
+    const payload = b64u(JSON.stringify(obj));
+    return `${b64u(createHmac("sha256", key).update(payload).digest())}.${payload}`;
+  };
+  const good = sign({ algorithm: "HMAC-SHA256", user_id: "123", issued_at: 1700000000 });
+  assert.deepEqual(mod.parseSignedRequest(good, secret), { user_id: "123", algorithm: "HMAC-SHA256", issued_at: 1700000000 });
+  assert.equal(mod.parseSignedRequest(sign({ algorithm: "HMAC-SHA256", user_id: "123" }, "other"), secret), null, "wrong secret");
+  const [sig, payload] = good.split(".");
+  const forged = `${sig}.${b64u(JSON.stringify({ algorithm: "HMAC-SHA256", user_id: "999" }))}`;
+  assert.equal(mod.parseSignedRequest(forged, secret), null, "payload swapped");
+  assert.equal(mod.parseSignedRequest(`${sig}.${payload}.x`, secret), null);
+  assert.equal(mod.parseSignedRequest(good, ""), null, "no secret configured");
+  assert.equal(mod.parseSignedRequest(sign({ algorithm: "none", user_id: "1" }), secret), null);
+  const code = mod.confirmationCode("123", 1700000000, secret);
+  assert.match(code, /^DEL-[0-9A-F]{12}$/);
+  assert.equal(code, mod.confirmationCode("123", 1700000000, secret));
+});

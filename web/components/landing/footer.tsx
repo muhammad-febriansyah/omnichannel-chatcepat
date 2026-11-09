@@ -6,10 +6,10 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Produk",
     links: [
-      { label: "Fitur", href: "#fitur" },
-      { label: "Cara Kerja", href: "#cara-kerja" },
-      { label: "Harga", href: "#harga" },
-      { label: "FAQ", href: "#faq" },
+      { label: "Fitur", href: "/#fitur" },
+      { label: "Cara Kerja", href: "/#cara-kerja" },
+      { label: "Harga", href: "/#harga" },
+      { label: "FAQ", href: "/#faq" },
     ],
   },
   {
@@ -26,7 +26,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
     links: [
       { label: "Kebijakan Privasi", href: "/privacy" },
       { label: "Syarat & Ketentuan", href: "/terms" },
-      { label: "Kebijakan Cookie", href: "/cookies" },
+      { label: "Penghapusan Data", href: "/data-deletion" },
     ],
   },
 ];

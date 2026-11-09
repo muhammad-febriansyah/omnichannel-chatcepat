@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/aceternity/resizable-navbar";
 
 const NAV_ITEMS = [
-  { name: "Fitur", link: "#fitur" },
-  { name: "Cara Kerja", link: "#cara-kerja" },
-  { name: "Harga", link: "#harga" },
-  { name: "FAQ", link: "#faq" },
+  { name: "Fitur", link: "/#fitur" },
+  { name: "Cara Kerja", link: "/#cara-kerja" },
+  { name: "Harga", link: "/#harga" },
+  { name: "FAQ", link: "/#faq" },
 ];
 
 export function Navbar({ logoUrl, siteName }: { logoUrl?: string | null; siteName?: string | null }) {
