@@ -227,12 +227,31 @@ export async function getPageInfo(pageId: string, pageToken: string): Promise<{ 
 
 export async function getInstagramAccount(pageId: string, pageToken: string): Promise<string | null> {
   const url = new URL(`${GRAPH}/${pageId}`);
-  url.searchParams.set("fields", "instagram_business_account{id}");
+  // Some Pages expose the linked account only as connected_instagram_account.
+  url.searchParams.set("fields", "instagram_business_account{id},connected_instagram_account{id}");
   url.searchParams.set("access_token", pageToken);
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) await graphError(res);
-  const j = (await res.json()) as { instagram_business_account?: { id?: string } };
-  return j.instagram_business_account?.id ?? null;
+  const j = (await res.json()) as { instagram_business_account?: { id?: string }; connected_instagram_account?: { id?: string } };
+  return j.instagram_business_account?.id ?? j.connected_instagram_account?.id ?? null;
+}
+
+export type InstagramProfile = { id: string; username: string | null; name: string | null; picture: string | null };
+
+// Instagram professional account linked to a Page, with what the picker shows
+// (username + avatar). null = the Page has no linked Instagram account.
+export async function getInstagramProfile(pageId: string, pageToken: string): Promise<InstagramProfile | null> {
+  const url = new URL(`${GRAPH}/${pageId}`);
+  const f = "{id,username,name,profile_picture_url}";
+  url.searchParams.set("fields", `instagram_business_account${f},connected_instagram_account${f}`);
+  url.searchParams.set("access_token", pageToken);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) await graphError(res);
+  type Ig = { id?: string; username?: string; name?: string; profile_picture_url?: string };
+  const j = (await res.json()) as { instagram_business_account?: Ig; connected_instagram_account?: Ig };
+  const ig = j.instagram_business_account?.id ? j.instagram_business_account : j.connected_instagram_account;
+  if (!ig?.id) return null;
+  return { id: ig.id, username: ig.username ?? null, name: ig.name ?? null, picture: ig.profile_picture_url ?? null };
 }
 
 // Subscribe app ke webhook Page → pesan masuk mulai dikirim ke callback gateway.

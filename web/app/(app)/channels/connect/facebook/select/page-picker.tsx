@@ -3,8 +3,7 @@
 import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
-import Image from "next/image";
-import { Check, Loader2, Plug } from "lucide-react";
+import { AlertCircle, Check, Loader2, Plug } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { connectMetaPage } from "@/lib/actions";
 import { cn } from "@/lib/utils";
@@ -15,76 +14,162 @@ export interface PickerPage {
   id: string;
   name: string;
   picture?: string;
+  ig: { username: string | null; name: string | null; picture: string | null } | null;
+  // available = can connect; here = already in this workspace; elsewhere = linked to
+  // another workspace; no_ig = Page has no Instagram professional account linked.
+  status: "available" | "here" | "elsewhere" | "no_ig";
+}
+
+const STATUS: Record<Exclude<PickerPage["status"], "available">, { label: string; hint: string; cls: string }> = {
+  here: {
+    label: "Sudah terhubung",
+    hint: "Akun ini sudah ada di Channel workspace Anda.",
+    cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  },
+  elsewhere: {
+    label: "Dipakai workspace lain",
+    hint: "Satu akun hanya bisa terhubung ke satu workspace. Putuskan dulu di workspace tersebut.",
+    cls: "bg-amber-50 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  },
+  no_ig: {
+    label: "Belum tertaut Instagram",
+    hint: "Tautkan akun Instagram Professional ke Page ini di Meta Business Suite.",
+    cls: "bg-muted text-muted-foreground",
+  },
+};
+
+function Avatar({ src, fallback, className }: { src?: string | null; fallback: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-muted-foreground", className)}>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element -- Meta CDN avatar, short-lived URL
+        <img src={src} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />
+      ) : (
+        fallback
+      )}
+    </span>
+  );
 }
 
 export function PagePicker({ pages, platform }: { pages: PickerPage[]; platform: "facebook" | "instagram" }) {
-  // Pra-pilih kalau cuma satu Page → satu klik selesai.
-  const [selected, setSelected] = useState<string | null>(pages.length === 1 ? pages[0].id : null);
+  const available = pages.filter((p) => p.status === "available");
+  // Only one account to choose → preselect it, one click to finish.
+  const [selected, setSelected] = useState<string | null>(available.length === 1 ? available[0].id : null);
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const isIg = platform === "instagram";
 
   function connect() {
     if (!selected) {
-      gooeyToast.error("Pilih satu Page dulu");
+      setError("Pilih satu akun dulu.");
       return;
     }
+    setError(null);
     start(async () => {
       try {
-        // connectMetaPage redirect ke /channels saat sukses (tak resolve normal).
+        // connectMetaPage redirects to /channels on success (never resolves normally).
         await connectMetaPage(selected);
       } catch (e) {
-        // redirect() melempar NEXT_REDIRECT (bukan error) → biarkan Next yang handle.
+        // redirect() throws NEXT_REDIRECT (not an error) → let Next handle it.
         unstable_rethrow(e);
-        gooeyToast.error(errorMessage(e) ?? "Gagal menghubungkan Page");
+        const msg = errorMessage(e) ?? "Gagal menghubungkan akun. Coba lagi.";
+        setError(msg);
+        gooeyToast.error(msg);
       }
     });
   }
 
   return (
     <div className="space-y-4">
-      <ul className="space-y-2.5">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {pages.length} {isIg ? "akun ditemukan" : "Page ditemukan"}
+      </p>
+
+      <ul className="space-y-2.5" role="radiogroup" aria-label={isIg ? "Akun Instagram" : "Facebook Page"}>
         {pages.map((p) => {
           const active = selected === p.id;
+          const disabled = p.status !== "available" || pending;
+          const meta = p.status === "available" ? null : STATUS[p.status];
+          const title = isIg ? (p.ig?.username ? `@${p.ig.username}` : p.ig?.name ?? p.name) : p.name;
           return (
             <li key={p.id}>
               <button
-                onClick={() => setSelected(p.id)}
-                disabled={pending}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => {
+                  setSelected(p.id);
+                  setError(null);
+                }}
+                disabled={disabled}
                 className={cn(
-                  "group flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200",
+                  "flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left transition-all duration-200",
                   active
-                    ? "border-brand-blue bg-blue-50/70 ring-1 ring-brand-blue/20 dark:bg-blue-500/10"
-                    : "border-border bg-card hover:-translate-y-0.5 hover:border-brand-blue/40 hover:shadow-md",
+                    ? "border-brand-blue bg-blue-50/70 ring-2 ring-brand-blue/15 dark:bg-blue-500/10"
+                    : "border-border bg-card",
+                  p.status === "available" && !active && "hover:border-brand-blue/40 hover:bg-muted/40",
+                  p.status !== "available" && "cursor-not-allowed opacity-75",
                 )}
               >
-                <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#1877f2] text-white ring-1 ring-black/5">
-                  {p.picture ? (
-                    <Image src={p.picture} alt="" fill sizes="44px" className="object-cover" unoptimized />
-                  ) : (
-                    <ChannelIcon type={platform} className="size-5" />
+                <span className="relative">
+                  <Avatar
+                    src={isIg ? p.ig?.picture : p.picture}
+                    fallback={<ChannelIcon type={platform} className="size-5" />}
+                    className={cn("size-12", isIg && p.ig && "ring-2 ring-[#d62976]/40 ring-offset-2 ring-offset-card")}
+                  />
+                  {isIg && (
+                    <Avatar
+                      src={p.picture}
+                      fallback={<ChannelIcon type="facebook" className="size-3" />}
+                      className="absolute -bottom-1 -right-1 size-5 ring-2 ring-card"
+                    />
                   )}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{p.name}</div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">ID: {p.id}</div>
-                </div>
-                <span
-                  className={cn(
-                    "flex size-5 shrink-0 items-center justify-center rounded-full transition-all",
-                    active ? "scale-100 bg-brand-blue text-white" : "scale-0 bg-muted",
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{title}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {isIg ? `Page: ${p.name}` : `ID ${p.id}`}
+                  </span>
+                  {meta && (
+                    <span className="mt-1.5 flex flex-col gap-1">
+                      <span className={cn("w-fit rounded-full px-2 py-0.5 text-[11px] font-medium", meta.cls)}>{meta.label}</span>
+                      <span className="text-[11.5px] leading-snug text-muted-foreground">{meta.hint}</span>
+                    </span>
                   )}
-                >
-                  <Check className="size-3" />
                 </span>
+                {p.status === "available" && (
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                      active ? "border-brand-blue bg-brand-blue text-white" : "border-border",
+                    )}
+                  >
+                    {active && <Check className="size-3" strokeWidth={3} />}
+                  </span>
+                )}
               </button>
             </li>
           );
         })}
       </ul>
 
-      <Button onClick={connect} disabled={pending || !selected} size="lg" className="w-full">
-        {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
-        {pending ? "Menghubungkan…" : "Hubungkan Page"}
-      </Button>
+      {error && (
+        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {available.length === 0 ? (
+        <p className="rounded-xl bg-muted/60 p-3.5 text-sm text-muted-foreground">
+          Belum ada akun yang bisa dihubungkan. Lihat keterangan di setiap akun di atas.
+        </p>
+      ) : (
+        <Button onClick={connect} disabled={pending || !selected} size="lg" className="h-11 w-full">
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+          {pending ? "Menghubungkan…" : isIg ? "Hubungkan Instagram" : "Hubungkan Page"}
+        </Button>
+      )}
     </div>
   );
 }

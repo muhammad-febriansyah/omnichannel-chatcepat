@@ -24,6 +24,8 @@ const LABELS: Record<string, string> = {
   edit: "Edit",
   delete: "Hapus",
   connect: "Hubungkan",
+  facebook: "Facebook & Instagram",
+  select: "Pilih Akun",
   pair: "Pairing",
   import: "Impor",
   acquire: "Akuisisi",
