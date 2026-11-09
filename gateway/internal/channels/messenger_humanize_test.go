@@ -114,3 +114,34 @@ func TestParseMessengerTimestampStringOrNumber(t *testing.T) {
 		}
 	}
 }
+
+// Instagram can deliver a DM as entry.changes[] with value.message as an object.
+// That shape used to fail the whole payload ("cannot unmarshal object ... of type string").
+func TestParseMessengerChangesMessageObject(t *testing.T) {
+	body := []byte(`{"object":"instagram","entry":[{"id":"ig1","time":1,"changes":[
+		{"field":"messages","value":{"sender":{"id":"u9"},"recipient":{"id":"ig1"},"timestamp":"1762670000",
+		 "message":{"mid":"m-77","text":"halo kak"}}},
+		{"field":"comments","value":{"id":"c1","text":"info dong","media":{"id":"p1"},"from":{"id":"u2","username":"budi"}}}
+	]}]}`)
+	parsed, err := ParseMessenger(body)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(parsed) != 2 {
+		t.Fatalf("got %d inbound, want DM + comment", len(parsed))
+	}
+	dm := parsed[0].Inbound
+	if dm.ProviderMessageId != "m-77" || *dm.Body != "halo kak" || dm.From.ExternalId != "u9" || dm.Comment != nil {
+		t.Fatalf("dm = %+v", dm)
+	}
+	if parsed[1].Inbound.Comment == nil || *parsed[1].Inbound.Body != "info dong" {
+		t.Fatalf("comment = %+v", parsed[1].Inbound)
+	}
+
+	// Facebook feed comment still reads value.message as text.
+	fb := []byte(`{"object":"page","entry":[{"id":"p1","changes":[{"field":"feed","value":{"item":"comment","verb":"add","comment_id":"c9","post_id":"p1_5","parent_id":"p1_5","message":"mau dong","from":{"id":"u3","name":"Ani"}}}]}]}`)
+	got, err := ParseMessenger(fb)
+	if err != nil || len(got) != 1 || *got[0].Inbound.Body != "mau dong" {
+		t.Fatalf("fb comment: %v %+v", err, got)
+	}
+}

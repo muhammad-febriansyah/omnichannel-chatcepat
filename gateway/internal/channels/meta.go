@@ -215,12 +215,54 @@ func ParseMessenger(body []byte) ([]ParsedInbound, error) {
 			out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
 		}
 		for _, ch := range e.Changes {
+			if inb, ok := changeMessageInbound(ct, e.ID, ch); ok {
+				out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
+				continue
+			}
 			if inb, ok := commentInbound(ct, e.ID, ch); ok {
 				out = append(out, ParsedInbound{ExternalID: e.ID, Inbound: inb})
 			}
 		}
 	}
 	return out, nil
+}
+
+// rawText reads a JSON string; anything else (object, null) gives "".
+func rawText(raw json.RawMessage) string {
+	var s string
+	if len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return ""
+}
+
+// changeMessageInbound: a DM delivered as entry.changes[] with field "messages"
+// (Instagram API with Instagram Login) instead of entry.messaging[].
+func changeMessageInbound(ct contracts.ChannelType, accountID string, ch metaChange) (contracts.InboundMessage, bool) {
+	if ch.Field != "messages" || len(ch.Value.Message) == 0 || ch.Value.Message[0] != '{' {
+		return contracts.InboundMessage{}, false
+	}
+	var m struct {
+		Mid    string `json:"mid"`
+		Text   string `json:"text"`
+		IsEcho bool   `json:"is_echo"`
+	}
+	if json.Unmarshal(ch.Value.Message, &m) != nil {
+		return contracts.InboundMessage{}, false
+	}
+	from := ch.Value.Sender.ID
+	if m.IsEcho || m.Mid == "" || strings.TrimSpace(m.Text) == "" || from == "" || from == accountID {
+		return contracts.InboundMessage{}, false
+	}
+	text := m.Text
+	return contracts.InboundMessage{
+		ChannelType:       ct,
+		ProviderMessageId: m.Mid,
+		From:              contracts.Party{ExternalId: from},
+		Type:              contracts.InboundMessageTypeText,
+		Body:              &text,
+		Timestamp:         time.Now().UTC(),
+	}, true
 }
 
 // flexInt64 accepts a number or a numeric string. Meta's dashboard "Test" payloads
@@ -248,7 +290,12 @@ type metaChange struct {
 		CommentID string `json:"comment_id"`
 		PostID    string `json:"post_id"`
 		ParentID  string `json:"parent_id"`
-		Message   string `json:"message"`
+		// Text of a feed comment, but an object {mid, text} in Instagram "messages"
+		// changes — kept raw so one shape never breaks the whole payload.
+		Message json.RawMessage `json:"message"`
+		Sender  struct {
+			ID string `json:"id"`
+		} `json:"sender"`
 		// Instagram comments
 		ID    string `json:"id"`
 		Text  string `json:"text"`
@@ -271,7 +318,7 @@ func commentInbound(ct contracts.ChannelType, accountID string, ch metaChange) (
 	var commentID, postID, parentID, text string
 	switch {
 	case ch.Field == "feed" && v.Item == "comment" && v.Verb == "add":
-		commentID, postID, parentID, text = v.CommentID, v.PostID, v.ParentID, v.Message
+		commentID, postID, parentID, text = v.CommentID, v.PostID, v.ParentID, rawText(v.Message)
 		// FB sets parent_id = post_id for top-level comments.
 		if parentID == postID {
 			parentID = ""

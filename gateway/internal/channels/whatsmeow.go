@@ -528,6 +528,15 @@ func (w *Whatsmeow) handler(cli *whatsmeow.Client, channelID, tenantID string) f
 			// (re)connect sukses — nomor sehat kembali.
 			log.Printf("whatsmeow: channel %s tersambung", channelID)
 			return
+		case *events.UndecryptableMessage:
+			// Pesan masuk yang tak bisa dibuka (sesi enkripsi rusak setelah reconnect).
+			// whatsmeow minta kirim ulang otomatis; dicatat supaya terlihat di log.
+			log.Printf("whatsmeow: channel %s pesan %s tak bisa didekripsi (unavailable=%v), menunggu kirim ulang",
+				channelID, e.Info.ID, e.IsUnavailable)
+			return
+		case *events.Disconnected:
+			log.Printf("whatsmeow: channel %s terputus, menyambung ulang otomatis", channelID)
+			return
 		}
 		// events.PermanentDisconnect = kelas event saat whatsmeow TIDAK akan
 		// auto-reconnect (LoggedOut, TemporaryBan, ConnectFailure, ClientOutdated,
@@ -634,6 +643,9 @@ func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *
 	if msg.Info.IsFromMe || !isDirectChat(msg.Info.Chat) {
 		return
 	}
+	// One line per incoming chat message (ids only, no content) — shows in the log
+	// whether a message reached the gateway at all.
+	log.Printf("whatsmeow: channel %s pesan masuk %s", channelID, msg.Info.ID)
 	body := extractText(msg.Message)
 	att := inboundAttachment(msg.Message)
 	if body == "" && att == nil {
