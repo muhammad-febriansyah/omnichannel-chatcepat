@@ -121,7 +121,13 @@ func NewWhatsmeow(ctx context.Context, dsn string, b EventBus, store Resolver) (
 		}
 	}()
 
-	logger := waLog.Stdout("whatsmeow", "WARN", true)
+	// WHATSMEOW_LOG_LEVEL=DEBUG|INFO temporarily to see what WhatsApp sends to the
+	// linked device (e.g. a channel that is "connected" but receives nothing).
+	level := strings.ToUpper(strings.TrimSpace(os.Getenv("WHATSMEOW_LOG_LEVEL")))
+	if level != "DEBUG" && level != "INFO" && level != "ERROR" {
+		level = "WARN"
+	}
+	logger := waLog.Stdout("whatsmeow", level, true)
 	container, err := sqlstore.New(ctx, "postgres", dsn, logger)
 	if err != nil {
 		return nil, fmt.Errorf("whatsmeow sqlstore: %w", err)
@@ -326,10 +332,24 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 // ensure mengembalikan sesi tersambung; lazy-restore dari sqlstore via device_jid.
 func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credentials) (*waSession, error) {
 	w.mu.Lock()
-	if s, ok := w.clients[channelID]; ok && s.cli.IsConnected() {
+	existing, ok := w.clients[channelID]
+	if ok && existing.cli.IsConnected() {
 		w.mu.Unlock()
-		return s, nil
+		return existing, nil
 	}
+	w.mu.Unlock()
+	// A live client that is just reconnecting (whatsmeow auto-reconnect) must not get
+	// a twin: two clients on one device kick each other off ("stream replaced") and
+	// can leave the linked device unusable. Wait for it instead.
+	if ok {
+		if waitConnected(ctx, existing.cli, 15*time.Second) {
+			return existing, nil
+		}
+		// Still down: stop the old client (ends its reconnect loop) before a fresh
+		// one connects, so there is never more than one per device.
+		w.drop(channelID)
+	}
+	w.mu.Lock()
 	// Anti-banned: dalam window karantina, tolak reconnect (jangan hantam nomor
 	// yang sedang di-ban ulang-ulang). Window lewat → hapus, boleh coba lagi.
 	if until, ok := w.quarantined[channelID]; ok {
@@ -371,6 +391,20 @@ func (w *Whatsmeow) ensure(ctx context.Context, channelID string, creds Credenti
 	sess := &waSession{cli: cli, channelID: channelID, tenantID: info.TenantID}
 	w.put(channelID, sess)
 	return sess, nil
+}
+
+// waitConnected polls until the client is connected again (or the wait/ctx ends).
+func waitConnected(ctx context.Context, cli *whatsmeow.Client, max time.Duration) bool {
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		if cli.IsConnected() {
+			return true
+		}
+		if !sleepCtx(ctx, 500*time.Millisecond) {
+			return false
+		}
+	}
+	return cli.IsConnected()
 }
 
 // simulateTyping meniru perilaku manusia sebelum kirim. Bukan satu blok "composing"
