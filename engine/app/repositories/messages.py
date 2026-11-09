@@ -100,6 +100,37 @@ async def bot_sent_text_since(
     return found is not None
 
 
+async def last_outbound(session: AsyncSession, conversation_id: uuid.UUID) -> tuple[str, datetime] | None:
+    """(sender, created_at) of the newest outbound message here (None = none yet)."""
+    if session is None:
+        return None
+    row = (
+        await session.execute(
+            select(Message.sender, Message.created_at)
+            .where(Message.conversation_id == conversation_id, Message.direction == "outbound")
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    return (row[0], row[1]) if row else None
+
+
+async def count_bot_since(session: AsyncSession, conversation_id: uuid.UUID, since: datetime) -> int:
+    """Bot messages sent in this conversation since `since` (loop guard)."""
+    if session is None:
+        return 0
+    return await session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.direction == "outbound",
+            Message.sender == "bot",
+            Message.created_at >= since,
+        )
+    ) or 0
+
+
 async def count_outbound_since(
     session: AsyncSession, channel_id: uuid.UUID, since: datetime
 ) -> int:

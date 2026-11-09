@@ -128,3 +128,40 @@ def test_agent_reply_to_active_chat_skips_warmup_cap(monkeypatch):
         asyncio.run(warmup.enforce_unofficial(None, channel, conversation_id=uuid.uuid4()))
     with pytest.raises(warmup.DailyCapReached):
         asyncio.run(warmup.enforce_unofficial(None, channel))
+
+
+def test_bot_resumes_after_agent_goes_quiet(monkeypatch):
+    """Agent took over then stopped replying → the bot answers again; a fresh agent
+    reply or an unanswered handoff keeps the bot quiet."""
+    from datetime import datetime, timedelta, timezone
+
+    async def no_flow(*args, **kwargs):
+        return None
+
+    async def not_sent(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(decision.flow_engine, "run", no_flow)
+    monkeypatch.setattr(decision.messages, "bot_sent_text_since", not_sent)
+
+    def run(last):
+        async def last_out(*args, **kwargs):
+            return last
+
+        monkeypatch.setattr(decision.messages, "last_outbound", last_out)
+        conv = SimpleNamespace(handler="agent", id=uuid.uuid4())
+        d = asyncio.run(decision.decide(None, conv, _channel(fallback_action="message", fallback_message="Hai"), None, SimpleNamespace(comment=None, body="halo")))
+        return conv, d
+
+    now = datetime.now(timezone.utc)
+    conv, d = run(("agent", now - timedelta(hours=decision.BOT_RESUME_HOURS + 1)))
+    assert conv.handler == "bot" and [r.text for r in d.replies] == ["Hai"]
+
+    conv, d = run(("agent", now - timedelta(minutes=10)))
+    assert conv.handler == "agent" and d.stop
+
+    conv, d = run(("bot", now - timedelta(days=2)))  # handoff, agent never answered
+    assert conv.handler == "agent" and d.stop
+
+    conv, d = run(None)  # "Ambil alih" without a message yet
+    assert conv.handler == "agent" and d.stop

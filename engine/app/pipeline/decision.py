@@ -25,6 +25,8 @@ from .reply import Reply, text_reply
 
 # Fixed fallback text is not repeated in a conversation within this many hours.
 FALLBACK_REPEAT_HOURS = 12
+# An agent who took over and then went quiet this long hands the chat back to the bot.
+BOT_RESUME_HOURS = 3
 
 __all__ = ["Decision", "Reply", "text_reply", "decide"]
 
@@ -43,9 +45,17 @@ async def decide(
     contact: Contact,
     inbound: InboundMessage,
 ) -> Decision:
-    # Takeover dulu: agen pegang → bot diam (docs/prd/05).
+    # Takeover dulu: agen pegang → bot diam (docs/prd/05). Kalau balasan terakhir
+    # dari agen sudah lewat BOT_RESUME_HOURS, bot aktif lagi (agen lupa
+    # "Kembalikan ke bot"). Handoff yang belum dibalas agen tetap ditunggu agen.
     if conv.handler == "agent":
-        return Decision(stop=True)
+        last = await messages.last_outbound(session, conv.id)
+        if last is None or last[0] != "agent":
+            return Decision(stop=True)
+        sent_at = last[1] if last[1].tzinfo else last[1].replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - sent_at < timedelta(hours=BOT_RESUME_HOURS):
+            return Decision(stop=True)
+        conv.handler = "bot"
 
     enabled = getattr(channel, "auto_reply_enabled", True)
     if not enabled:

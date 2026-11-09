@@ -21,9 +21,11 @@ from ..models import Channel, Contact, Conversation, Message
 from ..pipeline.decision import decide
 from ..pipeline.reply import Reply, options_as_text
 from ..repositories import broadcasts, channels, contacts, conversations, messages
-from . import warmup
-
 log = logging.getLogger("engine.inbound")
+
+# Loop guard for unofficial WhatsApp: more bot replies than this in one conversation
+# within an hour means something is looping (e.g. another bot answering ours).
+BOT_REPLIES_PER_HOUR = 20
 
 
 def _now() -> datetime:
@@ -223,18 +225,23 @@ async def handle(inbound: InboundMessage) -> None:
         # OFF → hanya persist + realtime; agen balas manual.
         if not channel.auto_reply_enabled:
             return
-        # wa_unofficial dgn auto-reply ON: hormati cap warm-up rolling-24h supaya
-        # volume balasan otomatis tak memicu ban. Cap habis → skip balas (inbound
-        # tetap tersimpan; agen bisa balas manual).
+        # wa_unofficial: balasan otomatis menjawab orang yang BARU menulis — itu
+        # percakapan, bukan blast, jadi tidak dibatasi cap warm-up harian (cap itu
+        # untuk broadcast & chat baru). Yang dijaga: loop bot (mis. bot lawan bot)
+        # — maks BOT_REPLIES_PER_HOUR balasan bot per percakapan per jam.
         # --- DECIDE + REPLY ---
         # decide() bisa menulis (flow state) → txn sendiri, commit sebelum kirim balasan.
         async with session.begin():
             if channel.type == "wa_unofficial":
-                left = await warmup.remaining(session, channel, _now())
-                if left is not None and left <= 0:
-                    log.info("auto-reply skip: cap warm-up channel %s habis", channel.id)
+                recent = await messages.count_bot_since(session, conv.id, _now() - timedelta(hours=1))
+                if recent >= BOT_REPLIES_PER_HOUR:
+                    log.warning("auto-reply skip: %d balasan bot/jam di percakapan %s (loop guard)", recent, conv.id)
                     return
+            handler_before = conv.handler
             decision = await decide(session, conv, channel, contact, inbound)
+        if conv.handler != handler_before:
+            # Bot took the chat back after the agent went quiet → update the inbox badge.
+            await _publish_conv_updated(tenant_str, conv)
         if decision.stop:
             return
 
