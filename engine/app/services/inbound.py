@@ -23,6 +23,19 @@ from ..pipeline.reply import Reply, options_as_text
 from ..repositories import broadcasts, channels, contacts, conversations, messages
 log = logging.getLogger("engine.inbound")
 
+# Messages older than this when they reach the engine are not auto-answered.
+STALE_REPLY_MINUTES = 10
+
+
+def _is_stale(inbound: InboundMessage) -> bool:
+    ts = getattr(inbound, "timestamp", None)
+    if ts is None:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - ts > timedelta(minutes=STALE_REPLY_MINUTES)
+
+
 # Loop guard for unofficial WhatsApp: more bot replies than this in one conversation
 # within an hour means something is looping (e.g. another bot answering ours).
 BOT_REPLIES_PER_HOUR = 20
@@ -224,6 +237,12 @@ async def handle(inbound: InboundMessage) -> None:
         # otomatis dari nomor pribadi memicu deteksi spam WA → rawan banned).
         # OFF → hanya persist + realtime; agen balas manual.
         if not channel.auto_reply_enabled:
+            return
+        # Backlog delivered after a reconnect (WhatsApp offline queue, webhook retries):
+        # an automatic answer hours later looks broken and, on a personal number,
+        # replies to chats nobody expected the bot in. Keep it in the inbox only.
+        if _is_stale(inbound):
+            log.info("auto-reply skip: pesan lama (%s) di percakapan %s", inbound.timestamp, conv.id)
             return
         # wa_unofficial: balasan otomatis menjawab orang yang BARU menulis — itu
         # percakapan, bukan blast, jadi tidak dibatasi cap warm-up harian (cap itu

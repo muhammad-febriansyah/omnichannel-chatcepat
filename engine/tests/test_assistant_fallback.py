@@ -165,3 +165,15 @@ def test_bot_resumes_after_agent_goes_quiet(monkeypatch):
 
     conv, d = run(None)  # "Ambil alih" without a message yet
     assert conv.handler == "agent" and d.stop
+
+
+def test_backlog_messages_are_not_auto_answered():
+    """Offline backlog after a reconnect (hours old) stays in the inbox, unanswered."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import inbound as inbound_svc
+
+    now = datetime.now(timezone.utc)
+    assert inbound_svc._is_stale(SimpleNamespace(timestamp=now - timedelta(hours=2)))
+    assert not inbound_svc._is_stale(SimpleNamespace(timestamp=now - timedelta(seconds=30)))
+    assert not inbound_svc._is_stale(SimpleNamespace(timestamp=None))
