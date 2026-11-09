@@ -58,6 +58,9 @@ type Whatsmeow struct {
 	mu          sync.Mutex
 	clients     map[string]*waSession // channelID → sesi aktif
 	quarantined map[string]time.Time  // channelID → tolak reconnect s/d (anti reconnect-storm ke nomor banned)
+
+	reads    readTracker // pesan masuk yang belum ditandai dibaca
+	presence presenceGen // cegah offline/online berkedip antar balasan beruntun
 }
 
 // SetStatusSink memasang sink persist status durable (nil = hanya realtime).
@@ -288,6 +291,14 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 		return "", fmt.Errorf("whatsmeow: body kosong")
 	}
 
+	gen := w.presence.bump(cmd.ChannelId)
+
+	// Anti-banned: balasan tak boleh tiba sebelum pesan pelanggan terbaca (centang
+	// biru) — ciri khas bot. Tandai dibaca dulu pesan yang masih tertunda di chat ini.
+	if unread := w.reads.takeChat(cmd.ChannelId, to.User); len(unread) > 0 {
+		markReadNow(ctx, sess.cli, unread)
+	}
+
 	// Anti-banned: tampil natural sebelum kirim — online + indikator "ngetik"
 	// selama durasi proporsional panjang teks. Jeda antar-pesan (broadcast)
 	// diatur engine (07); ini menambah realisme per-pesan. Best-effort.
@@ -308,7 +319,7 @@ func (w *Whatsmeow) Send(ctx context.Context, cmd contracts.OutboundCommand, cre
 	// Anti-banned: setelah kirim, "tutup app" — kembali offline setelah jeda acak,
 	// bukan online 24/7 (bot tell). Async best-effort; pakai ctx sendiri karena
 	// ctx pemanggil selesai begitu Send return.
-	go goOfflineLater(sess.cli)
+	go w.goOfflineLater(sess.cli, cmd.ChannelId, gen)
 	return string(resp.ID), nil
 }
 
@@ -452,20 +463,43 @@ func typingDelay(bodyLen int) time.Duration {
 // markReadHumanlike menandai pesan masuk "dibaca" (centang biru) setelah jeda acak
 // 2–15 detik — meniru manusia yang melihat notif lalu membuka chat, bukan bot yang
 // membaca instan atau tak pernah. Best-effort: error presence/receipt diabaikan.
-func markReadHumanlike(cli *whatsmeow.Client, info types.MessageInfo) {
+func (w *Whatsmeow) markReadHumanlike(cli *whatsmeow.Client, channelID string, info types.MessageInfo) {
 	secs := 2.0 + rand.Float64()*13.0
 	time.Sleep(time.Duration(secs * float64(time.Second)))
+	// Already marked read by a reply in the meantime → nothing to do.
+	if _, ok := w.reads.take(channelID, info.ID); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = cli.MarkRead(ctx, []types.MessageID{info.ID}, time.Now(), info.Chat, info.Sender)
 }
 
+// markReadNow marks pending messages read right before a reply, grouped per chat.
+func markReadNow(ctx context.Context, cli *whatsmeow.Client, infos []types.MessageInfo) {
+	type key struct{ chat, sender types.JID }
+	groups := map[key][]types.MessageID{}
+	for _, in := range infos {
+		k := key{in.Chat, in.Sender}
+		groups[k] = append(groups[k], in.ID)
+	}
+	for k, ids := range groups {
+		_ = cli.MarkRead(ctx, ids, time.Now(), k.chat, k.sender)
+	}
+	// A short "opened the chat" pause before typing starts.
+	sleepCtx(ctx, time.Duration((0.6+rand.Float64()*1.2)*float64(time.Second)))
+}
+
 // goOfflineLater mengembalikan presence ke unavailable setelah jeda acak 4–12 detik
 // pasca-kirim — meniru manusia yang menutup aplikasi, bukan online terus-menerus.
 // Best-effort; dijalankan di goroutine sendiri dengan context lepas dari pemanggil.
-func goOfflineLater(cli *whatsmeow.Client) {
+func (w *Whatsmeow) goOfflineLater(cli *whatsmeow.Client, channelID string, gen uint64) {
 	secs := 4.0 + rand.Float64()*8.0
 	time.Sleep(time.Duration(secs * float64(time.Second)))
+	// Another reply started meanwhile → still "in the app", stay online.
+	if w.presence.current(channelID) != gen {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = cli.SendPresence(ctx, types.PresenceUnavailable)
@@ -609,7 +643,8 @@ func (w *Whatsmeow) handleMessage(cli *whatsmeow.Client, channelID string, msg *
 	// Anti-banned: tampil manusiawi — tandai pesan "dibaca" (centang biru)
 	// setelah jeda acak, bukan instan (bot tell) dan bukan tak pernah. Async,
 	// best-effort, tak boleh menahan handler atau menggagalkan inbound.
-	go markReadHumanlike(cli, msg.Info)
+	w.reads.add(channelID, msg.Info)
+	go w.markReadHumanlike(cli, channelID, msg.Info)
 
 	if att == nil {
 		w.publishInbound(channelID, msg.Info, contracts.InboundMessageTypeText, body, nil)

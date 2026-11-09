@@ -11,15 +11,20 @@ Urutan (berhenti di yang pertama menjawab), hanya saat handler != agent:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import DEFAULT_FALLBACK_MESSAGE
+from ..repositories import messages
 from ..contracts.events import InboundMessage
 from ..ai import agent as ai
 from ..models import Channel, Contact, Conversation
 from . import flow_engine
 from .reply import Reply, text_reply
+
+# Fixed fallback text is not repeated in a conversation within this many hours.
+FALLBACK_REPEAT_HOURS = 12
 
 __all__ = ["Decision", "Reply", "text_reply", "decide"]
 
@@ -77,4 +82,9 @@ async def decide(
             return Decision(replies=[text_reply(res.reply)] if res.reply else [], handoff=res.handoff)
         # AI unavailable (no model configured, media-only message) → fixed text below.
     text = (getattr(channel, "fallback_message", None) or "").strip() or DEFAULT_FALLBACK_MESSAGE
+    # The same fixed text on every message looks like a bot (spam signal on WhatsApp)
+    # and burns the unofficial daily cap: send it once per conversation per window.
+    since = datetime.now(timezone.utc) - timedelta(hours=FALLBACK_REPEAT_HOURS)
+    if await messages.bot_sent_text_since(session, conv.id, text, since):
+        return Decision(stop=True)
     return Decision(replies=[text_reply(text)])

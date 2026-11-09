@@ -68,12 +68,44 @@ async def previous_inbound_at(session: AsyncSession, conversation_id: uuid.UUID)
     )
 
 
+async def last_inbound_at(session: AsyncSession, conversation_id: uuid.UUID) -> datetime | None:
+    """Time of the newest inbound message in this conversation (None = none yet)."""
+    if session is None:
+        return None
+    return await session.scalar(
+        select(Message.created_at)
+        .where(Message.conversation_id == conversation_id, Message.direction == "inbound")
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+
+
+async def bot_sent_text_since(
+    session: AsyncSession, conversation_id: uuid.UUID, body: str, since: datetime
+) -> bool:
+    """True when the bot already sent exactly this text here since `since`."""
+    if session is None:
+        return False
+    found = await session.scalar(
+        select(Message.id)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.direction == "outbound",
+            Message.sender == "bot",
+            Message.body == body,
+            Message.created_at >= since,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 async def count_outbound_since(
     session: AsyncSession, channel_id: uuid.UUID, since: datetime
 ) -> int:
     """Jumlah pesan outbound channel sejak `since` (rolling window anti-banned).
     Hitung SEMUA outbound (broadcast + balasan 1:1 + AI) — volume total yang
-    memicu ban, bukan broadcast saja.
+    memicu ban, bukan broadcast saja. Pesan gagal tidak terkirim → tidak dihitung.
     """
     return await session.scalar(
         select(func.count())
@@ -82,6 +114,7 @@ async def count_outbound_since(
             Message.channel_id == channel_id,
             Message.direction == "outbound",
             Message.created_at >= since,
+            Message.status != "failed",
         )
     ) or 0
 

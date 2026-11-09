@@ -47,12 +47,30 @@ async def remaining(session: AsyncSession, channel: Channel, now: datetime) -> i
     return max(0, cap - used)
 
 
-async def enforce_unofficial(session: AsyncSession, channel: Channel) -> None:
+# A reply to someone who wrote in the last 24 hours is a normal conversation, not
+# outreach: WhatsApp's spam signals come from unsolicited sends. CS replies there are
+# never blocked by the cap (they still count toward it).
+ACTIVE_CHAT_WINDOW = timedelta(hours=24)
+
+
+async def enforce_unofficial(
+    session: AsyncSession, channel: Channel, *, conversation_id=None
+) -> None:
     """Blok kirim 1:1 bila channel unofficial sudah melewati cap warm-up. Channel
-    lain (official/telegram/ig/fb) tak punya risiko banned → lewat tanpa cek."""
+    lain (official/telegram/ig/fb) tak punya risiko banned → lewat tanpa cek.
+
+    conversation_id: balasan agen di percakapan yang kontaknya baru menulis
+    (< 24 jam) selalu boleh — itu percakapan, bukan blast."""
     if channel.type != "wa_unofficial":
         return
     now = datetime.now(timezone.utc)
+    if conversation_id is not None:
+        last_in = await messages.last_inbound_at(session, conversation_id)
+        if last_in is not None:
+            if last_in.tzinfo is None:
+                last_in = last_in.replace(tzinfo=timezone.utc)
+            if now - last_in < ACTIVE_CHAT_WINDOW:
+                return
     left = await remaining(session, channel, now)
     if left is not None and left <= 0:
         cap = daily_cap(channel, now)

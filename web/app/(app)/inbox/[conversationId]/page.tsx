@@ -193,7 +193,7 @@ export default async function ThreadPage({
                         >
                           {m.sender === "bot" && (
                             <div className="mb-0.5 flex items-center gap-1 text-[11.5px] font-semibold text-[#027eb5] dark:text-[#53bdeb]">
-                              <Bot className="size-3.5" /> AI Agent
+                              <Bot className="size-3.5" /> Bot otomatis
                             </div>
                           )}
                           {m.sender === "agent" && out && (

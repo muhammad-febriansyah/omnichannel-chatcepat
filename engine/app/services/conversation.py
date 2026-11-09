@@ -67,8 +67,9 @@ async def send_agent_reply(
                 url = str(media.get("url") or "")
                 if not url.startswith(f"/uploads/{conv.tenant_id}/chat/") or ".." in url:
                     raise ValueError("lampiran tidak valid")
-            # Warm-up cap (unofficial): blok bila volume rolling-24h sudah lewat batas.
-            await warmup.enforce_unofficial(session, channel)
+            # Warm-up cap (unofficial): blok bila volume rolling-24h sudah lewat batas,
+            # kecuali kontak baru menulis (< 24 jam) — membalas chat aktif selalu boleh.
+            await warmup.enforce_unofficial(session, channel, conversation_id=conv.id)
             idem = f"agent:{conversation_id}:{uuid.uuid4().hex}"
             msg = await messages.add_outbound(
                 session,

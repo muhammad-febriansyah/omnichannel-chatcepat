@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from types import SimpleNamespace
 
 from app.ai.agent import AIResult
@@ -42,16 +43,20 @@ def test_welcome_idle_hours():
     assert not welcome_matches({"idle_hours": "x"}, False, 99)
 
 
-def _run(channel, monkeypatch, ai_result=None):
+def _run(channel, monkeypatch, ai_result=None, already_sent=False):
     async def no_flow(*args, **kwargs):
         return None
+
+    async def sent_before(*args, **kwargs):
+        return already_sent
 
     async def fake_ai(*args, **kwargs):
         return ai_result
 
     monkeypatch.setattr(decision.flow_engine, "run", no_flow)
     monkeypatch.setattr(decision.ai, "try_ai", fake_ai)
-    conv = SimpleNamespace(handler="bot")
+    monkeypatch.setattr(decision.messages, "bot_sent_text_since", sent_before)
+    conv = SimpleNamespace(handler="bot", id=uuid.uuid4())
     inbound = SimpleNamespace(comment=None, body="halo")
     return asyncio.run(decision.decide(None, conv, channel, None, inbound))
 
@@ -80,3 +85,46 @@ def test_fallback_actions(monkeypatch):
     # Older rows without the column behave as before.
     d = _run(SimpleNamespace(auto_reply_enabled=True, default_flow_id=None), monkeypatch)
     assert [r.text for r in d.replies] == [DEFAULT_FALLBACK_MESSAGE]
+
+
+def test_fixed_fallback_is_not_repeated(monkeypatch):
+    """The same "pesan tetap" on every message looks like spam and burns the WA cap."""
+    ch = _channel(fallback_action="message", fallback_message="Tunggu ya kak")
+    assert [r.text for r in _run(ch, monkeypatch).replies] == ["Tunggu ya kak"]
+    d = _run(ch, monkeypatch, already_sent=True)
+    assert d.stop and not d.replies
+    # AI answers are not deduplicated (each question gets its own answer).
+    ai_ch = _channel(fallback_action="ai", fallback_message=None)
+    d = _run(ai_ch, monkeypatch, AIResult(reply="Ada kak"), already_sent=True)
+    assert [r.text for r in d.replies] == ["Ada kak"]
+
+
+def test_agent_reply_to_active_chat_skips_warmup_cap(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import warmup
+
+    channel = SimpleNamespace(type="wa_unofficial", id=uuid.uuid4(), created_at=datetime.now(timezone.utc))
+
+    async def used_up(*args, **kwargs):
+        return 0
+
+    monkeypatch.setattr(warmup, "remaining", used_up)
+
+    async def last_in(minutes):
+        async def f(*args, **kwargs):
+            return datetime.now(timezone.utc) - timedelta(minutes=minutes) if minutes is not None else None
+        return f
+
+    # Contact wrote 5 minutes ago → CS can always answer.
+    monkeypatch.setattr(warmup.messages, "last_inbound_at", asyncio.run(last_in(5)))
+    asyncio.run(warmup.enforce_unofficial(None, channel, conversation_id=uuid.uuid4()))
+
+    # Quiet for 2 days, or a brand-new chat → cap applies.
+    import pytest
+
+    monkeypatch.setattr(warmup.messages, "last_inbound_at", asyncio.run(last_in(60 * 48)))
+    with pytest.raises(warmup.DailyCapReached):
+        asyncio.run(warmup.enforce_unofficial(None, channel, conversation_id=uuid.uuid4()))
+    with pytest.raises(warmup.DailyCapReached):
+        asyncio.run(warmup.enforce_unofficial(None, channel))
