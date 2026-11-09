@@ -177,3 +177,14 @@ def test_backlog_messages_are_not_auto_answered():
     assert inbound_svc._is_stale(SimpleNamespace(timestamp=now - timedelta(hours=2)))
     assert not inbound_svc._is_stale(SimpleNamespace(timestamp=now - timedelta(seconds=30)))
     assert not inbound_svc._is_stale(SimpleNamespace(timestamp=None))
+
+
+def test_guardrail_keeps_ai_on_topic():
+    """The AI must not claim products outside the business or answer unrelated topics."""
+    from app.ai.agent import _guardrail
+
+    g = _guardrail(None)
+    assert "Lingkup (WAJIB)" in g
+    assert "jual oli" in g  # concrete example of an out-of-scope product
+    assert "JANGAN" in g and "tersedia" in g
+    assert "Jangan menjawab isinya" in g  # unrelated general questions are declined

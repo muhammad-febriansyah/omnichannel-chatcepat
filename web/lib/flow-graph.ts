@@ -79,6 +79,8 @@ export type GraphNode<K extends NodeKind = NodeKind> = {
   type: K;
   position: { x: number; y: number };
   data: NodeDataMap[K];
+  // Turned off on the canvas: skipped at runtime, the flow continues at its "out" step.
+  disabled?: boolean;
 };
 
 export type GraphEdge = { id: string; source: string; sourceHandle: string; target: string };
@@ -262,13 +264,25 @@ function quote(value: string): string {
 }
 
 export function compileGraph(graph: FlowGraph): { nodes: RuntimeNode[]; trigger: TriggerKind } {
-  const target = (source: string, handle: string): string | null =>
+  const rawTarget = (source: string, handle: string): string | null =>
     graph.edges.find((e) => e.source === source && e.sourceHandle === handle)?.target ?? null;
+  // Disabled steps are skipped: a link into one continues at its "out" step (none → end).
+  const disabled = new Set(graph.nodes.filter((n) => n.disabled && n.type !== "trigger").map((n) => n.id));
+  const target = (source: string, handle: string): string | null => {
+    let t = rawTarget(source, handle);
+    const seen = new Set<string>();
+    while (t && disabled.has(t) && !seen.has(t)) {
+      seen.add(t);
+      t = rawTarget(t, "out");
+    }
+    return t && disabled.has(t) ? null : t;
+  };
 
   const out: RuntimeNode[] = [];
   let trigger: TriggerKind = "keyword";
 
   for (const node of graph.nodes) {
+    if (disabled.has(node.id)) continue;
     const next = target(node.id, "out");
     switch (node.type) {
       case "trigger": {
@@ -438,6 +452,7 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
   const firstStep = (t: GraphNode) => graph.nodes.find((n) => n.id === graph.edges.find((e) => e.source === t.id && e.sourceHandle === "out")?.target);
 
   for (const node of graph.nodes) {
+    if (node.disabled && node.type !== "trigger") continue; // off: not checked, not run
     switch (node.type) {
       case "trigger": {
         const d = node.data as NodeDataMap["trigger"];

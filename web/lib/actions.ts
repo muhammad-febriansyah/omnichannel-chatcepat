@@ -1029,6 +1029,27 @@ export async function flowTriggerClashes(
     .map((c) => ({ name: c.flowName, reason: `akun ${c.account} — ${c.reason}` }));
 }
 
+// --- Aktif/nonaktifkan flow dari daftar Automation. Aktivasi lewat saveFlow supaya
+// semua pengecekan (sambungan, paket, satu akun satu flow) tetap berlaku. ---
+export async function setFlowActive(id: string, active: boolean): Promise<void> {
+  const session = await requireSession();
+  requireAbility(session, "flow.manage");
+  if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  const flow = await db.query.flows.findFirst({
+    where: and(eq(flows.id, id), eq(flows.tenantId, session.tenantId)),
+    columns: { id: true, name: true, trigger: true, definition: true, status: true },
+  });
+  if (!flow) throw userError("Flow tidak ditemukan");
+  // Scheduling a broadcast needs its confirmation dialog (recipients, time) in the editor.
+  if (active && flow.trigger === "broadcast") throw userError("Aktifkan flow broadcast dari editornya");
+  await saveFlow(id, {
+    name: flow.name,
+    status: active ? "active" : "draft",
+    trigger: flow.trigger as "keyword" | "button" | "welcome" | "fallback" | "comment" | "broadcast",
+    definition: flow.definition,
+  });
+}
+
 // --- Hapus flow (daftar Automation). Broadcast terjadwal dari flow ini dibatalkan. ---
 export async function deleteFlow(id: string): Promise<void> {
   const session = await requireSession();

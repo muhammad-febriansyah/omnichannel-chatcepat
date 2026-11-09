@@ -2,14 +2,14 @@
 
 import { memo } from "react";
 import { Handle, Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
-import { AlertCircle, Trash2 } from "lucide-react";
+import { AlertCircle, Power, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { aiNodeMode, outputHandles, type GraphNode, type NodeDataMap, type NodeKind } from "@/lib/flow-graph";
 import { normalizeAiConfig, roleLabel, toneMeta } from "@/lib/ai-agent-options";
 import { NODE_META } from "./meta";
 import { formatWib } from "@/lib/broadcast-flow";
 
-export type FlowNodeData = { kind: NodeKind; payload: GraphNode["data"]; issues: string[] };
+export type FlowNodeData = { kind: NodeKind; payload: GraphNode["data"]; issues: string[]; disabled?: boolean };
 export type FlowRFNode = Node<FlowNodeData>;
 
 // One readable line describing what the node does.
@@ -82,7 +82,8 @@ function summary(kind: NodeKind, payload: GraphNode["data"]): string {
 function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
   const meta = NODE_META[data.kind];
   const Icon = meta.icon;
-  const { deleteElements } = useReactFlow();
+  const { deleteElements, updateNodeData } = useReactFlow();
+  const off = data.kind !== "trigger" && !!data.disabled;
   const handles = outputHandles({ id, type: data.kind, position: { x: 0, y: 0 }, data: data.payload } as GraphNode);
   const branching = handles.length > 1 || (handles[0] && handles[0].label);
   const hasIssue = data.issues.length > 0;
@@ -103,6 +104,7 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
     <div
       className={cn(
         "group w-[260px] rounded-2xl border bg-card text-card-foreground shadow-sm transition-shadow",
+        off && "border-dashed opacity-60 grayscale",
         selected ? "border-brand-blue shadow-[0_0_0_3px_rgba(59,130,246,0.18)]" : "border-border hover:shadow-md",
         hasIssue && !selected && "border-red-400 shadow-[0_0_0_3px_rgba(248,113,113,0.18)] dark:border-red-500/70",
       )}
@@ -132,6 +134,26 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
           </span>
         )}
         {data.kind !== "trigger" && (
+          // Turned off: skipped at runtime, the flow continues at its next step.
+          <button
+            type="button"
+            aria-label={off ? `Aktifkan langkah ${meta.label}` : `Nonaktifkan langkah ${meta.label}`}
+            aria-pressed={off}
+            title={off ? "Aktifkan langkah" : "Nonaktifkan langkah (dilewati)"}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateNodeData(id, { disabled: !off });
+            }}
+            className={cn(
+              "nodrag nopan grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground",
+              off || selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+              off && "text-amber-600",
+            )}
+          >
+            <Power className="size-3.5" />
+          </button>
+        )}
+        {data.kind !== "trigger" && (
           // Removes the step and every connector attached to it.
           <button
             type="button"
@@ -152,6 +174,11 @@ function FlowNodeImpl({ id, data, selected }: NodeProps<FlowRFNode>) {
       </div>
 
       <div className="px-3 pb-3 pt-2">
+        {off && (
+          <span className="mb-1.5 inline-block rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+            Nonaktif · dilewati
+          </span>
+        )}
         {isKeyword && keywords.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {keywords.slice(0, 6).map((k) => (

@@ -73,14 +73,17 @@ function toRF(graph: FlowGraph, agents: AgentOption[] = []): { nodes: FlowRFNode
       type: n.type,
       position: n.position,
       deletable: n.type !== "trigger",
-      data: { kind: n.type, payload: withAgentNames(n, agents), issues: [] },
+      data: { kind: n.type, payload: withAgentNames(n, agents), issues: [], disabled: n.disabled || undefined },
     })),
     edges: graph.edges.map((e) => ({ ...edgeDefaults, id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target })),
   };
 }
 
 function fromRF(nodes: FlowRFNode[], edges: Edge[]): FlowGraph {
-  const gNodes = nodes.map((n) => ({ id: n.id, type: n.data.kind, position: n.position, data: n.data.payload }) as GraphNode);
+  const gNodes = nodes.map(
+    (n) =>
+      ({ id: n.id, type: n.data.kind, position: n.position, data: n.data.payload, ...(n.data.disabled ? { disabled: true } : {}) }) as GraphNode,
+  );
   // Drop wires whose output vanished (e.g. a removed menu option / template button).
   const handles = new Map(gNodes.map((n) => [n.id, new Set(outputHandles(n).map((h) => h.id))]));
   return {
@@ -647,6 +650,13 @@ function Builder({ id, name: initialName, status: initialStatus, definition, doc
               onChange={(payload) => updatePayload(selected.id, payload)}
               onDelete={() => deleteNode(selected.id)}
               onDuplicate={() => duplicateNode(selected.id)}
+              disabled={!!selected.data.disabled}
+              onToggleDisabled={() => {
+                setNodes((ns) =>
+                  ns.map((n) => (n.id === selected.id ? { ...n, data: { ...n.data, disabled: !n.data.disabled || undefined } } : n)),
+                );
+                markDirty();
+              }}
               onClose={() => setSelectedId(null)}
             />
           </aside>

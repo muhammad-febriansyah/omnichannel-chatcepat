@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
-import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical } from "lucide-react";
+import { Plus, Trash2, X, AlertCircle, Copy, SlidersHorizontal, FlaskConical, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WaMessageEditor } from "@/components/app/wa-message-editor";
@@ -236,6 +236,8 @@ export function ConfigPanel({
   onChange,
   onDelete,
   onDuplicate,
+  onToggleDisabled,
+  disabled = false,
   onClose,
   docs = [],
   promos = [],
@@ -260,6 +262,8 @@ export function ConfigPanel({
   onChange: (payload: GraphNode["data"]) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onToggleDisabled?: () => void;
+  disabled?: boolean;
   onClose: () => void;
 }) {
   const meta = NODE_META[node.type];
@@ -732,11 +736,21 @@ export function ConfigPanel({
             ))}
           </div>
         )}
+        {disabled && node.type !== "trigger" && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            Langkah ini <b>nonaktif</b>: dilewati saat flow berjalan, lalu flow lanjut ke langkah sesudahnya. Pengaturannya tetap tersimpan.
+          </p>
+        )}
         {body}
       </div>
 
       {node.type !== "trigger" && (
         <div className="flex gap-2 border-t border-border p-3">
+          {onToggleDisabled && (
+            <Button type="button" variant="outline" size="sm" className="flex-1" onClick={onToggleDisabled} aria-pressed={disabled}>
+              <Power className="size-3.5" /> {disabled ? "Aktifkan" : "Nonaktifkan"}
+            </Button>
+          )}
           <Button type="button" variant="outline" size="sm" className="flex-1" onClick={onDuplicate}>
             <Copy className="size-3.5" /> Duplikat
           </Button>

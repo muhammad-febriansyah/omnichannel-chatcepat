@@ -390,6 +390,37 @@ test("every flow template builds a valid, compilable graph", () => {
   assert.ok(trig.trigger.match.includes("info"));
 });
 
+test("disabled flow steps are skipped at runtime and not validated", () => {
+  const fg = loadTS("lib/flow-graph.ts");
+  const node = (id, type, data, extra = {}) => ({ id, type, position: { x: 0, y: 0 }, data, ...extra });
+  const graph = {
+    nodes: [
+      node("t", "trigger", { kind: "keyword", keywords: ["halo"] }),
+      node("a", "send_text", { text: "Pesan A" }),
+      node("b", "send_text", { text: "" }, { disabled: true }), // empty text would be an issue if active
+      node("c", "send_text", { text: "Pesan C" }),
+    ],
+    edges: [
+      { id: "1", source: "t", sourceHandle: "out", target: "a" },
+      { id: "2", source: "a", sourceHandle: "out", target: "b" },
+      { id: "3", source: "b", sourceHandle: "out", target: "c" },
+    ],
+  };
+  const compiled = fg.compileGraph(graph).nodes;
+  assert.equal(compiled.find((n) => n.id === "b"), undefined, "disabled step is not sent to the engine");
+  assert.equal(compiled.find((n) => n.id === "a").next, "c", "flow continues after the disabled step");
+  assert.equal(fg.validateRuntimeNodes(compiled), null);
+  assert.ok(!fg.validateGraph(graph).some((i) => i.nodeId === "b"), "disabled step is not validated");
+
+  // First step off → the trigger jumps over it; last step off → the path ends there.
+  const firstOff = { ...graph, nodes: graph.nodes.map((n) => (n.id === "a" ? { ...n, disabled: true } : n)) };
+  assert.equal(fg.compileGraph(firstOff).nodes.find((n) => n.id === "t").next, "c");
+  const lastOff = { ...graph, nodes: graph.nodes.map((n) => (n.id === "c" ? { ...n, disabled: true } : n.id === "b" ? { ...n, disabled: false } : n)) };
+  assert.equal(fg.compileGraph(lastOff).nodes.find((n) => n.id === "b").next, null);
+  // The canvas keeps the flag (saved in definition.ui) so the step can be turned back on.
+  assert.equal(fg.loadGraph({ nodes: compiled, ui: graph }).nodes.find((n) => n.id === "b").disabled, true);
+});
+
 test("one account, one flow per trigger: conflicts and taken accounts", () => {
   const fc = loadTS("lib/flow-conflicts.ts");
   const flow = (id, kind, channels = [], keywords = [], posts = []) => ({ id, name: id, kind, channels, keywords, posts });

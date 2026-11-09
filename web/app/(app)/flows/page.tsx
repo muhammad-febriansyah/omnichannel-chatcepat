@@ -18,6 +18,7 @@ import { requirePageAbility } from "@/lib/session";
 import { allowedFlowNodes, hasFeature } from "@/lib/entitlements";
 import { createFlow, deleteFlow } from "@/lib/actions";
 import { DeleteButton } from "@/components/app/delete-button";
+import { FlowActiveToggle } from "@/components/app/flow-active-toggle";
 import { PlanLock } from "@/components/app/plan-lock";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -241,6 +242,8 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
                         <Clock className="size-3" /> Diperbarui {timeAgo(f.updatedAt)}{timeAgo(f.updatedAt) === "baru saja" ? "" : " lalu"}
                       </span>
                       <span className="flex items-center gap-1.5">
+                        {/* Broadcasts are scheduled from the editor; here they can only be stopped. */}
+                        {(f.trigger !== "broadcast" || isActive) && <FlowActiveToggle id={f.id} name={f.name} active={isActive} />}
                         <DeleteButton
                           onConfirm={deleteFlow.bind(null, f.id)}
                           title="Hapus flow?"
