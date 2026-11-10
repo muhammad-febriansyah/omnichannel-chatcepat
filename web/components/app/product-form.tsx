@@ -10,6 +10,8 @@ import { gooeyToast } from "@/components/ui/goey-toaster";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ActionLink } from "@/components/app/action-link";
+import { RupiahInput } from "@/components/app/rupiah-input";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { createProduct, updateProduct, type ProductInput } from "@/lib/actions";
 
@@ -29,7 +31,7 @@ export function ProductForm({
   initial?: Initial;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [price, setPrice] = useState(String(initial?.priceIdr ?? ""));
+  const [price, setPrice] = useState<number | null>(initial?.priceIdr ?? null);
   const [stock, setStock] = useState(String(initial?.stock ?? "0"));
   const [sku, setSku] = useState(initial?.sku ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
@@ -78,7 +80,7 @@ export function ProductForm({
     const input: ProductInput = {
       name,
       description,
-      priceIdr: Number(price) || 0,
+      priceIdr: price ?? 0,
       sku,
       stock: Number(stock) || 0,
       category,
@@ -174,8 +176,8 @@ export function ProductForm({
             {/* Harga + Stok */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="price" className="mb-1.5 block text-sm font-medium text-foreground">Harga (Rp)</label>
-                <Input id="price" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder="50000" className={inputCls} />
+                <label htmlFor="price" className="mb-1.5 block text-sm font-medium text-foreground">Harga</label>
+                <RupiahInput id="price" value={price} onChange={setPrice} placeholder="50.000" className={inputCls} />
               </div>
               <div>
                 <label htmlFor="stock" className="mb-1.5 block text-sm font-medium text-foreground">Stok</label>
@@ -211,21 +213,13 @@ export function ProductForm({
             </div>
 
             {/* Aktif */}
-            <label className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
-              <span>
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <label htmlFor="active" className="cursor-pointer">
                 <span className="block text-sm font-medium text-foreground">Produk aktif</span>
                 <span className="block text-xs text-muted-foreground">Hanya produk aktif yang masuk katalog & jawaban AI.</span>
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={active}
-                onClick={() => setActive((v) => !v)}
-                className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", active ? "bg-brand-blue" : "bg-muted-foreground/30")}
-              >
-                <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform", active ? "translate-x-5" : "translate-x-0.5")} />
-              </button>
-            </label>
+              </label>
+              <Switch id="active" checked={active} onCheckedChange={setActive} />
+            </div>
           </CardContent>
 
           <CardFooter className="justify-end gap-2 border-t border-border">
