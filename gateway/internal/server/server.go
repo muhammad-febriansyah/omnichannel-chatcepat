@@ -28,6 +28,8 @@ type Server struct {
 	MetaAppSecret string
 	MetaVerifyTok string
 	SocialAPI     *social.API
+	// Profiles fills in the sender name of Messenger/Instagram DMs (nil = skip).
+	Profiles *channels.ProfileFetcher
 }
 
 func (s *Server) Routes() http.Handler {
@@ -160,12 +162,19 @@ func (s *Server) handleMessenger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, p := range parsed {
-		cid, _, err := s.Resolver.LookupByExternal(r.Context(), p.Inbound.ChannelType, p.ExternalID)
+		cid, info, err := s.Resolver.LookupByExternal(r.Context(), p.Inbound.ChannelType, p.ExternalID)
 		if err != nil {
 			log.Printf("messenger webhook: %v", err)
 			continue
 		}
 		inb := p.Inbound
+		// DM webhooks carry only the sender id; comments already include a name.
+		if inb.From.Name == nil {
+			name := s.Profiles.Name(r.Context(), inb.ChannelType, inb.From.ExternalId, info.Credentials.String("access_token"))
+			if name != "" {
+				inb.From.Name = &name
+			}
+		}
 		inb.ChannelId = cid
 		inb.EventId = newEventID()
 		inb.DedupKey = cid + ":" + inb.ProviderMessageId

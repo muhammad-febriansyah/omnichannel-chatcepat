@@ -130,6 +130,7 @@ func main() {
 		MetaAppSecret: env("META_APP_SECRET", ""),
 		MetaVerifyTok: env("META_VERIFY_TOKEN", ""),
 		SocialAPI:     social.NewAPI(socialService, socialCfg),
+		Profiles:      channels.NewProfileFetcher(),
 	}
 
 	httpSrv := &http.Server{Addr: ":8080", Handler: srv.Routes()}
