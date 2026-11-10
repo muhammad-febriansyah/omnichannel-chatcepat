@@ -98,7 +98,7 @@ export function DocForm() {
               onClick={() => setMode(m.value)}
               className={cn(
                 "flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-xs font-medium transition-colors sm:flex-row sm:justify-center sm:text-sm",
-                mode === m.value ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-border text-muted-foreground hover:bg-muted",
+                mode === m.value ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-transparent bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground",
               )}
             >
               <m.icon className="size-4" /> {m.label}

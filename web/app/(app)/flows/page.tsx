@@ -119,7 +119,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
           ) : null
         }
         tabs={
-          <div className="inline-flex flex-wrap gap-1 rounded-[20px] bg-card p-1">
+          <div className="inline-flex flex-wrap gap-1 rounded-[20px] border border-border bg-card p-1 shadow-sm">
             {tabs.map((t) => {
               const Icon = t.icon;
               const isActive = t.value === tab;

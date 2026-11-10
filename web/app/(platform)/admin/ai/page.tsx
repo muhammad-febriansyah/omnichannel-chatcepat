@@ -97,7 +97,7 @@ export default async function AdminAiPage({ searchParams }: { searchParams: Prom
         title="AI & Token"
         description="Hubungkan provider AI, pilih model tiap fitur, atur potongan token, dan jual paket top-up."
         tabs={
-          <div className="inline-flex flex-wrap gap-1 rounded-[20px] bg-card p-1">
+          <div className="inline-flex flex-wrap gap-1 rounded-[20px] border border-border bg-card p-1 shadow-sm">
             {TABS.map((t) => (
               <Link
                 key={t.value}

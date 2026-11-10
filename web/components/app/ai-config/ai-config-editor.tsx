@@ -86,7 +86,7 @@ function Chips<T extends string>({ value, options, onChange }: { value: T; optio
           onClick={() => onChange(o.value)}
           className={cn(
             "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
-            value === o.value ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-border text-muted-foreground hover:bg-muted",
+            value === o.value ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-transparent bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground",
           )}
         >
           {o.label}

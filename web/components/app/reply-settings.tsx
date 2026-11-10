@@ -137,7 +137,7 @@ export function ReplySettings({
                 onClick={() => setAction(f.value)}
                 className={cn(
                   "flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-xs font-medium transition-colors",
-                  on ? "border-brand-blue bg-blue-50 text-brand-blue ring-2 ring-brand-blue/10 dark:bg-blue-500/10" : "border-border text-muted-foreground hover:bg-muted",
+                  on ? "border-brand-blue bg-blue-50 text-brand-blue ring-2 ring-brand-blue/10 dark:bg-blue-500/10" : "border-transparent bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
                 <Icon className="size-4" />

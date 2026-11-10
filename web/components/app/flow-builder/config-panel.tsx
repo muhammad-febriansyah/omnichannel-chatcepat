@@ -293,7 +293,7 @@ export function ConfigPanel({
                   onClick={() => set<"trigger">(k === "broadcast" || d.kind === "broadcast" ? { kind: k, channels: [] } : { kind: k })}
                   className={cn(
                     "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
-                    d.kind === k ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-border text-muted-foreground hover:bg-muted/60",
+                    d.kind === k ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10" : "border-transparent bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}
                 >
                   {label}

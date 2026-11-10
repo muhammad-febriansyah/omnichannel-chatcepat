@@ -193,7 +193,7 @@ export function ComposeForm({
                       className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                         msgType === t
                           ? "border-brand-blue bg-blue-50 text-brand-blue dark:bg-blue-500/10"
-                          : "border-border text-muted-foreground hover:bg-muted/50"
+                          : "border-transparent bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground"
                       }`}
                     >
                       {t === "text" ? "Teks bebas" : "Template HSM"}

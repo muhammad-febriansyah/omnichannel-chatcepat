@@ -43,8 +43,8 @@ const CATEGORY_STYLE: Record<TemplateCategory, { icon: React.ElementType; tint: 
 
 const chip = (active: boolean) =>
   cn(
-    "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
-    active ? "border-brand-blue bg-brand-blue text-white" : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+    "rounded-full px-3 py-1 text-sm font-medium transition-colors",
+    active ? "bg-brand-blue text-white shadow-sm" : "bg-muted text-muted-foreground hover:bg-secondary hover:text-brand-blue",
   );
 
 function matches(t: FlowTemplate, q: string): boolean {
@@ -91,7 +91,8 @@ export function FlowTemplatesGallery({ category: initialCategory, allowedNodes =
         </Link>
       </div>
 
-      <div className="space-y-3">
+      {/* Search + filters on one white card. */}
+      <div className="space-y-3 rounded-[20px] border border-border bg-card p-4 shadow-sm">
         <label className="relative block max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
