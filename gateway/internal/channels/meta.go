@@ -16,6 +16,9 @@ import (
 	"github.com/chatcepat/gateway/internal/contracts"
 )
 
+// graphBase is the Meta Graph API root. Keep the version in sync with web/lib/facebook.ts (GRAPH_VERSION).
+const graphBase = "https://graph.facebook.com/v25.0"
+
 // --- Webhook security (docs/prd/04, 09) ---
 
 // VerifySignature memvalidasi header X-Hub-Signature-256 (HMAC-SHA256 body, app secret).
@@ -469,7 +472,7 @@ func (m *MetaSender) Send(ctx context.Context, cmd contracts.OutboundCommand, cr
 		return "", err
 	}
 	reqBody, _ := json.Marshal(payload)
-	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", phoneNumberID)
+	endpoint := fmt.Sprintf(graphBase+"/%s/messages", phoneNumberID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
 		return "", err
@@ -604,7 +607,7 @@ func (m *MessengerSender) actLikeHuman(ctx context.Context, pageID, token string
 // senderAction posts a sender_action (mark_seen / typing_on) to the Send API.
 func (m *MessengerSender) senderAction(ctx context.Context, pageID, token string, recipient map[string]any, action string) {
 	reqBody, _ := json.Marshal(map[string]any{"recipient": recipient, "sender_action": action})
-	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", pageID)
+	endpoint := fmt.Sprintf(graphBase+"/%s/messages", pageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
 		return
@@ -637,7 +640,7 @@ func (m *MessengerSender) post(ctx context.Context, pageID, token string, recipi
 		"messaging_type": "RESPONSE",
 		"message":        message,
 	})
-	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/messages", pageID)
+	endpoint := fmt.Sprintf(graphBase+"/%s/messages", pageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
 		return "", err
@@ -674,7 +677,7 @@ func (m *MessengerSender) replyComment(ctx context.Context, commentID, body, tok
 		edge = "replies"
 	}
 	reqBody, _ := json.Marshal(map[string]any{"message": body})
-	endpoint := fmt.Sprintf("https://graph.facebook.com/v20.0/%s/%s", commentID, edge)
+	endpoint := fmt.Sprintf(graphBase+"/%s/%s", commentID, edge)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
 		return "", err
