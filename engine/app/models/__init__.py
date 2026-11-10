@@ -25,6 +25,13 @@ from .product import Product
 from .social import SocialAccount, SocialActivityLog, SocialJob
 from .email_notification import EmailNotification
 from .ai_agent import AiAgent, AiAgentKnowledge, Promo
+from .referral import (
+    Referral,
+    ReferralAccount,
+    ReferralCommission,
+    ReferralPayout,
+    ReferralSettings,
+)
 
 __all__ = [
     "Base",
@@ -55,4 +62,9 @@ __all__ = [
     "AiAgent",
     "AiAgentKnowledge",
     "Promo",
+    "ReferralSettings",
+    "ReferralAccount",
+    "Referral",
+    "ReferralPayout",
+    "ReferralCommission",
 ]

@@ -10,6 +10,7 @@ const GUARDS: { prefix: string; ability: Ability }[] = [
   { prefix: "/settings/business-hours", ability: "flow.manage" },
   { prefix: "/settings/web", ability: "billing.tenant" },
   { prefix: "/billing", ability: "billing.tenant" },
+  { prefix: "/referral", ability: "billing.tenant" },
   { prefix: "/contacts", ability: "contact.view" },
   { prefix: "/tags", ability: "contact.manage" },
   { prefix: "/templates", ability: "broadcast.manage" },
@@ -27,8 +28,29 @@ function landingFor(role: Role): string {
   return "/dashboard"; // client → dashboard tenant
 }
 
+// Referral link (?ref=CODE on any page) is remembered for 30 days so the register
+// form can prefill it even if the visitor signs up later. Same rules as lib/referral.ts.
+const REF_COOKIE = "cc_ref";
+function rememberRef(req: NextRequest, res: NextResponse): NextResponse {
+  const code = (req.nextUrl.searchParams.get("ref") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length >= 4 && code.length <= 20) {
+    res.cookies.set(REF_COOKIE, code, {
+      maxAge: 30 * 86_400,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  }
+  return res;
+}
+
 // Gate admin panel: wajib login + cek ability per halaman.
 export async function middleware(req: NextRequest) {
+  return rememberRef(req, await gate(req));
+}
+
+async function gate(req: NextRequest): Promise<NextResponse> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const valid = await verifySession(token);
   const path = req.nextUrl.pathname;

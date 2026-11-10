@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { aiCreditBuckets, orders, tenants } from "@/lib/db/schema";
 import { verifyCallbackSignature } from "@/lib/duitku";
 import { subscriptionExpiry } from "@/lib/subscription";
+import { recordReferralCommission } from "@/lib/referral";
 
 export async function POST(req: Request) {
   let form: FormData;
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
 
   const outcome = await db.transaction(async (tx) => {
     // Serialize duplicate callbacks, including callbacks handled by different workers.
-    const [order] = await tx.select({ id: orders.id, tenantId: orders.tenantId, status: orders.status, amountIdr: orders.amountIdr, duitkuReference: orders.duitkuReference, tier: orders.tier, period: orders.period, planId: orders.planId, kind: orders.kind, aiTokens: orders.aiTokens, aiValidDays: orders.aiValidDays }).from(orders)
+    const [order] = await tx.select({ id: orders.id, tenantId: orders.tenantId, status: orders.status, amountIdr: orders.amountIdr, duitkuReference: orders.duitkuReference, tier: orders.tier, period: orders.period, planName: orders.planName, planId: orders.planId, kind: orders.kind, aiTokens: orders.aiTokens, aiValidDays: orders.aiValidDays }).from(orders)
       .where(eq(orders.merchantOrderId, merchantOrderId)).for("update");
     if (!order) return { message: "Order not found", status: 404 };
     if (!Number.isSafeInteger(Number(amount)) || Number(amount) !== order.amountIdr) {
@@ -69,6 +70,8 @@ export async function POST(req: Request) {
         settings: { ...((tenant.settings as Record<string, unknown> | null) ?? {}), trial: false },
         updatedAt: now.toISOString(),
       }).where(eq(tenants.id, order.tenantId));
+      // First paid plan of a referred tenant → commission for the referrer (same transaction).
+      await recordReferralCommission(tx, order, now);
     } else if (order.status === "pending") {
       await tx.update(orders).set({ status: "failed", raw, updatedAt: now.toISOString() })
         .where(eq(orders.id, order.id));

@@ -8,7 +8,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { broadcasts, channels, contacts, flows, passwordResetTokens, products, tags, templates, tenants, users } from "./db/schema";
+import { broadcasts, channels, contacts, flows, passwordResetTokens, products, referrals, tags, templates, tenants, users } from "./db/schema";
+import { REF_COOKIE, ReferralCodeError, resolveReferralCode } from "./referral";
 import { requireAbility, type Role } from "./rbac";
 import {
   assertCanAddAgent,
@@ -174,7 +175,7 @@ export async function resetPassword(token: string, password: string): Promise<{ 
 const TRIAL_DAYS = 14;
 
 // Self-signup: bikin tenant baru + user owner (role client), lalu login otomatis.
-export async function register(input: { business: string; name: string; email: string; password: string }) {
+export async function register(input: { business: string; name: string; email: string; password: string; referralCode?: string }) {
   const business = input.business.trim();
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
@@ -185,6 +186,15 @@ export async function register(input: { business: string; name: string; email: s
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (existing) throw userError("Email sudah terdaftar");
+
+  // Referral is fixed at signup and never changes afterwards.
+  let referrer: Awaited<ReturnType<typeof resolveReferralCode>> = null;
+  try {
+    referrer = await resolveReferralCode(input.referralCode ?? "", email);
+  } catch (e) {
+    if (e instanceof ReferralCodeError) throw userError(e.message);
+    throw e;
+  }
 
   // Slug unik dari nama bisnis (fallback "tenant"), tambah sufiks -2, -3, ... bila bentrok.
   const base = business.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "tenant";
@@ -215,6 +225,9 @@ export async function register(input: { business: string; name: string; email: s
         .insert(users)
         .values({ tenantId: tenant.id, name, email, passwordHash, role: "client", status: "active" })
         .returning();
+      if (referrer) {
+        await tx.insert(referrals).values({ tenantId: referrer.tenantId, referredTenantId: tenant.id, code: referrer.code });
+      }
       return u;
     });
   } catch (e) {
@@ -240,6 +253,7 @@ export async function register(input: { business: string; name: string; email: s
   });
   const store = await cookies();
   store.set(SESSION_COOKIE, token, authCookieOptions(COOKIE_MAX_AGE));
+  store.delete(REF_COOKIE);
   redirect("/dashboard");
 }
 

@@ -3,7 +3,7 @@
 import { errorMessage } from "@/lib/action-error";
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, AlertCircle, User, Building2, Inbox, Bot, ShieldCheck } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, AlertCircle, User, Building2, Inbox, Bot, ShieldCheck, Gift } from "lucide-react";
 import { gooeyToast } from "@/components/ui/goey-toaster";
 import { register } from "@/lib/actions";
 import { BrandShowcase } from "@/components/auth/showcase";
@@ -27,6 +27,9 @@ const TX = {
     emailPh: "nama@email.com",
     password: "Password",
     pwPh: "Minimal 6 karakter",
+    referral: "Kode Referral",
+    optional: "(opsional)",
+    referralPh: "Contoh: TOKOBUDI",
     submit: "Daftar Sekarang",
     or: "atau daftar dengan",
     google: "Daftar dengan Google",
@@ -54,6 +57,9 @@ const TX = {
     emailPh: "name@email.com",
     password: "Password",
     pwPh: "At least 6 characters",
+    referral: "Referral Code",
+    optional: "(optional)",
+    referralPh: "e.g. TOKOBUDI",
     submit: "Sign Up Now",
     or: "or sign up with",
     google: "Sign up with Google",
@@ -68,13 +74,22 @@ const TX = {
 
 type Errors = { business?: string; name?: string; email?: string; password?: string };
 
-export default function RegisterForm({ logoUrl, siteName }: { logoUrl?: string | null; siteName?: string | null }) {
+export default function RegisterForm({
+  logoUrl,
+  siteName,
+  referralCode = "",
+}: {
+  logoUrl?: string | null;
+  siteName?: string | null;
+  referralCode?: string;
+}) {
   const [lang, setLang] = useState<"ID" | "EN">("ID");
   const [show, setShow] = useState(false);
   const [business, setBusiness] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [ref, setRef] = useState(referralCode);
   const [errors, setErrors] = useState<Errors>({});
   const [shake, setShake] = useState(false);
   const [pending, start] = useTransition();
@@ -100,7 +115,7 @@ export default function RegisterForm({ logoUrl, siteName }: { logoUrl?: string |
     }
     start(async () => {
       try {
-        await register({ business, name, email, password: pw });
+        await register({ business, name, email, password: pw, referralCode: ref });
       } catch (err) {
         const msg = errorMessage(err) ?? "Gagal mendaftar";
         if (!msg.includes("NEXT_REDIRECT")) gooeyToast.error(msg);
@@ -289,6 +304,24 @@ export default function RegisterForm({ logoUrl, siteName }: { logoUrl?: string |
                 <AlertCircle className="size-3.5" /> {errors.password}
               </p>
             )}
+          </div>
+
+          {/* Referral code */}
+          <div className="mt-[18px]">
+            <label htmlFor="referral" className="mb-2 block text-[13px] font-medium text-foreground">
+              {t.referral} <span className="font-normal text-muted-foreground">{t.optional}</span>
+            </label>
+            <div className={fieldWrap(false)}>
+              <Gift className="pointer-events-none absolute left-3.5 size-[18px] text-muted-foreground" />
+              <input
+                id="referral"
+                autoComplete="off"
+                placeholder={t.referralPh}
+                value={ref}
+                onChange={(e) => setRef(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20))}
+                className="h-12 flex-1 rounded-[10px] bg-transparent pl-11 pr-3.5 text-sm uppercase tracking-wide text-foreground outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70"
+              />
+            </div>
           </div>
 
           {/* Submit */}

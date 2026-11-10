@@ -19,6 +19,7 @@ import {
   Activity,
   Bot,
   Sparkles,
+  Gift,
 } from "lucide-react";
 import { can, type Ability, type Role } from "@/lib/rbac";
 import { planAllows, type TenantPlan } from "@/lib/plan";
@@ -83,6 +84,7 @@ export const TENANT_SECTIONS: NavSection[] = [
       { href: "/channels", label: "Channel", icon: Plug, dot: true, ability: "channel.view", keywords: "whatsapp instagram telegram koneksi" },
       { href: "/settings/users", label: "Tim", icon: UserCog, ability: "user.manage", hideForClient: true, keywords: "agen anggota" },
       { href: "/billing", label: "Tagihan & Paket", icon: CreditCard, ability: "billing.tenant", tenantOnly: true, keywords: "langganan bayar upgrade" },
+      { href: "/referral", label: "Referral", icon: Gift, ability: "billing.tenant", tenantOnly: true, keywords: "komisi affiliate ajak teman kode" },
       { href: "/settings", label: "Pengaturan", icon: Settings, hideForClient: true },
     ],
   },
@@ -97,6 +99,7 @@ export const PLATFORM_SECTIONS: NavSection[] = [
       { href: "/admin", label: "Ringkasan & Tenant", icon: ShieldCheck, keywords: "tenant" },
       { href: "/admin/analytics", label: "Analitik", icon: TrendingUp },
       { href: "/admin/transactions", label: "Transaksi", icon: Receipt, keywords: "pembayaran order" },
+      { href: "/admin/referrals", label: "Referral", icon: Gift, keywords: "komisi affiliate pencairan penarikan payout" },
       { href: "/admin/users", label: "Pengguna", icon: Users2 },
       { href: "/admin/activity", label: "Aktivitas", icon: Activity, keywords: "audit log" },
       { href: "/admin/plans", label: "Paket", icon: Tag, keywords: "harga langganan fitur node token" },

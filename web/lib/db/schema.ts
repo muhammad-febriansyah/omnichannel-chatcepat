@@ -1,4 +1,4 @@
-import { pgTable, varchar, unique, uuid, text, jsonb, timestamp, foreignKey, index, uniqueIndex, integer, bigint, boolean, vector, pgEnum, primaryKey, numeric } from "drizzle-orm/pg-core"
+import { pgTable, varchar, unique, uuid, text, jsonb, timestamp, foreignKey, index, uniqueIndex, integer, bigint, boolean, vector, pgEnum, primaryKey, numeric, smallint } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const broadcastRecipientStatus = pgEnum("broadcast_recipient_status", ['pending', 'sent', 'delivered', 'failed', 'skipped_optout'])
@@ -696,4 +696,95 @@ export const aiUsage = pgTable("ai_usage", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "ai_usage_tenant_id_fkey" }).onDelete("cascade"),
+]);
+
+// Referral program (DDL milik engine: migration 0030_referrals). Uang = BIGINT rupiah penuh.
+// referral_settings = satu baris global (id = 1), dikelola admin platform.
+export const referralSettings = pgTable("referral_settings", {
+	id: smallint().default(1).primaryKey().notNull(),
+	isEnabled: boolean("is_enabled").default(true).notNull(),
+	commissionPercent: smallint("commission_percent").default(20).notNull(),
+	holdDays: integer("hold_days").default(14).notNull(),
+	minPayoutIdr: bigint("min_payout_idr", { mode: 'number' }).default(100000).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+});
+
+// Kode referral + rekening pencairan milik satu tenant.
+export const referralAccounts = pgTable("referral_accounts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	code: text().notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	bankName: text("bank_name"),
+	accountNumber: text("account_number"),
+	accountName: text("account_name"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_referral_accounts_tenant").on(table.tenantId),
+	uniqueIndex("uq_referral_accounts_code").on(table.code),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "referral_accounts_tenant_id_fkey" }).onDelete("cascade"),
+]);
+
+// tenantId = perujuk. Satu baris per tenant yang dirujuk, ditetapkan saat daftar.
+export const referrals = pgTable("referrals", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	referredTenantId: uuid("referred_tenant_id").notNull(),
+	code: text().notNull(),
+	status: text().default("pending").notNull(), // 'pending' | 'converted' | 'void'
+	convertedAt: timestamp("converted_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_referrals_referred").on(table.referredTenantId),
+	index("idx_referrals_tenant").on(table.tenantId, table.createdAt),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "referrals_tenant_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.referredTenantId], foreignColumns: [tenants.id], name: "referrals_referred_tenant_id_fkey" }).onDelete("cascade"),
+]);
+
+export const referralPayouts = pgTable("referral_payouts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	amountIdr: bigint("amount_idr", { mode: 'number' }).notNull(),
+	bankName: text("bank_name").notNull(),
+	accountNumber: text("account_number").notNull(),
+	accountName: text("account_name").notNull(),
+	status: text().default("requested").notNull(), // 'requested' | 'paid' | 'rejected'
+	note: text(),
+	requestedBy: uuid("requested_by"),
+	processedBy: uuid("processed_by"),
+	processedAt: timestamp("processed_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_referral_payouts_tenant").on(table.tenantId, table.createdAt),
+	index("idx_referral_payouts_status").on(table.status, table.createdAt),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "referral_payouts_tenant_id_fkey" }).onDelete("cascade"),
+]);
+
+// tenantId = perujuk yang menerima komisi. Nilai = snapshot order yang lunas.
+export const referralCommissions = pgTable("referral_commissions", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	referralId: uuid("referral_id").notNull(),
+	referredTenantId: uuid("referred_tenant_id"),
+	orderId: uuid("order_id"),
+	referredName: text("referred_name").notNull(),
+	planName: text("plan_name").notNull(),
+	orderAmountIdr: bigint("order_amount_idr", { mode: 'number' }).notNull(),
+	commissionPercent: smallint("commission_percent").notNull(),
+	commissionIdr: bigint("commission_idr", { mode: 'number' }).notNull(),
+	status: text().default("earned").notNull(), // 'earned' | 'paid' | 'void'
+	availableAt: timestamp("available_at", { withTimezone: true, mode: 'string' }).notNull(),
+	payoutId: uuid("payout_id"),
+	voidReason: text("void_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_referral_commissions_order").on(table.orderId),
+	index("idx_referral_commissions_tenant").on(table.tenantId, table.status, table.availableAt),
+	index("idx_referral_commissions_payout").on(table.payoutId),
+	foreignKey({ columns: [table.tenantId], foreignColumns: [tenants.id], name: "referral_commissions_tenant_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.referralId], foreignColumns: [referrals.id], name: "referral_commissions_referral_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.payoutId], foreignColumns: [referralPayouts.id], name: "referral_commissions_payout_id_fkey" }).onDelete("set null"),
 ]);
