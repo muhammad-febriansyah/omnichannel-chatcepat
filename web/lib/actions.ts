@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { broadcasts, channels, contacts, flows, passwordResetTokens, products, referrals, tags, templates, tenants, users } from "./db/schema";
 import { REF_COOKIE, ReferralCodeError, resolveReferralCode } from "./referral";
+import { waUnofficialEnabled } from "./channel-policy";
 import { requireAbility, type Role } from "./rbac";
 import {
   assertCanAddAgent,
@@ -392,6 +393,7 @@ export async function createChannel(input: {
 }) {
   const session = await requireSession();
   requireAbility(session, "channel.connect");
+  if (input.type === "wa_unofficial" && !waUnofficialEnabled()) throw userError("WhatsApp Unofficial tidak tersedia. Pakai WhatsApp Official.");
   if (!session.tenantId) throw userError("Tenant tidak ditemukan");
   if (!input.name.trim()) throw userError("Nama channel wajib");
   await assertCanAddChannel(session, input.type); // lock: batas channel per paket & per jenis (admin bypass)

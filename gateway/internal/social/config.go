@@ -3,6 +3,7 @@ package social
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -57,4 +58,15 @@ func envInt(name string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+// AutomationDisabled reports whether browser-based Facebook/Instagram automation is
+// switched off (DISABLE_SOCIAL_AUTOMATION=1). Meta's Platform Terms do not allow automated
+// access to Facebook/Instagram accounts through a browser, so production should keep it off.
+func AutomationDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DISABLE_SOCIAL_AUTOMATION"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

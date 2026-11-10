@@ -15,6 +15,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Switched off: stay idle instead of exiting, so the container doesn't restart-loop.
+	if social.AutomationDisabled() {
+		log.Printf("social scanner disabled: DISABLE_SOCIAL_AUTOMATION is on")
+		<-ctx.Done()
+		return
+	}
+
 	cfg := social.ConfigFromEnv()
 	service, err := social.New(ctx, cfg)
 	if err != nil {
