@@ -3,6 +3,8 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,9 +19,12 @@ import (
 // contact shows up nameless in the inbox.
 //
 //	Messenger: GET /{psid}?fields=first_name,last_name   (User Profile API)
+//	           fallback GET /{page}/conversations?user_id={psid}&fields=participants
 //	Instagram: GET /{igsid}?fields=name,username         (Instagram User Profile API)
 //
-// Both use the Page access token. Results, including misses, are cached so a busy
+// The Messenger User Profile API needs Meta's "Business Asset User Profile Access"
+// feature; the conversation participants fallback works with pages_messaging alone.
+// All calls use the Page access token. Results, including misses, are cached so a busy
 // conversation does not call Graph on every message.
 type ProfileFetcher struct {
 	base   string
@@ -50,7 +55,7 @@ func NewProfileFetcher() *ProfileFetcher {
 
 // Name returns the sender's display name, or "" when it is unknown or the lookup fails.
 // Errors are not returned: a missing name must never block an inbound message.
-func (f *ProfileFetcher) Name(ctx context.Context, ct contracts.ChannelType, senderID, pageToken string) string {
+func (f *ProfileFetcher) Name(ctx context.Context, ct contracts.ChannelType, pageID, senderID, pageToken string) string {
 	if f == nil || senderID == "" || pageToken == "" {
 		return ""
 	}
@@ -74,6 +79,9 @@ func (f *ProfileFetcher) Name(ctx context.Context, ct contracts.ChannelType, sen
 	f.mu.Unlock()
 
 	name := f.fetch(ctx, senderID, fields, pageToken)
+	if name == "" && ct == contracts.ChannelTypeFacebook && pageID != "" {
+		name = f.fetchConversationName(ctx, pageID, senderID, pageToken)
+	}
 	ttl := profileHitTTL
 	if name == "" {
 		ttl = profileMissTTL
@@ -88,27 +96,70 @@ func (f *ProfileFetcher) Name(ctx context.Context, ct contracts.ChannelType, sen
 	return name
 }
 
-func (f *ProfileFetcher) fetch(ctx context.Context, senderID, fields, token string) string {
-	u := f.base + "/" + url.PathEscape(senderID) + "?" + url.Values{"fields": {fields}, "access_token": {token}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+// get calls Graph and decodes a 200 response into out. Failures are logged with
+// Graph's reason (never the token) and reported as false.
+func (f *ProfileFetcher) get(ctx context.Context, path string, q url.Values, token string, out any) bool {
+	q.Set("access_token", token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.base+path+"?"+q.Encode(), nil)
 	if err != nil {
-		return ""
+		return false
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return ""
+		log.Printf("profile lookup %s: %v", path, err)
+		return false
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
+		var e struct {
+			Error struct {
+				Message string `json:"message"`
+				Code    int    `json:"code"`
+				Subcode int    `json:"error_subcode"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(body, &e)
+		log.Printf("profile lookup %s: HTTP %d code=%d subcode=%d %s", path, resp.StatusCode, e.Error.Code, e.Error.Subcode, e.Error.Message)
+		return false
+	}
+	return json.Unmarshal(body, out) == nil
+}
+
+// fetchConversationName reads the sender's name from the Page's conversation with them.
+func (f *ProfileFetcher) fetchConversationName(ctx context.Context, pageID, senderID, token string) string {
+	var r struct {
+		Data []struct {
+			Participants struct {
+				Data []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"data"`
+			} `json:"participants"`
+		} `json:"data"`
+	}
+	q := url.Values{"platform": {"messenger"}, "user_id": {senderID}, "fields": {"participants"}}
+	if !f.get(ctx, "/"+url.PathEscape(pageID)+"/conversations", q, token, &r) {
 		return ""
 	}
+	for _, c := range r.Data {
+		for _, p := range c.Participants.Data {
+			if p.ID == senderID {
+				return strings.TrimSpace(p.Name)
+			}
+		}
+	}
+	return ""
+}
+
+func (f *ProfileFetcher) fetch(ctx context.Context, senderID, fields, token string) string {
 	var p struct {
 		FirstName string `json:"first_name"`
 		LastName  string `json:"last_name"`
 		Name      string `json:"name"`
 		Username  string `json:"username"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&p) != nil {
+	if !f.get(ctx, "/"+url.PathEscape(senderID), url.Values{"fields": {fields}}, token, &p) {
 		return ""
 	}
 	if n := strings.TrimSpace(p.FirstName + " " + p.LastName); n != "" {

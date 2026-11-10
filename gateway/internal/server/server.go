@@ -170,7 +170,7 @@ func (s *Server) handleMessenger(w http.ResponseWriter, r *http.Request) {
 		inb := p.Inbound
 		// DM webhooks carry only the sender id; comments already include a name.
 		if inb.From.Name == nil {
-			name := s.Profiles.Name(r.Context(), inb.ChannelType, inb.From.ExternalId, info.Credentials.String("access_token"))
+			name := s.Profiles.Name(r.Context(), inb.ChannelType, info.Credentials.String("page_id"), inb.From.ExternalId, info.Credentials.String("access_token"))
 			if name != "" {
 				inb.From.Name = &name
 			}
