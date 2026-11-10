@@ -460,6 +460,7 @@ export async function createChannel(input: {
       autoReplyEnabled: input.type !== "wa_unofficial",
       autoReplyMode: "hybrid",
       defaultFlowId: null,
+      ...(await workspaceReplyFallback(session.tenantId)),
     })
     .returning({ id: channels.id });
 
@@ -547,6 +548,20 @@ export async function setChannelAutoReply(channelId: string, enabled: boolean) {
 }
 
 export type FallbackAction = "ai" | "message" | "silent";
+
+// The reply fallback is a workspace setting stored on every channel. A channel added
+// later copies it from an existing one, so it behaves like the others from the first message.
+async function workspaceReplyFallback(tenantId: string): Promise<{ fallbackAction: FallbackAction; fallbackMessage: string | null }> {
+  const other = await db.query.channels.findFirst({
+    where: eq(channels.tenantId, tenantId),
+    columns: { fallbackAction: true, fallbackMessage: true },
+    orderBy: (c, { desc }) => desc(c.updatedAt),
+  });
+  return {
+    fallbackAction: (other?.fallbackAction as FallbackAction | undefined) ?? "message",
+    fallbackMessage: other?.fallbackMessage ?? null,
+  };
+}
 
 // Automation → Pengaturan balasan: what happens when no flow matches, for every account
 // in the workspace. The assistant is the workspace default (menu Asisten AI), so any
@@ -650,6 +665,7 @@ export async function connectMetaPage(pageId: string): Promise<void> {
       status: "connected",
       credentials,
       externalId,
+      ...(await workspaceReplyFallback(session.tenantId)),
     });
   }
 
@@ -697,6 +713,7 @@ export async function connectWhatsAppEmbedded(input: {
       waba_id: input.wabaId,
     }),
     externalId: input.phoneNumberId,
+    ...(await workspaceReplyFallback(session.tenantId)),
   });
 
   revalidatePath("/channels");
