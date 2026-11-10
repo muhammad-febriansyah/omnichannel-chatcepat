@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import { CheckCircle2 } from "lucide-react";
 import { getPublicWebSettings } from "@/lib/web-settings-server";
-import { Bullets, LegalPage, Section } from "@/components/landing/legal-page";
+import { Bullets, LegalPage, Section, legalLang } from "@/components/landing/legal-page";
 
-export const metadata: Metadata = {
-  title: "Penghapusan Data",
-  description: "Cara menghapus data Anda dari ChatCepat, termasuk data yang terhubung lewat Facebook dan Instagram.",
-};
+type Props = { searchParams: Promise<{ code?: string; lang?: string }> };
+
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  return legalLang((await searchParams).lang) === "en"
+    ? { title: "Data Deletion", description: "How to delete your data from ChatCepat, including data connected through Facebook and Instagram." }
+    : { title: "Penghapusan Data", description: "Cara menghapus data Anda dari ChatCepat, termasuk data yang terhubung lewat Facebook dan Instagram." };
+}
 
 const SECTIONS = [
   { id: "facebook", title: "Hapus akses Facebook / Instagram" },
@@ -18,14 +21,19 @@ const SECTIONS = [
 // Only codes we issue (lib/meta-signed-request confirmationCode) are echoed back.
 const CODE = /^DEL-[0-9A-F]{12}$/;
 
-export default async function DataDeletionPage({ searchParams }: { searchParams: Promise<{ code?: string }> }) {
-  const { code: raw } = await searchParams;
+export default async function DataDeletionPage({ searchParams }: Props) {
+  const { code: raw, lang } = await searchParams;
   const code = raw && CODE.test(raw) ? raw : null;
   const ws = await getPublicWebSettings();
   const email = ws.contact.email;
+  return legalLang(lang) === "en" ? <DeletionEn code={code} email={email} /> : <DeletionId code={code} email={email} />;
+}
 
+function DeletionId({ code, email }: { code: string | null; email: string }) {
   return (
     <LegalPage
+      lang="id"
+      path="/data-deletion"
       title="Penghapusan Data"
       updated="9 November 2026"
       sections={SECTIONS}
@@ -112,6 +120,110 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
           ]}
         />
         <p>Catatan transaksi pembayaran dapat disimpan lebih lama bila diwajibkan oleh peraturan perpajakan.</p>
+      </Section>
+    </LegalPage>
+  );
+}
+
+const SECTIONS_EN = [
+  { id: "facebook", title: "Remove Facebook / Instagram access" },
+  { id: "workspace", title: "Workspace owners" },
+  { id: "customers", title: "Customers who chatted with a business" },
+  { id: "deleted", title: "What gets deleted" },
+];
+
+function DeletionEn({ code, email }: { code: string | null; email: string }) {
+  const mail = "font-medium text-brand-blue hover:underline";
+  return (
+    <LegalPage
+      lang="en"
+      path="/data-deletion"
+      title="Data Deletion"
+      updated="November 9, 2026"
+      sections={SECTIONS_EN}
+      intro={
+        <>
+          {code && (
+            <div className="mb-6 flex gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold">Data deletion request received</p>
+                <p className="mt-1">
+                  Confirmation code: <span className="font-mono font-semibold">{code}</span>
+                </p>
+                <p className="mt-1">
+                  ChatCepat does not store your personal Facebook profile data. Facebook has already removed the app’s access to
+                  your account. If you also want other data deleted (see below), send this code to{" "}
+                  <a href={`mailto:${email}?subject=${encodeURIComponent(`Data deletion ${code}`)}`} className="font-medium underline">
+                    {email}
+                  </a>
+                  .
+                </p>
+              </div>
+            </div>
+          )}
+          <p>This page explains how to delete your data from ChatCepat. Requests are processed within 30 days.</p>
+        </>
+      }
+    >
+      <Section id="facebook" n={1} title="Remove Facebook / Instagram access">
+        <p>To remove ChatCepat’s access to your Facebook or Instagram account:</p>
+        <Bullets
+          items={[
+            <>
+              Open Facebook → <b>Settings &amp; privacy</b> → <b>Settings</b> → <b>Business Integrations</b>.
+            </>,
+            <>
+              Select <b>ChatCepat</b> and click <b>Remove</b>. Tick the option to delete data that was shared, if shown.
+            </>,
+          ]}
+        />
+        <p>Facebook notifies us, and you receive a confirmation code with a link to this page.</p>
+      </Section>
+
+      <Section id="workspace" n={2} title="Workspace owners">
+        <Bullets
+          items={[
+            <>
+              <b>Disconnect a channel:</b> in the dashboard, open <b>Channel</b> and disconnect the account. Its access token is deleted
+              and its webhook subscription is removed immediately.
+            </>,
+            <>
+              <b>Delete contacts:</b> in <b>Contacts</b>, delete contacts you no longer need.
+            </>,
+            <>
+              <b>Delete the account &amp; all workspace data:</b> email{" "}
+              <a href={`mailto:${email}?subject=${encodeURIComponent("Delete ChatCepat account")}`} className={mail}>
+                {email}
+              </a>{" "}
+              from your account’s email address with the subject &ldquo;Delete ChatCepat account&rdquo;.
+            </>,
+          ]}
+        />
+      </Section>
+
+      <Section id="customers" n={3} title="Customers who chatted with a business">
+        <p>
+          If you messaged a business that uses ChatCepat, that business manages your conversation data. Contact the business to ask
+          for deletion, or email{" "}
+          <a href={`mailto:${email}`} className={mail}>
+            {email}
+          </a>{" "}
+          with the business name and the number / account you used. We will help forward and process your request. To stop receiving
+          broadcasts, simply reply <b>STOP</b>.
+        </p>
+      </Section>
+
+      <Section id="deleted" n={4} title="What gets deleted">
+        <Bullets
+          items={[
+            <>Access tokens and account IDs of connected channels.</>,
+            <>The workspace’s conversations, messages, attachments, and contacts.</>,
+            <>AI knowledge documents, products, templates, and automations.</>,
+            <>User and team member account data.</>,
+          ]}
+        />
+        <p>Payment transaction records may be kept longer when tax regulations require it.</p>
       </Section>
     </LegalPage>
   );
