@@ -1528,6 +1528,10 @@ export async function createOptIn(
   });
   const now = new Date().toISOString();
   if (existing) {
+    // This form is public and anyone can type any number, so it must never undo a
+    // STOP from the person themselves. Same thank-you page either way, so the form
+    // does not reveal who opted out.
+    if (existing.optInStatus === "opted_out") return;
     // Kontak sudah ada → catat consent (opted_in).
     await db
       .update(contacts)
@@ -1769,6 +1773,7 @@ export async function updateProduct(id: string, input: ProductInput) {
   const session = await requireSession();
   requireAbility(session, "product.manage");
   if (!session.tenantId) throw userError("Tenant tidak ditemukan");
+  await requireFeature(session, "catalog", "Katalog Produk");
   const data = normalizeProduct(input);
 
   // Hapus file foto lama yang dibuang user (hemat storage; abaikan kalau gagal).

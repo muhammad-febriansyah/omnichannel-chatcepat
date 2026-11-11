@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import uuid
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,4 +26,8 @@ class Tenant(UUIDPkMixin, TimestampMixin, Base):
     )
     settings: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
+    # Paket yang dibeli (migration 0025). NULL = paket aktif pertama dari tier-nya.
+    plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("plans.id", ondelete="SET NULL"), nullable=True
     )

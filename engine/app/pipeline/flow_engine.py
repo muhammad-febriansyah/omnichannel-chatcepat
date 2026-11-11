@@ -22,7 +22,7 @@ from ..ai import agent as ai
 from ..config import BROADCAST_FLOW_TTL_HOURS, DEFAULT_FALLBACK_MESSAGE, FLOW_STATE_TTL_HOURS
 from ..contracts.events import InboundMessage
 from ..models import Channel, Contact, Conversation, Tag
-from ..repositories import broadcasts, flows, messages, products, states
+from ..repositories import broadcasts, entitlements, flows, messages, products, states
 from .reply import Reply
 
 _VAR = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
@@ -379,6 +379,12 @@ async def run(
     broadcast_click = payload.startswith("bc:")
     comment = getattr(inbound, "comment", None)
     outcome = FlowOutcome()
+    # Plan check at run time: a downgraded/expired plan stops flows it no longer
+    # includes (automation, broadcast follow-ups, steps outside the plan).
+    plan = await entitlements.for_tenant(session, conv.tenant_id)
+
+    def usable(flow) -> bool:
+        return flow is not None and plan.flow_allowed(flow)
 
     if comment is not None:
         # A comment never resumes a chat flow: it only starts a "comment" flow.
@@ -389,6 +395,7 @@ async def run(
             False,
             channel_id=channel.id,
             comment_post_id=comment.post_id,
+            allowed=plan.flow_allowed,
         )
         if flow is None:
             return None
@@ -417,7 +424,7 @@ async def run(
         b = await broadcasts.get(session, click[0]) if click else None
         if b is not None and b.tenant_id == conv.tenant_id and b.flow_id and b.flow_node_id:
             flow = await flows.get(session, b.flow_id, conv.tenant_id)
-            node = _nodes(flow).get(b.flow_node_id) if flow and flow.status == "active" else None
+            node = _nodes(flow).get(b.flow_node_id) if usable(flow) and flow.status == "active" else None
             if node is not None:
                 ctx = {"nama": contact.name or "", "broadcast_id": str(b.id)}
                 if state is not None and state.flow_id == flow.id:
@@ -432,7 +439,7 @@ async def run(
     if state is not None:
         expired = state.expires_at is not None and state.expires_at <= _now()
         flow = None if expired else await flows.get(session, state.flow_id, conv.tenant_id)
-        if flow is None or flow.status != "active" or state.current_node_id is None:
+        if not usable(flow) or flow.status != "active" or state.current_node_id is None:
             await states.delete(session, conv.id)
         else:
             # RESUME: simpan jawaban ke save_as lalu lanjut dari node berikutnya.
@@ -473,6 +480,7 @@ async def run(
         button_text=body if is_button else None,
         channel_id=channel.id,
         idle_hours=idle_hours,
+        allowed=plan.flow_allowed,
     )
     if flow is None:
         return None

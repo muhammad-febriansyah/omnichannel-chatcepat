@@ -38,7 +38,7 @@ function EntitlementList({ e }: { e: PlanEntitlements }) {
     { ok: true, text: `${fmtLimit(e.limits.maxKbDocs)} dokumen pengetahuan` },
     { ok: e.features.broadcast, text: e.features.broadcast ? `Broadcast ${fmtLimit(e.limits.broadcastPerMonth)} penerima / bulan` : "Broadcast" },
     { ok: e.features.automation, text: e.features.automation ? `Automation · ${nodes}/${TOTAL_NODES} langkah flow` : "Automation" },
-    ...PLAN_FEATURES.filter((f) => f.value !== "automation" && f.value !== "broadcast").map((f) => ({ ok: e.features[f.value], text: f.label })),
+    ...PLAN_FEATURES.filter((f) => !f.hidden && f.value !== "automation" && f.value !== "broadcast").map((f) => ({ ok: e.features[f.value], text: f.label })),
   ];
   return (
     <ul className="space-y-2 text-sm">

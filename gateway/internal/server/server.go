@@ -198,16 +198,21 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verifikasi secret_token (X-Telegram-Bot-Api-Secret-Token) bila channel punya
-	// tg_secret — cegah injeksi pesan palsu ke URL webhook. Legacy tanpa secret = lolos.
-	if info, err := s.Resolver.Lookup(r.Context(), channelID); err == nil {
-		if want := info.Credentials.String("tg_secret"); want != "" {
-			got := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-				http.Error(w, "invalid secret", http.StatusUnauthorized)
-				return
-			}
-		}
+	// This URL is public, so only accept a known Telegram channel and Telegram's
+	// secret_token (X-Telegram-Bot-Api-Secret-Token). Without these checks anyone
+	// with a channel id could inject fake messages into any channel (WA, FB, IG)
+	// and trigger auto-replies to numbers of their choice. A Telegram channel with
+	// no tg_secret (connected before secrets existed) must be reconnected.
+	info, err := s.Resolver.Lookup(r.Context(), channelID)
+	if err != nil || info.Type != contracts.ChannelTypeTelegram {
+		http.Error(w, "channel tidak ditemukan", http.StatusNotFound)
+		return
+	}
+	want := info.Credentials.String("tg_secret")
+	got := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+	if want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		http.Error(w, "invalid secret", http.StatusUnauthorized)
+		return
 	}
 
 	var upd struct {

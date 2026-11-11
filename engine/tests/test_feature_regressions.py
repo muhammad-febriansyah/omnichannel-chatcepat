@@ -27,7 +27,7 @@ async def service_db(monkeypatch):
     async with admin.begin() as connection:
         await connection.execute(sa.text(f"CREATE SCHEMA {schema}"))
     engine = create_async_engine(dsn, connect_args={"server_settings": {"search_path": schema}})
-    names = {"tenants", "users", "channels", "contacts", "conversations", "messages", "flows", "conversation_states", "broadcasts", "broadcast_recipients"}
+    names = {"plans", "tenants", "users", "channels", "contacts", "conversations", "messages", "flows", "conversation_states", "broadcasts", "broadcast_recipients"}
     tables = [table for table in Base.metadata.tables.values() if table.name in names]
     async with engine.begin() as connection:
         def create_schema(sync):
@@ -66,11 +66,11 @@ async def seed(factory, channel_type="wa_unofficial"):
         return tenant.id, channel.id
 
 
-def incoming(channel_id, body="halo", message_id=None):
+def incoming(channel_id, body="halo", message_id=None, channel_type="wa_unofficial"):
     mid = message_id or uuid.uuid4().hex
     return InboundMessage.model_validate({
         "event_id": uuid.uuid4().hex, "dedup_key": f"{channel_id}:{mid}",
-        "channel_id": str(channel_id), "channel_type": "wa_unofficial",
+        "channel_id": str(channel_id), "channel_type": channel_type,
         "from": {"external_id": "628123456789", "phone": "628123456789", "name": "Budi"},
         "type": "text", "body": body, "provider_message_id": mid,
         "timestamp": datetime.now(timezone.utc),
@@ -86,6 +86,16 @@ async def test_unofficial_autoreply_transaction_and_replay(service_db):
     async with factory() as session:
         assert await session.scalar(sa.select(sa.func.count()).select_from(Message)) == 2
     assert sent.await_count == 1
+
+
+async def test_inbound_with_wrong_channel_type_is_dropped(service_db):
+    # A Telegram-shaped event aimed at a WhatsApp channel is forged: no message, no reply.
+    factory, sent = service_db
+    _, cid = await seed(factory)
+    await inbound.handle(incoming(cid, channel_type="telegram"))
+    async with factory() as session:
+        assert await session.scalar(sa.select(sa.func.count()).select_from(Message)) == 0
+    assert sent.await_count == 0
 
 
 async def test_broadcast_rechecks_optout_and_serializes_dispatch(service_db):

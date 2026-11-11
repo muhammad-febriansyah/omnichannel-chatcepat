@@ -1,6 +1,7 @@
 import { errorMessage } from "@/lib/action-error";
 import { requireSession } from "@/lib/session";
 import { requireAbility } from "@/lib/rbac";
+import { hasFeature } from "@/lib/entitlements";
 import { saveImage } from "@/lib/uploads";
 
 export const runtime = "nodejs";
@@ -12,6 +13,9 @@ export async function POST(request: Request) {
   requireAbility(session, "product.manage");
   if (!session.tenantId) {
     return Response.json({ error: "Tenant tidak ditemukan" }, { status: 400 });
+  }
+  if (!(await hasFeature(session, "catalog"))) {
+    return Response.json({ error: "Fitur Katalog Produk tidak tersedia di paket Anda" }, { status: 403 });
   }
 
   const form = await request.formData();

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from app.contracts.events import Type1 as OutboundType
 from app.pipeline import flow_engine
+from app.repositories.entitlements import resolve
 from app.services import broadcast as bsvc
 
 TENANT = uuid.uuid4()
@@ -30,7 +31,7 @@ NODES = [
 
 
 def _flow(status="active"):
-    return SimpleNamespace(id=FLOW_ID, tenant_id=TENANT, status=status, definition={"nodes": NODES})
+    return SimpleNamespace(id=FLOW_ID, tenant_id=TENANT, status=status, trigger="broadcast", definition={"nodes": NODES})
 
 
 def _inbound(body: str, payload: str | None = None):
@@ -42,8 +43,11 @@ def _inbound(body: str, payload: str | None = None):
     )
 
 
-def _patch(monkeypatch, *, state=None, flow=None):
+def _patch(monkeypatch, *, state=None, flow=None, plan=None):
     persisted = {}
+
+    async def for_tenant(_s, _tid):
+        return plan or resolve("pro", None)
 
     async def get_state(_s, _cid):
         return state
@@ -61,6 +65,7 @@ def _patch(monkeypatch, *, state=None, flow=None):
         persisted["wait"] = wait
         persisted["ctx"] = ctx
 
+    monkeypatch.setattr(flow_engine.entitlements, "for_tenant", for_tenant)
     monkeypatch.setattr(flow_engine.states, "get", get_state)
     monkeypatch.setattr(flow_engine.states, "delete", delete_state)
     monkeypatch.setattr(flow_engine.broadcasts, "get", get_bcast)
@@ -101,6 +106,24 @@ async def test_text_reply_resumes_from_broadcast_step(monkeypatch):
     out = await flow_engine.run(None, CONV, None, CONTACT, _inbound("boleh info dong"))
     assert [r.text for r in out.replies] == ["Balasanmu: boleh info dong"]
     assert persisted["ctx"]["balasan"] == "boleh info dong"
+
+
+async def test_button_tap_ignored_when_plan_lost_broadcast(monkeypatch):
+    # Downgraded to a plan without broadcast: the old broadcast's buttons stop the flow.
+    no_broadcast = resolve("pro", {"feature_flags": {"broadcast": False}})
+    _patch(monkeypatch, state=None, flow=_flow(), plan=no_broadcast)
+
+    async def no_flow(*_a, **_kw):
+        return None
+
+    async def one(*_a, **_kw):
+        return 1
+
+    monkeypatch.setattr(flow_engine.flows, "match_trigger", no_flow)
+    monkeypatch.setattr(flow_engine.messages, "count_inbound", one)
+    channel = SimpleNamespace(id=uuid.uuid4())
+    out = await flow_engine.run(None, CONV, channel, CONTACT, _inbound("Mau", f"bc:{BCAST_ID}:0"))
+    assert out is None
 
 
 async def test_inactive_flow_falls_back_to_button_label_trigger(monkeypatch):

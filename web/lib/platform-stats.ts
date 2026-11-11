@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import type { TenantPlan } from "./plan";
+import { isUuid } from "./utils";
 
 export interface PlatformOverview {
   totalTenants: number;
@@ -97,35 +98,31 @@ export interface TenantDetail {
 }
 
 export async function getTenantDetail(id: string): Promise<TenantDetail | null> {
+  // id comes from the URL: reject anything that is not a UUID before it reaches SQL.
+  if (!isUuid(id)) return null;
   try {
     const tRows = (await db.execute(
-      sql.raw(`select id, name, slug, plan, status, created_at from tenants where id='${id}'`),
+      sql`select id, name, slug, plan, status, created_at from tenants where id = ${id}`,
     )) as unknown as Array<Record<string, unknown>>;
     const t = tRows[0];
     if (!t) return null;
 
     const cRow = (
       (await db.execute(
-        sql.raw(
-          `select
-             (select count(*) from channels where tenant_id='${id}')::int channels,
-             (select count(*) from users where tenant_id='${id}')::int users,
-             (select count(*) from contacts where tenant_id='${id}')::int contacts,
-             (select count(*) from messages where tenant_id='${id}' and created_at >= date_trunc('month', now()))::int msgs`,
-        ),
+        sql`select
+             (select count(*) from channels where tenant_id = ${id})::int channels,
+             (select count(*) from users where tenant_id = ${id})::int users,
+             (select count(*) from contacts where tenant_id = ${id})::int contacts,
+             (select count(*) from messages where tenant_id = ${id} and created_at >= date_trunc('month', now()))::int msgs`,
       )) as unknown as Array<Record<string, unknown>>
     )[0] ?? {};
 
     const users = (await db.execute(
-      sql.raw(
-        `select id, name, email, role, status from users where tenant_id='${id}' order by created_at desc limit 100`,
-      ),
+      sql`select id, name, email, role, status from users where tenant_id = ${id} order by created_at desc limit 100`,
     )) as unknown as Array<Record<string, unknown>>;
 
     const channels = (await db.execute(
-      sql.raw(
-        `select id, name, type, status from channels where tenant_id='${id}' order by created_at desc limit 100`,
-      ),
+      sql`select id, name, type, status from channels where tenant_id = ${id} order by created_at desc limit 100`,
     )) as unknown as Array<Record<string, unknown>>;
 
     return {
@@ -252,48 +249,6 @@ export async function listAllUsers(limit = 200): Promise<PlatformUserRow[]> {
       createdAt: String(row.created_at),
     }));
   } catch {
-    return [];
-  }
-}
-
-// --- Analitik platform: tren 6 bulan terakhir ---
-
-export interface MonthlyPoint {
-  month: string; // "2026-06"
-  label: string; // "Jun"
-  revenue: number;
-  tenants: number;
-  messages: number;
-}
-
-export async function getMonthlyAnalytics(): Promise<MonthlyPoint[]> {
-  try {
-    const r = await db.execute(
-      sql`WITH months AS (
-            SELECT date_trunc('month', now()) - (interval '1 month' * gs) AS m
-            FROM generate_series(0, 5) gs
-          )
-          SELECT to_char(m, 'YYYY-MM') AS month,
-                 to_char(m, 'Mon') AS label,
-                 coalesce((SELECT sum(amount_idr) FROM orders o
-                    WHERE o.status='paid' AND date_trunc('month', o.paid_at) = months.m),0)::bigint AS revenue,
-                 (SELECT count(*) FROM tenants t
-                    WHERE date_trunc('month', t.created_at) = months.m)::int AS tenants,
-                 (SELECT count(*) FROM messages msg
-                    WHERE date_trunc('month', msg.created_at) = months.m)::int AS messages
-          FROM months
-          ORDER BY m ASC`,
-    );
-    const rows = (r as unknown as Record<string, unknown>[]);
-    return rows.map((row) => ({
-      month: String(row.month),
-      label: String(row.label),
-      revenue: Number(row.revenue ?? 0),
-      tenants: Number(row.tenants ?? 0),
-      messages: Number(row.messages ?? 0),
-    }));
-  } catch (e) {
-    console.error("getMonthlyAnalytics failed", e);
     return [];
   }
 }

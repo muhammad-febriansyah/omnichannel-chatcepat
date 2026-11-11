@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { broadcastRecipients, channels, knowledgeDocuments, plans, tenants, users } from "./db/schema";
 import { PLAN_LABEL, type TenantPlan } from "./plan";
@@ -126,8 +126,10 @@ export async function assertCanAddKb(session: Session): Promise<void> {
   }
 }
 
-// Kuota broadcast bulanan = jumlah penerima 'sent' sejak awal bulan (UTC).
-export async function assertBroadcastQuota(session: Session): Promise<void> {
+// Monthly broadcast quota = recipients this month (UTC) that are queued, sent or
+// delivered, plus the audience about to be added. The engine checks it again when a
+// scheduled broadcast starts (engine/app/services/broadcast.py).
+export async function assertBroadcastQuota(session: Session, audience = 0): Promise<void> {
   if (unlimited(session) || !session.tenantId) return;
   const ent = await sessionEntitlements(session);
   if (!ent.features.broadcast) {
@@ -144,13 +146,17 @@ export async function assertBroadcastQuota(session: Session): Promise<void> {
     .where(
       and(
         eq(broadcastRecipients.tenantId, session.tenantId),
-        eq(broadcastRecipients.status, "sent"),
+        inArray(broadcastRecipients.status, ["pending", "sent", "delivered"]),
         gte(broadcastRecipients.createdAt, start.toISOString()),
       ),
     );
-  if (Number(row?.n ?? 0) >= quota) {
+  const left = Math.max(quota - Number(row?.n ?? 0), 0);
+  if (audience > left || left === 0) {
+    const fmt = (n: number) => n.toLocaleString("id-ID");
     throw new PlanLimitError(
-      `Kuota broadcast paket ${planLabel(session)} (${quota.toLocaleString("id-ID")}/bulan) sudah habis. Upgrade paket atau tunggu bulan depan.`,
+      left === 0
+        ? `Kuota broadcast paket ${planLabel(session)} (${fmt(quota)}/bulan) sudah habis. Upgrade paket atau tunggu bulan depan.`
+        : `Kuota broadcast tersisa ${fmt(left)} penerima bulan ini, broadcast ini ke ${fmt(audience)} penerima. Persempit tag penerima atau upgrade paket.`,
     );
   }
 }

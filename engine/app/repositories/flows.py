@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,18 +83,24 @@ async def match_trigger(
     channel_id: uuid.UUID | None = None,
     comment_post_id: str | None = None,
     idle_hours: float | None = None,
+    allowed: Callable[[Flow], bool] | None = None,
 ) -> Flow | None:
     """Cari flow aktif yang trigger-nya cocok. Urutan: klik tombol (label persis) →
     keyword (substring) → welcome (pesan pertama) → fallback.
 
     idle_hours = jam sejak pesan masuk sebelumnya di percakapan ini (None = belum ada).
     Komentar postingan (comment_post_id diisi) hanya cocok ke pemicu "comment".
-    Pemicu dengan daftar `channels` hanya berlaku untuk akun/channel itu."""
+    Pemicu dengan daftar `channels` hanya berlaku untuk akun/channel itu.
+    allowed = filter tambahan (mis. paket tenant); flow yang ditolak dilewati."""
     text = (body or "").lower()
     clicked = " ".join((button_text or "").casefold().split())
     welcome: Flow | None = None
     fallback: Flow | None = None
-    active = [f for f in await list_active(session, tenant_id) if _channel_ok(f, channel_id)]
+    active = [
+        f
+        for f in await list_active(session, tenant_id)
+        if _channel_ok(f, channel_id) and (allowed is None or allowed(f))
+    ]
     if comment_post_id is not None:
         return _match_comment(active, text, comment_post_id)
     if preferred_flow_id is not None:

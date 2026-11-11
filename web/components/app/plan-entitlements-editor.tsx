@@ -108,7 +108,7 @@ export function PlanEntitlementsEditor({ value: v, onChange }: { value: PlanEnti
 
       <Section title="Fitur">
         <div className="grid gap-2 sm:grid-cols-2">
-          {PLAN_FEATURES.map((f) => (
+          {PLAN_FEATURES.filter((f) => !f.hidden).map((f) => (
             <label key={f.value} className="flex items-center justify-between gap-3 rounded-xl border border-border px-3.5 py-2.5">
               <span className="min-w-0">
                 <span className="block text-sm font-medium">{f.label}</span>

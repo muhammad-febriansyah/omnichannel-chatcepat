@@ -1,5 +1,7 @@
 import { MessageSquare, CheckCircle2, Users, ShieldCheck, Send } from "lucide-react";
 import { requirePageAbility } from "@/lib/session";
+import { hasFeature } from "@/lib/entitlements";
+import { PlanLock } from "@/components/app/plan-lock";
 import { cleanIDR } from "@/lib/format";
 import { getReportStats } from "@/lib/report-stats";
 import { PageHeader } from "@/components/app/page-header";
@@ -51,6 +53,16 @@ function Breakdown({ title, rows, map, total }: { title: string; rows: { status:
 
 export default async function ReportsPage() {
   const session = await requirePageAbility("report.view");
+  if (!(await hasFeature(session, "reports"))) {
+    return (
+      <PlanLock
+        title="Laporan"
+        feature="Laporan"
+        requiredPlan="Pro"
+        description="Analitik percakapan, kontak, dan pesan terkirim."
+      />
+    );
+  }
   const s = await getReportStats(session.tenantId);
   const resRate = s.conversations ? Math.round((s.resolved / s.conversations) * 100) : 0;
   const maxDay = Math.max(1, ...s.msgPerDay.map((d) => d.n));

@@ -23,3 +23,8 @@ class Plan(UUIDPkMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
     highlight: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
     sort_order: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
+    # Entitlements (migration 0025); dibaca lewat repositories.entitlements.
+    ai_tokens_monthly: Mapped[int] = mapped_column(sa.BigInteger, nullable=False, server_default="300000")
+    limits: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    feature_flags: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    flow_nodes: Mapped[list | None] = mapped_column(JSONB, nullable=True)

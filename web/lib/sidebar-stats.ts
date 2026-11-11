@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
+import { isUuid } from "./utils";
 import { PLAN_QUOTA, type TenantPlan, type SidebarStats } from "./plan";
 
 const FALLBACK: SidebarStats = {
@@ -12,7 +13,8 @@ const FALLBACK: SidebarStats = {
 };
 
 export async function getSidebarStats(tenantId: string | null): Promise<SidebarStats> {
-  if (!tenantId) return FALLBACK;
+  // tenantId is spliced into raw SQL below: only ever a UUID.
+  if (!isUuid(tenantId)) return FALLBACK;
   try {
     const t = `'${tenantId}'`;
     const row = async (q: string) => {

@@ -11,7 +11,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { userError } from "./action-error";
 import { db } from "./db";
-import { broadcasts, channels } from "./db/schema";
+import { broadcasts, channels, contacts } from "./db/schema";
 import { assertBroadcastQuota, requireFeature } from "./entitlements";
 import type { RuntimeNode } from "./flow-graph";
 import type { Session } from "./session";
@@ -114,6 +114,15 @@ export async function prepareFlowBroadcast(session: Session, nodes: RuntimeNode[
   };
 }
 
+// Opt-in contacts the broadcast will reach (same filter the engine applies).
+async function audienceSize(tx: Tx, tenantId: string, filter: Record<string, unknown>): Promise<number> {
+  const tags = Array.isArray(filter.tags) ? filter.tags.map(String) : [];
+  const conds = [eq(contacts.tenantId, tenantId), eq(contacts.optInStatus, "opted_in")];
+  if (tags.length) conds.push(sql`${contacts.tags} && ${tags}`);
+  const [row] = await tx.select({ n: sql<number>`count(*)::int` }).from(contacts).where(and(...conds));
+  return Number(row?.n ?? 0);
+}
+
 // Inside the flow-save transaction: create / update / cancel the flow's broadcast.
 export async function applyFlowBroadcast(
   tx: Tx,
@@ -142,6 +151,9 @@ export async function applyFlowBroadcast(
   }
 
   const values = { ...snapshot, name: flowName.trim() || "Broadcast", status: "scheduled" as const, flowId };
+  if (pending || !started) {
+    await assertBroadcastQuota(session, await audienceSize(tx, tenantId, snapshot.audienceFilter));
+  }
   if (pending) {
     // Guarded: the worker may have started it a moment ago — then it's sent, not updated.
     const updated = await tx
@@ -152,7 +164,6 @@ export async function applyFlowBroadcast(
     return updated.length ? { state: "updated", scheduledAt: snapshot.scheduledAt } : { state: "sent" };
   }
   if (started) return { state: "sent" };
-  await assertBroadcastQuota(session);
   await tx.insert(broadcasts).values({ tenantId, ...values });
   return { state: "scheduled", scheduledAt: snapshot.scheduledAt };
 }

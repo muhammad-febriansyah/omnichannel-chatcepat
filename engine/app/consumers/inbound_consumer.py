@@ -6,43 +6,24 @@ import asyncio
 import logging
 import os
 
-from redis.exceptions import (
-    ConnectionError as RedisConnectionError,
-    TimeoutError as RedisTimeoutError,
-)
-
-from ..bus import ack, close, ensure_group, read_group
+from ..bus import close
 from ..config import STREAM_INBOUND
 from ..contracts.events import InboundMessage
 from ..services.inbound import handle
+from .stream_runner import run_stream
 
 log = logging.getLogger("engine.consumer.inbound")
 
 
+async def _handle(data: str) -> None:
+    await handle(InboundMessage.model_validate_json(data))
+
+
 async def run(consumer_name: str | None = None) -> None:
     consumer_name = consumer_name or os.environ.get("CONSUMER_NAME", "engine-1")
-    await ensure_group(STREAM_INBOUND)
     log.info("inbound consumer '%s' mulai", consumer_name)
     try:
-        while True:
-            try:
-                batch = await read_group(STREAM_INBOUND, consumer_name)
-            except (RedisTimeoutError, RedisConnectionError):
-                # Block idle / blip jaringan — normal, ulangi (jangan matikan consumer).
-                continue
-            except Exception:
-                log.exception("read_group gagal, retry")
-                await asyncio.sleep(1)
-                continue
-            for msg_id, fields in batch:
-                try:
-                    inbound = InboundMessage.model_validate_json(fields["data"])
-                    await handle(inbound)
-                except Exception:
-                    # Pesan tak boleh hilang (05). Ack supaya tak jadi poison loop.
-                    # TODO: dead-letter stream + retry backoff.
-                    log.exception("gagal proses inbound %s", msg_id)
-                await ack(STREAM_INBOUND, msg_id)
+        await run_stream(STREAM_INBOUND, consumer_name, _handle, log)
     finally:
         await close()
 

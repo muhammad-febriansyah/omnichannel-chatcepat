@@ -40,11 +40,17 @@ async def read_group(
     consumer: str,
     group: str = CONSUMER_GROUP,
     count: int = 10,
-    block_ms: int = 5000,
+    block_ms: int | None = 5000,
+    start_id: str = ">",
 ) -> list[tuple[str, dict[str, str]]]:
-    """Baca pesan baru untuk consumer. Return list (message_id, fields)."""
+    """Baca pesan untuk consumer. Return list (message_id, fields).
+
+    start_id ">" = pesan baru. Id lain (mis. "0") = pesan milik consumer ini yang
+    sudah dibaca tapi belum di-ack (pending), setelah id tersebut. block_ms None =
+    tanpa BLOCK (langsung kembali).
+    """
     resp = await client().xreadgroup(
-        group, consumer, {stream: ">"}, count=count, block=block_ms
+        group, consumer, {stream: start_id}, count=count, block=block_ms
     )
     out: list[tuple[str, dict[str, str]]] = []
     for _stream, messages in resp or []:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select, update
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -49,6 +51,32 @@ async def add_recipient(
     )
     session.add(r)
     return r
+
+
+# Recipients that count against the monthly broadcast quota: already sent/delivered,
+# plus still queued in a running broadcast. Same month boundary as the web (UTC).
+QUOTA_STATUSES = ("pending", "sent", "delivered")
+
+
+async def month_usage(session: AsyncSession, tenant_id: uuid.UUID) -> int:
+    start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(BroadcastRecipient)
+            .where(
+                BroadcastRecipient.tenant_id == tenant_id,
+                BroadcastRecipient.status.in_(QUOTA_STATUSES),
+                BroadcastRecipient.created_at >= start,
+            )
+        )
+        or 0
+    )
+
+
+async def lock_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Serialize quota checks of one tenant (two broadcasts starting together)."""
+    await session.execute(text("SELECT 1 FROM tenants WHERE id = :t FOR UPDATE"), {"t": tenant_id})
 
 
 async def pending_recipients(

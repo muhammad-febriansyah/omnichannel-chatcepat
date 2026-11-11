@@ -7,40 +7,24 @@ import asyncio
 import logging
 import os
 
-from redis.exceptions import (
-    ConnectionError as RedisConnectionError,
-    TimeoutError as RedisTimeoutError,
-)
-
-from ..bus import ack, close, ensure_group, read_group
+from ..bus import close
 from ..config import STREAM_STATUS
 from ..contracts.events import MessageStatus
 from ..services.status import apply_status_event
+from .stream_runner import run_stream
 
 log = logging.getLogger("engine.consumer.status")
 
 
+async def _handle(data: str) -> None:
+    await apply_status_event(MessageStatus.model_validate_json(data))
+
+
 async def run(consumer_name: str | None = None) -> None:
     consumer_name = consumer_name or os.environ.get("CONSUMER_NAME", "engine-status-1")
-    await ensure_group(STREAM_STATUS)
     log.info("status consumer '%s' mulai", consumer_name)
     try:
-        while True:
-            try:
-                batch = await read_group(STREAM_STATUS, consumer_name)
-            except (RedisTimeoutError, RedisConnectionError):
-                continue
-            except Exception:
-                log.exception("read_group gagal, retry")
-                await asyncio.sleep(1)
-                continue
-            for msg_id, fields in batch:
-                try:
-                    st = MessageStatus.model_validate_json(fields["data"])
-                    await apply_status_event(st)
-                except Exception:
-                    log.exception("gagal proses status %s", msg_id)
-                await ack(STREAM_STATUS, msg_id)
+        await run_stream(STREAM_STATUS, consumer_name, _handle, log)
     finally:
         await close()
 

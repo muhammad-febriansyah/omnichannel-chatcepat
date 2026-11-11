@@ -15,12 +15,14 @@ export const CHANNEL_KINDS: { value: ChannelKind; label: string }[] = [
 
 export type PlanFeature = "automation" | "broadcast" | "catalog" | "reports" | "multiNumber";
 
-export const PLAN_FEATURES: { value: PlanFeature; label: string; desc: string }[] = [
+// hidden = not built yet: kept in stored flags, but not offered in the plan form or
+// listed on the billing page, so no plan sells something that does nothing.
+export const PLAN_FEATURES: { value: PlanFeature; label: string; desc: string; hidden?: boolean }[] = [
   { value: "automation", label: "Automation (Flow Builder)", desc: "Kanvas flow, template, auto-reply" },
   { value: "broadcast", label: "Broadcast", desc: "Kirim pesan massal ke kontak opt-in" },
   { value: "catalog", label: "Katalog Produk", desc: "Produk, harga, kirim katalog" },
   { value: "reports", label: "Laporan", desc: "Analitik percakapan & tim" },
-  { value: "multiNumber", label: "Multi nomor per CS", desc: "Satu CS pegang banyak nomor" },
+  { value: "multiNumber", label: "Multi nomor per CS", desc: "Satu CS pegang banyak nomor", hidden: true },
 ];
 
 // null = tanpa batas.

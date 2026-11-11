@@ -178,6 +178,14 @@ async def handle(inbound: InboundMessage) -> None:
             if channel is None:
                 log.warning("inbound channel tidak dikenal: %s", inbound.channel_id)
                 return
+            # A message must come from the platform its channel belongs to. A
+            # mismatch means a forged or misrouted event: never persist or answer it.
+            if channel.type != inbound.channel_type.value:
+                log.warning(
+                    "inbound ditolak: channel %s bertipe %s, event bertipe %s",
+                    channel.id, channel.type, inbound.channel_type.value,
+                )
+                return
             tenant_id = channel.tenant_id
 
             if await messages.exists_provider(

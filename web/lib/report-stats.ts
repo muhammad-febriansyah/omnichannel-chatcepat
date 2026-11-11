@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
+import { isUuid } from "./utils";
 
 export interface ReportStats {
   conversations: number;
@@ -25,7 +26,8 @@ const FALLBACK: ReportStats = {
 };
 
 export async function getReportStats(tenantId: string | null): Promise<ReportStats> {
-  if (!tenantId) return FALLBACK;
+  // tenantId is spliced into raw SQL below: only ever a UUID.
+  if (!isUuid(tenantId)) return FALLBACK;
   try {
     const t = `'${tenantId}'`;
     const rows = async (q: string) => (await db.execute(sql.raw(q))) as unknown as Array<Record<string, unknown>>;

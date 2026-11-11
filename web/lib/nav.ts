@@ -75,7 +75,9 @@ export const TENANT_SECTIONS: NavSection[] = [
   {
     id: "analytics",
     title: "Analitik",
-    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view", hideForClient: true }],
+    // Sold as the "Laporan" plan feature: visible to clients, the page shows a plan
+    // lock when their plan does not include it.
+    items: [{ href: "/reports", label: "Laporan", icon: BarChart3, ability: "report.view" }],
   },
   {
     id: "settings",

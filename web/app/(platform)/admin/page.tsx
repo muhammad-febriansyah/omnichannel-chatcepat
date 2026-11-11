@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { Building2, CircleDollarSign, Coins, MessageSquare, Receipt, Sparkles } from "lucide-react";
+import { BadgeCheck, Building2, CalendarClock, CircleDollarSign, Coins, Hourglass, MessageSquare, Receipt, Repeat, Sparkles } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { cleanIDR, rupiah } from "@/lib/format";
 import { listTenants } from "@/lib/platform-stats";
 import { loadPlatformDashboard, type RangeDays } from "@/lib/platform-dashboard";
+import { loadSubscriptionOverview } from "@/lib/platform-subscriptions";
+import { AdminActionList } from "@/components/app/admin-action-list";
 import { fmtTokens } from "@/lib/plan-config";
 import { PageHeader } from "@/components/app/page-header";
 import { StatCard } from "@/components/app/stat-card";
@@ -37,7 +39,10 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
   await requireSession();
   const { range } = await searchParams;
   const days = (RANGES.find((r) => String(r.value) === range)?.value ?? 30) as RangeDays;
-  const [d, tenants] = await Promise.all([loadPlatformDashboard(days), listTenants()]);
+  const [d, tenants, sub] = await Promise.all([loadPlatformDashboard(days), listTenants(), loadSubscriptionOverview()]);
+  const sk = sub.kpi;
+  const actionCount =
+    sub.expiring.length + sub.trialsEnding.length + sub.nearLimit.length + sub.channelIssues.length + sub.pendingOrders.length;
   const k = d.kpi;
   const periodLabel = `${days} hari terakhir`;
 
@@ -64,7 +69,26 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
         }
       />
 
-      {/* KPIs */}
+      {/* Subscription health: state right now, independent of the period above. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={Repeat} label="MRR (pendapatan bulanan berulang)" value={rupiah(sk.mrr)} tone="#2547F9" hint={`ARPU ${rupiah(sk.arpu)} / tenant`} />
+        <StatCard icon={BadgeCheck} label="Tenant berbayar aktif" value={cleanIDR(sk.paying)} tone="#10B981" hint="Paket berbayar yang masih berlaku" />
+        <StatCard icon={Hourglass} label="Trial aktif" value={cleanIDR(sk.trials)} tone="#8B5CF6" hint={`${cleanIDR(sk.trialsEnding)} berakhir minggu ini`} />
+        <StatCard icon={CalendarClock} label="Paket habis ≤7 hari" value={cleanIDR(sk.expiring)} tone="#F59E0B" hint="Kandidat follow-up perpanjangan" />
+      </div>
+
+      <Panel title="Perlu tindakan" desc={actionCount ? `${actionCount} hal untuk ditindaklanjuti hari ini` : "Semua aman, tidak ada yang perlu ditindak"}>
+        <AdminActionList
+          now={sub.now}
+          expiring={sub.expiring}
+          trialsEnding={sub.trialsEnding}
+          channelIssues={sub.channelIssues}
+          pendingOrders={sub.pendingOrders}
+          nearLimit={sub.nearLimit}
+        />
+      </Panel>
+
+      {/* Period KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard icon={CircleDollarSign} label="Pendapatan" value={rupiah(k.revenue)} tone="#2547F9" delta={k.revenueDelta} hint={`Top-up AI: ${rupiah(k.topupRevenue)}`} />
         <StatCard icon={Receipt} label="Transaksi berhasil" value={cleanIDR(k.paid)} tone="#10B981" delta={k.paidDelta} hint={`${cleanIDR(k.pending)} menunggu pembayaran`} />

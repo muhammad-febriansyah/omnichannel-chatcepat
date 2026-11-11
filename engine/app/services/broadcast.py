@@ -35,7 +35,7 @@ from ..contracts.events import Type1 as OutboundType
 from ..db import AsyncSessionLocal, engine
 from ..models import Broadcast, BroadcastRecipient, Channel, Contact
 from ..pipeline.flow_engine import render, start_broadcast_state
-from ..repositories import broadcasts, channels, conversations, messages
+from ..repositories import broadcasts, channels, conversations, entitlements, messages
 from . import warmup
 from .inbound import _guess_mime
 
@@ -71,6 +71,23 @@ async def run_broadcast(broadcast_id: uuid.UUID, tenant_id: uuid.UUID | None = N
             raise ValueError("Isi broadcast tidak boleh kosong")
 
         contacts = await broadcasts.match_contacts(session, b.tenant_id, b.audience_filter)
+
+        # Plan check when it actually starts: a scheduled broadcast must not go out
+        # after a downgrade, nor push the tenant past its monthly recipient quota.
+        plan = await entitlements.for_tenant(session, b.tenant_id)
+        if not plan.features.get("broadcast", False):
+            raise ValueError("Fitur Broadcast tidak termasuk paket tenant ini")
+        if plan.broadcast_per_month is not None:
+            await broadcasts.lock_tenant(session, b.tenant_id)
+            audience = sum(1 for c in contacts if c.opt_in_status == "opted_in")
+            left = max(plan.broadcast_per_month - await broadcasts.month_usage(session, b.tenant_id), 0)
+            if audience > left:
+                idr = lambda n: f"{n:,}".replace(",", ".")  # noqa: E731 — 12.500 (id-ID)
+                raise ValueError(
+                    f"Kuota broadcast bulan ini tidak cukup: sisa {idr(left)} penerima, "
+                    f"broadcast ini {idr(audience)} penerima"
+                )
+
         pending = skipped = 0
         for c in contacts:
             if c.opt_in_status == "opted_in":
