@@ -475,7 +475,7 @@ export async function createChannel(input: {
         .update(channels)
         .set({ status: "pending" })
         .where(and(eq(channels.id, row.id), eq(channels.tenantId, session.tenantId)));
-      revalidatePath("/channels");
+      revalidatePath("/", "layout");
       throw userError(
         "Channel dibuat (pending), tapi webhook Telegram belum didaftarkan: TELEGRAM_WEBHOOK_BASE belum diset.",
       );
@@ -498,7 +498,7 @@ export async function createChannel(input: {
     }
   }
 
-  revalidatePath("/channels");
+  revalidatePath("/", "layout");
   // wa_unofficial → lanjut ke halaman pairing QR; lainnya langsung selesai.
   redirect(input.type === "wa_unofficial" ? `/channels/${row.id}/pair` : "/channels");
 }
@@ -670,7 +670,7 @@ export async function connectMetaPage(pageId: string): Promise<void> {
   }
 
   store.delete(authCookieDelete(FB_OAUTH_COOKIE));
-  revalidatePath("/channels");
+  revalidatePath("/", "layout");
   redirect("/channels?connected=1");
 }
 
@@ -716,7 +716,7 @@ export async function connectWhatsAppEmbedded(input: {
     ...(await workspaceReplyFallback(session.tenantId)),
   });
 
-  revalidatePath("/channels");
+  revalidatePath("/", "layout");
 }
 
 // --- Putuskan (logout) channel: unsubscribe webhook Meta (best-effort) + hapus row. ---
@@ -757,7 +757,7 @@ export async function disconnectChannel(id: string): Promise<void> {
   }
 
   await db.delete(channels).where(and(eq(channels.id, id), eq(channels.tenantId, session.tenantId)));
-  revalidatePath("/channels");
+  revalidatePath("/", "layout");
 }
 
 // --- WA unofficial: simpan device JID hasil pairing (dipanggil dari halaman QR). ---
@@ -780,7 +780,7 @@ export async function attachWaDevice(channelId: string, jid: string) {
     .update(channels)
     .set({ status: "connected", externalId: jid, credentials: creds, updatedAt: sql`now()` })
     .where(and(eq(channels.id, channelId), eq(channels.tenantId, session.tenantId)));
-  revalidatePath("/channels");
+  revalidatePath("/", "layout");
 }
 
 // --- Broadcast: estimasi audience (opt-in dipaksa). ---
