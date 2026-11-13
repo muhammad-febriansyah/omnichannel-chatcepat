@@ -34,7 +34,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
 const SOCIALS = [
   { label: "Instagram", href: "https://instagram.com", icon: AtSign },
   { label: "Telegram", href: "https://telegram.org", icon: Send },
-  { label: "Email", href: "mailto:halo@chatcepat.id", icon: Mail },
+  { label: "Email", href: "mailto:cs@chatcepat.id", icon: Mail },
 ];
 
 export function Footer({ logoUrl, siteName }: { logoUrl?: string | null; siteName?: string | null }) {
